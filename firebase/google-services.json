@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1052433400571",
+    "project_id": "whatword-a3f4b",
+    "storage_bucket": "whatword-a3f4b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1052433400571:android:44c66d29f40cb480d9265e",
+        "android_client_info": {
+          "package_name": "com.whatword.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1pxEdLS7La9HOq7AnIlIFMpYCfNbp0cY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
