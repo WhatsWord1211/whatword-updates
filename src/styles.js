@@ -6,6 +6,7 @@ export default StyleSheet.create({
     backgroundColor: '#1F2937',
     alignItems: 'center',
     padding: 20,
+    paddingHorizontal: 16,
   },
   difficultyContainer: {
     flex: 1,
@@ -36,6 +37,7 @@ export default StyleSheet.create({
     textAlign: 'center',
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
+    width: '100%',
   },
   soloheader: {
     fontSize: 26,
@@ -691,9 +693,12 @@ export default StyleSheet.create({
     width: '100%',
   },
   friendText: {
-    fontSize: 16,
     color: '#E5E7EB',
+    fontSize: 16,
+    fontWeight: '500',
     fontFamily: 'Roboto-Regular',
+    flex: 1,
+    marginRight: 10,
   },
   // New styles for friend system
   searchSection: {
@@ -704,6 +709,28 @@ export default StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 15,
+    width: '100%',
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    backgroundColor: '#374151',
+    padding: 12,
+    borderRadius: 8,
+    color: '#E5E7EB',
+    fontSize: 16,
+    fontFamily: 'Roboto-Regular',
+    marginRight: 8,
+  },
+  searchButton: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
   },
   sectionHeader: {
     fontSize: 18,
@@ -711,6 +738,8 @@ export default StyleSheet.create({
     marginBottom: 10,
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
+    width: '100%',
+    textAlign: 'left',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -718,6 +747,8 @@ export default StyleSheet.create({
     backgroundColor: '#374151',
     borderRadius: 8,
     padding: 4,
+    width: '100%',
+    overflow: 'hidden',
   },
   tabButton: {
     flex: 1,
@@ -758,6 +789,7 @@ export default StyleSheet.create({
   },
   tabContent: {
     width: '100%',
+    paddingHorizontal: 4,
   },
   friendItem: {
     flexDirection: 'row',
@@ -767,6 +799,7 @@ export default StyleSheet.create({
     borderRadius: 8,
     marginBottom: 10,
     width: '100%',
+    justifyContent: 'space-between',
   },
   friendText: {
     color: '#E5E7EB',

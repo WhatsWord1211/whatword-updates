@@ -6,13 +6,14 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "scheme": "whatword",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.whatword.app",
@@ -21,23 +22,38 @@
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
+        "backgroundColor": "#FFFFFF"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       [
-        "expo-notifications",
+        "expo-build-properties",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#ffffff"
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0"
+          }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b189d504-5441-4ee4-977f-2ad58d77659d"
+      },
+      "firebaseApiKey": "AIzaSyC1pxEdLS7La9HOq7AnIlIFMpYCfNbp0cY",
+      "firebaseAuthDomain": "whatword-a3f4b.firebaseapp.com",
+      "firebaseProjectId": "whatword-a3f4b",
+      "firebaseStorageBucket": "whatword-a3f4b.firebasestorage.app",
+      "firebaseMessagingSenderId": "1052433400571",
+      "firebaseAppId": "1:1052433400571:android:44c66d29f40cb480d9265e",
+      "firebaseMeasurementId": "G-TWN7PXQ55G"
+    }
   }
 }

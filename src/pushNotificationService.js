@@ -1,4 +1,4 @@
-import { getFunctions, httpsCallable } from 'firebase/functions';
+// import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore, doc, setDoc, updateDoc, collection, addDoc, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 

@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Alert, Linking } from 'react-native';
-import { getMessaging, getToken, onMessage, onTokenRefresh, onBackgroundMessage } from 'firebase/messaging';
+// import { getMessaging, getToken, onMessage, onTokenRefresh, onBackgroundMessage } from 'firebase/messaging';
 import { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { playSound } from './soundsUtil';
@@ -18,11 +18,11 @@ Notifications.setNotificationHandler({
 // Background message handler for FCM
 if (Platform.OS === 'android') {
   // This will be called when the app is in the background
-  onBackgroundMessage(getMessaging(), async (remoteMessage) => {
-    console.log('NotificationService: Background message received:', remoteMessage);
-    // Handle background notification here
-    // Note: This only works on Android when the app is in background
-  });
+  // onBackgroundMessage(getMessaging(), async (remoteMessage) => {
+  //   console.log('NotificationService: Background message received:', remoteMessage);
+  //   // Handle background notification here
+  //   // Note: This only works on Android when the app is in background
+  // });
 }
 
 class NotificationService {
@@ -56,7 +56,7 @@ class NotificationService {
   async initialize(userId = null) {
     try {
       // Initialize Firebase messaging
-      this.messaging = getMessaging();
+      // this.messaging = getMessaging();
       
       // Check current permission status
       const { status } = await Notifications.getPermissionsAsync();
@@ -106,19 +106,19 @@ class NotificationService {
    * Set up token refresh listener to automatically update Firestore
    */
   setupTokenRefreshListener() {
-    if (!this.messaging) return;
+    // if (!this.messaging) return;
     
-    this.onTokenRefreshUnsubscribe = onTokenRefresh(this.messaging, async (token) => {
-      console.log('NotificationService: FCM token refreshed:', token);
+    // this.onTokenRefreshUnsubscribe = onTokenRefresh(this.messaging, async (token) => {
+    //   console.log('NotificationService: FCM token refreshed:', token);
       
-      // Update current token
-      this.currentToken = token;
+    //   // Update current token
+    //   this.currentToken = token;
       
-      // Save new token to Firestore if user ID is available
-      if (this.currentUserId) {
-        await this.saveTokenToFirestore(this.currentUserId, token);
-      }
-    });
+    //   // Save new token to Firestore if user ID is available
+    //   if (this.currentUserId) {
+    //     await this.saveTokenToFirestore(this.currentUserId, token);
+    //   }
+    // });
   }
 
   /**
@@ -609,13 +609,14 @@ class NotificationService {
 
   async getFCMToken() {
     try {
-      if (!this.messaging) return null;
+      // if (!this.messaging) return null;
       
-      const token = await getToken(this.messaging, {
-        vapidKey: 'BN_CPeFYRM3c6IuuBz-l8xdJGiN2C8G5vb9rdH8f20apmzFz5_PcTOB3A11FfZ8lzYOezFR_llCNGFQj1_ycg8E'
-      });
+      // const token = await getToken(this.messaging, {
+      //   vapidKey: 'BN_CPeFYRM3c6IuuBz-l8xdJGiN2C8G5vb9rdH8f20apmzFz5_PcTOB3A11FfZ8lzYOezFR_llCNGFQj1_ycg8E'
+      // });
       
-      return token;
+      // return token;
+      return null; // Placeholder as messaging is commented out
     } catch (error) {
       console.error('NotificationService: Failed to get FCM token:', error);
       return null;
@@ -627,10 +628,10 @@ class NotificationService {
    */
   setupNotificationListeners() {
     // Foreground message listener (when app is open and active)
-    this.foregroundListener = onMessage(this.messaging, (remoteMessage) => {
-      console.log('NotificationService: Foreground message received:', remoteMessage);
-      this.handleForegroundNotification(remoteMessage);
-    });
+    // this.foregroundListener = onMessage(this.messaging, (remoteMessage) => {
+    //   console.log('NotificationService: Foreground message received:', remoteMessage);
+    //   this.handleForegroundNotification(remoteMessage);
+    // });
 
     // Notification response listener (when user taps notification)
     this.notificationResponseListener = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -1714,20 +1715,20 @@ class NotificationService {
   }
 
   cleanup() {
-    if (this.foregroundListener) {
-      this.foregroundListener();
-      this.foregroundListener = null;
-    }
+    // if (this.foregroundListener) {
+    //   this.foregroundListener();
+    //   this.foregroundListener = null;
+    // }
     
     if (this.notificationResponseListener) {
       this.notificationResponseListener.remove();
       this.notificationResponseListener = null;
     }
     
-    if (this.onTokenRefreshUnsubscribe) {
-      this.onTokenRefreshUnsubscribe();
-      this.onTokenRefreshUnsubscribe = null;
-    }
+    // if (this.onTokenRefreshUnsubscribe) {
+    //   this.onTokenRefreshUnsubscribe();
+    //   this.onTokenRefreshUnsubscribe = null;
+    // }
     
     // Clear current state
     this.currentToken = null;

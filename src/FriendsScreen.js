@@ -324,7 +324,11 @@ const FriendsScreen = () => {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={{ flex: 1 }} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 20 }}
+      >
         <Text style={styles.header}>Friends & Challenges</Text>
         
         {/* Search Section */}
@@ -332,14 +336,15 @@ const FriendsScreen = () => {
           <Text style={styles.sectionHeader}>Find Friends</Text>
           <View style={styles.searchContainer}>
             <TextInput
-              style={styles.input}
+              style={styles.searchInput}
               placeholder="Search by username or email"
+              placeholderTextColor="#9CA3AF"
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
             />
             <TouchableOpacity
-              style={[styles.button, { marginLeft: 8 }]}
+              style={[styles.searchButton, { marginLeft: 8 }]}
               onPress={handleSearch}
               disabled={isSearching}
             >
@@ -357,6 +362,7 @@ const FriendsScreen = () => {
                 renderItem={renderSearchResult}
                 keyExtractor={item => item.id}
                 style={{ maxHeight: 200 }}
+                scrollEnabled={false}
               />
             </>
           )}

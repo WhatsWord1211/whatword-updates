@@ -1,136 +1,145 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useFonts } from 'expo-font';
-import { StatusBar, LogBox, View, Text, ActivityIndicator } from 'react-native';
-import * as Linking from 'expo-linking';
-import { auth } from './src/firebase'; // Import auth from firebase.js
+import React, { useEffect, useState } from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { View, Text, ActivityIndicator } from "react-native";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./src/firebase";
 
-// Test component loading
-import './src/componentTest';
-
-import HomeScreen from './src/HomeScreen';
-import GameScreen from './src/GameScreen';
-import HowToPlayScreen from './src/HowToPlayScreen';
-import LeaderboardScreen from './src/LeaderboardScreen';
-import FriendsScreen from './src/FriendsScreen';
-import AuthScreen from './src/AuthScreen';
-
-// Debug: Check if components are loaded
-console.log('App: Components loaded:', {
-  HomeScreen: !!HomeScreen,
-  GameScreen: !!GameScreen,
-  HowToPlayScreen: !!HowToPlayScreen,
-  LeaderboardScreen: !!LeaderboardScreen,
-  FriendsScreen: !!FriendsScreen,
-  AuthScreen: !!AuthScreen,
-});
-
-// Ignore specific warnings that might be causing issues
-LogBox.ignoreLogs([
-  'Require cycle:',
-  'ViewPropTypes will be removed',
-  'AsyncStorage has been extracted',
-  'Non-serializable values were found in the navigation state',
-]);
+// Import all screens
+import AuthScreen from "./src/AuthScreen";
+import HomeScreen from "./src/HomeScreen";
+import GameScreen from "./src/GameScreen";
+import FriendsScreen from "./src/FriendsScreen";
+import LeaderboardScreen from "./src/LeaderboardScreen";
+import HowToPlayScreen from "./src/HowToPlayScreen";
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
-// Loading component
+// Loading screen component
 const LoadingScreen = () => (
-  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff' }}>
-    <Text style={{ fontSize: 18, marginBottom: 20 }}>Loading WhatWord...</Text>
-    <ActivityIndicator size="large" color="#0000ff" />
+  <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#1F2937" }}>
+    <ActivityIndicator size="large" color="#F59E0B" />
+    <Text style={{ color: "#E5E7EB", marginTop: 20, fontSize: 18 }}>Loading WhatWord...</Text>
   </View>
 );
 
-export default function App() {
-  const [fontsLoaded] = useFonts({
-    'Roboto': require('./assets/fonts/Roboto-Regular.ttf'),
-    'Roboto-Bold': require('./assets/fonts/Roboto-Bold.ttf'),
-  });
-
-  const navigationRef = useRef(null);
-  const [isReady, setIsReady] = useState(false);
-  const [authState, setAuthState] = useState(null);
-
-  // Configure deep linking
-  const linking = {
-    prefixes: [Linking.createURL('/'), 'whatword://'],
-    config: {
-      screens: {
-        Home: 'home',
-        Game: 'game/:gameId',
-        HowToPlay: 'howtoplay',
-        Leaderboard: 'leaderboard',
-        Friends: 'friends',
-        Auth: 'auth',
+// Main tab navigator
+const MainTabs = () => (
+  <Tab.Navigator
+    screenOptions={{
+      tabBarStyle: {
+        backgroundColor: "#1F2937",
+        borderTopColor: "#374151",
+        borderTopWidth: 1,
       },
-    },
-  };
+      tabBarActiveTintColor: "#F59E0B",
+      tabBarInactiveTintColor: "#9CA3AF",
+      headerStyle: {
+        backgroundColor: "#1F2937",
+      },
+      headerTintColor: "#E5E7EB",
+      headerTitleStyle: {
+        fontWeight: "600",
+      },
+    }}
+  >
+    <Tab.Screen 
+      name="Home" 
+      component={HomeScreen}
+      options={{
+        title: "WhatWord",
+        tabBarIcon: ({ color, size }) => (
+          <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏠</Text>
+        ),
+      }}
+    />
+    <Tab.Screen 
+      name="Friends" 
+      component={FriendsScreen}
+      options={{
+        title: "Friends",
+        tabBarIcon: ({ color, size }) => (
+          <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👥</Text>
+        ),
+      }}
+    />
+    <Tab.Screen 
+      name="Leaderboard" 
+      component={LeaderboardScreen}
+      options={{
+        title: "Leaderboard",
+        tabBarIcon: ({ color, size }) => (
+          <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏆</Text>
+        ),
+      }}
+    />
+  </Tab.Navigator>
+);
+
+// Main app component
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    console.log('App: Initializing...');
-    
-    // Listen to auth state changes
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      console.log('App: Auth state changed:', user ? 'User logged in' : 'No user');
-      setAuthState(user);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setLoading(false);
     });
-    
-    // Set app as ready after a short delay
-    const timer = setTimeout(() => {
-      setIsReady(true);
-    }, 1000);
-    
-    return () => {
-      clearTimeout(timer);
-      unsubscribe();
-    };
+
+    return unsubscribe;
   }, []);
 
-  // Show loading screen while fonts and auth are loading
-  if (!fontsLoaded || !isReady) {
+  if (loading) {
     return <LoadingScreen />;
   }
 
-  // Ensure all components are loaded before rendering
-  if (!HomeScreen || !GameScreen || !HowToPlayScreen || !LeaderboardScreen || !FriendsScreen || !AuthScreen) {
-    console.error('One or more screen components failed to load');
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ffffff' }}>
-        <Text style={{ fontSize: 18, color: 'red' }}>Failed to load app components</Text>
-        <Text style={{ fontSize: 14, color: 'gray', marginTop: 10 }}>Please restart the app</Text>
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaProvider>
-      <NavigationContainer 
-        ref={navigationRef} 
-        linking={linking}
-        onReady={() => {
-          console.log('Navigation is ready');
+    <NavigationContainer>
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: "#1F2937",
+          },
+          headerTintColor: "#E5E7EB",
+          headerTitleStyle: {
+            fontWeight: "600",
+          },
         }}
-        fallback={<LoadingScreen />}
       >
-        <StatusBar style="auto" />
-        <Stack.Navigator
-          initialRouteName={authState ? "Home" : "Auth"}
-          screenOptions={{
-            headerShown: false,
-          }}
-        >
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Game" component={GameScreen} />
-          <Stack.Screen name="HowToPlay" component={HowToPlayScreen} />
-          <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
-          <Stack.Screen name="Friends" component={FriendsScreen} />
-          <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+        {user ? (
+          // User is authenticated - show main app
+          <>
+            <Stack.Screen 
+              name="MainTabs" 
+              component={MainTabs}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="Game" 
+              component={GameScreen}
+              options={{ 
+                title: "Word Game",
+                headerShown: true,
+              }}
+            />
+            <Stack.Screen 
+              name="HowToPlay" 
+              component={HowToPlayScreen}
+              options={{ title: "How to Play" }}
+            />
+          </>
+        ) : (
+          // User is not authenticated - show auth screen
+          <Stack.Screen 
+            name="Auth" 
+            component={AuthScreen}
+            options={{ headerShown: false }}
+          />
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }

@@ -360,7 +360,7 @@ const HomeScreen = () => {
         
         <TouchableOpacity
           style={styles.button}
-          onPress={() => handleButtonPress('Tutorial')}
+          onPress={() => handleButtonPress('HowToPlay')}
         >
           <Text style={styles.buttonText}>How To Play</Text>
         </TouchableOpacity>
