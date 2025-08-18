@@ -69,9 +69,7 @@ export const playSound = async (key, options = {}) => {
     if (options.volume !== undefined) {
       await sound.setVolumeAsync(options.volume);
     }
-    
     await sound.replayAsync();
-    
     if (options.volume !== undefined) {
       await sound.setVolumeAsync(1);
     }

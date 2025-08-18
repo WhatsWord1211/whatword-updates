@@ -38,25 +38,30 @@ class AuthService {
         displayName: username
       });
 
-      // Get FCM token for push notifications
-      const pushToken = await getNotificationService().getFCMToken();
-
-      // Create user document in Firestore with new structure
+      // Create user document in Firestore immediately
       await this.createUserProfile(user.uid, {
         username,
         displayName: username,
         photoURL: null,
-        pushToken,
+        pushToken: null, // Will be updated later
         email,
         createdAt: new Date().toISOString(),
         authMethod: 'email',
         lastLogin: new Date().toISOString()
       });
 
-      // Update FCM token in user profile
-      if (pushToken) {
-        await this.updateUserProfile(user.uid, { pushToken });
-      }
+      // Get FCM token in background without blocking
+      setTimeout(() => {
+        getNotificationService().getFCMToken().then(async (pushToken) => {
+          if (pushToken) {
+            try {
+              await this.updateUserProfile(user.uid, { pushToken });
+            } catch (error) {
+              console.error('AuthService: Failed to update push token:', error);
+            }
+          }
+        }).catch(console.error);
+      }, 500);
 
       return user;
     } catch (error) {
@@ -70,14 +75,23 @@ class AuthService {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Get FCM token and update user profile
-      const pushToken = await getNotificationService().getFCMToken();
-      if (pushToken) {
-        await this.updateUserProfile(user.uid, { 
-          pushToken,
-          lastLogin: new Date().toISOString()
-        });
-      }
+      // Update user profile immediately without waiting for FCM token
+      await this.updateUserProfile(user.uid, { 
+        lastLogin: new Date().toISOString()
+      });
+
+      // Get FCM token in background without blocking
+      setTimeout(() => {
+        getNotificationService().getFCMToken().then(async (pushToken) => {
+          if (pushToken) {
+            try {
+              await this.updateUserProfile(user.uid, { pushToken });
+            } catch (error) {
+              console.error('AuthService: Failed to update push token:', error);
+            }
+          }
+        }).catch(console.error);
+      }, 500);
 
       return user;
     } catch (error) {
@@ -117,9 +131,6 @@ class AuthService {
       const userCredential = await signInWithCredential(auth, appleProvider);
       const user = userCredential.user;
       
-      // Get FCM token
-      const pushToken = await getNotificationService().getFCMToken();
-      
       // Check if user profile exists, create if not
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
@@ -128,19 +139,31 @@ class AuthService {
           username,
           displayName: user.displayName || username,
           photoURL: user.photoURL || null,
-          pushToken,
+          pushToken: null, // Will be updated later
           email: user.email,
           authMethod: 'apple',
           createdAt: new Date().toISOString(),
           lastLogin: new Date().toISOString()
         });
       } else {
-        // Update existing profile with new token and login time
+        // Update existing profile with login time
         await this.updateUserProfile(user.uid, { 
-          pushToken,
           lastLogin: new Date().toISOString()
         });
       }
+
+      // Get FCM token in background without blocking
+      setTimeout(() => {
+        getNotificationService().getFCMToken().then(async (pushToken) => {
+          if (pushToken) {
+            try {
+              await this.updateUserProfile(user.uid, { pushToken });
+            } catch (error) {
+              console.error('AuthService: Failed to update push token:', error);
+            }
+          }
+        }).catch(console.error);
+      }, 500);
       
       return user;
     } catch (error) {
@@ -155,21 +178,31 @@ class AuthService {
       const userCredential = await signInAnonymously(auth);
       const user = userCredential.user;
       
-      // Get FCM token
-      const pushToken = await getNotificationService().getFCMToken();
-      
-      // Create user profile
+      // Create user profile immediately without waiting for FCM token
       const username = `Player${Math.floor(Math.random() * 10000)}`;
       await this.createUserProfile(user.uid, {
         username,
         displayName: username,
         photoURL: null,
-        pushToken,
+        pushToken: null, // Will be updated later
         email: null,
         authMethod: 'anonymous',
         createdAt: new Date().toISOString(),
         lastLogin: new Date().toISOString()
       });
+      
+      // Get FCM token in background without blocking
+      setTimeout(() => {
+        getNotificationService().getFCMToken().then(async (pushToken) => {
+          if (pushToken) {
+            try {
+              await this.updateUserProfile(user.uid, { pushToken });
+            } catch (error) {
+              console.error('AuthService: Failed to update push token:', error);
+            }
+          }
+        }).catch(console.error);
+      }, 500); // Delay to ensure authentication completes first
       
       return user;
     } catch (error) {
@@ -258,11 +291,18 @@ class AuthService {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         this.currentUser = user;
-        // Update FCM token when auth state changes
-        const pushToken = await getNotificationService().getFCMToken();
-        if (pushToken) {
-          await this.updateUserPushToken(user.uid, pushToken);
-        }
+        // Update FCM token in background without blocking
+        setTimeout(() => {
+          getNotificationService().getFCMToken().then(async (pushToken) => {
+            if (pushToken) {
+              try {
+                await this.updateUserPushToken(user.uid, pushToken);
+              } catch (error) {
+                console.error('AuthService: Failed to update push token on auth state change:', error);
+              }
+            }
+          }).catch(console.error);
+        }, 1000); // Longer delay for auth state changes
       } else {
         this.currentUser = null;
       }

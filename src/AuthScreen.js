@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView } from "react-native";
 import { signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
 const AuthScreen = () => {
@@ -17,11 +17,14 @@ const AuthScreen = () => {
       const result = await signInAnonymously(auth);
       
       // Create user profile in Firestore
+      const username = `Player${Math.floor(Math.random() * 10000)}`;
       await setDoc(doc(db, 'users', result.user.uid), {
         uid: result.user.uid,
-        username: `Player${Math.floor(Math.random() * 10000)}`,
+        username: username,
+        displayName: username, // Add displayName field
         email: null,
         createdAt: new Date(),
+        lastLogin: new Date(),
         gamesPlayed: 0,
         gamesWon: 0,
         bestScore: 0,
@@ -50,6 +53,35 @@ const AuthScreen = () => {
 
       if (isLogin) {
         result = await signInWithEmailAndPassword(auth, email, password);
+        
+        // Ensure user profile exists and is updated on sign in
+        const userDocRef = doc(db, 'users', result.user.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+          // Update existing profile with last login time
+          await updateDoc(userDocRef, {
+            lastLogin: new Date(),
+            email: email
+          });
+        } else {
+          // Create profile if it doesn't exist (shouldn't happen for existing users, but just in case)
+          await setDoc(userDocRef, {
+            uid: result.user.uid,
+            username: email.split('@')[0],
+            displayName: email.split('@')[0], // Add displayName field
+            email: email,
+            createdAt: new Date(),
+            lastLogin: new Date(),
+            gamesPlayed: 0,
+            gamesWon: 0,
+            bestScore: 0,
+            totalScore: 0,
+            friends: [],
+            isAnonymous: false
+          });
+        }
+        
         Alert.alert("Success!", "Signed in successfully");
       } else {
         result = await createUserWithEmailAndPassword(auth, email, password);
@@ -58,8 +90,10 @@ const AuthScreen = () => {
         await setDoc(doc(db, 'users', result.user.uid), {
           uid: result.user.uid,
           username: email.split('@')[0],
+          displayName: email.split('@')[0], // Add displayName field
           email: email,
           createdAt: new Date(),
+          lastLogin: new Date(),
           gamesPlayed: 0,
           gamesWon: 0,
           bestScore: 0,

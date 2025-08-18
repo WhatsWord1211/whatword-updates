@@ -13,6 +13,7 @@ import GameScreen from "./src/GameScreen";
 import FriendsScreen from "./src/FriendsScreen";
 import LeaderboardScreen from "./src/LeaderboardScreen";
 import HowToPlayScreen from "./src/HowToPlayScreen";
+import ProfileScreen from "./src/ProfileScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -49,7 +50,7 @@ const MainTabs = () => (
       name="Home" 
       component={HomeScreen}
       options={{
-        title: "WhatWord",
+        title: "",
         tabBarIcon: ({ color, size }) => (
           <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏠</Text>
         ),
@@ -84,7 +85,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Add a timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 5000); // 5 second timeout
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      clearTimeout(loadingTimeout);
       setUser(user);
       setLoading(false);
     });
@@ -129,6 +136,11 @@ export default function App() {
               name="HowToPlay" 
               component={HowToPlayScreen}
               options={{ title: "How to Play" }}
+            />
+            <Stack.Screen 
+              name="Profile" 
+              component={ProfileScreen}
+              options={{ title: "Player Profile" }}
             />
           </>
         ) : (

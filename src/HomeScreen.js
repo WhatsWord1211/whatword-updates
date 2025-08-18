@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView, SafeAreaView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
@@ -30,78 +30,123 @@ const HomeScreen = () => {
   // Load user profile and set up listeners
   const loadUserProfile = async (currentUser) => {
     try {
+      console.log('HomeScreen: Loading profile for user:', currentUser.uid);
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        const displayNameToUse = currentUser.displayName || userData.username || 'Guest';
+        console.log('HomeScreen: User data from Firestore:', userData);
+        
+        // Try multiple sources for display name
+        let displayNameToUse = 'Guest';
+        
+        if (currentUser.displayName && currentUser.displayName.trim()) {
+          displayNameToUse = currentUser.displayName.trim();
+          console.log('HomeScreen: Using Firebase displayName:', displayNameToUse);
+        } else if (userData.displayName && userData.displayName.trim()) {
+          displayNameToUse = userData.displayName.trim();
+          console.log('HomeScreen: Using Firestore displayName:', displayNameToUse);
+        } else if (userData.username && userData.username.trim()) {
+          displayNameToUse = userData.username.trim();
+          console.log('HomeScreen: Using Firestore username:', displayNameToUse);
+        } else if (currentUser.email) {
+          // Use email prefix as fallback
+          displayNameToUse = currentUser.email.split('@')[0];
+          console.log('HomeScreen: Using email prefix as displayName:', displayNameToUse);
+        }
+        
+        console.log('HomeScreen: Final displayName set to:', displayNameToUse);
         setDisplayName(displayNameToUse);
         
-        // Set up game invites listener
-        const invitesQuery = query(
-          collection(db, 'gameInvites'),
-          where('toUid', '==', currentUser.uid),
-          where('status', '==', 'pending')
-        );
-        const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
-          const invites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setGameInvites(invites);
-        });
-        if (invitesUnsubscribeRef.current) {
-          invitesUnsubscribeRef.current();
-        }
-        invitesUnsubscribeRef.current = unsubscribeInvites;
-        
-        // Set up pending challenges listener
-        const challengesQuery = query(
-          collection(db, 'challenges'),
-          where('receiverId', '==', currentUser.uid),
-          where('status', '==', 'pending')
-        );
-        const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
-          const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setPendingChallenges(challenges);
-        });
-        
-        // Set up active PvP games listener
-        const activeGamesQuery = query(
-          collection(db, 'games'),
-          where('playerId', '==', currentUser.uid),
-          where('status', 'in', ['waiting', 'ready'])
-        );
-        const activeGamesUnsubscribe = onSnapshot(activeGamesQuery, (snapshot) => {
-          const activeGames = [];
-          snapshot.forEach((doc) => {
-            const gameData = doc.data();
-            if (gameData.status === 'ready') {
-              activeGames.push({ id: doc.id, ...gameData });
+        // Set up listeners in background without blocking
+        setTimeout(() => {
+          try {
+            // Set up game invites listener
+            const invitesQuery = query(
+              collection(db, 'gameInvites'),
+              where('toUid', '==', currentUser.uid),
+              where('status', '==', 'pending')
+            );
+            const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
+              const invites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              setGameInvites(invites);
+            });
+            if (invitesUnsubscribeRef.current) {
+              invitesUnsubscribeRef.current();
             }
-          });
-          setActivePvPGame(activeGames.length > 0 ? activeGames[0] : null);
-        });
-        
-        // Store the unsubscribe functions for cleanup
-        if (invitesUnsubscribeRef.current) {
-          invitesUnsubscribeRef.current();
-        }
-        invitesUnsubscribeRef.current = unsubscribeInvites;
-        
-        // Store other unsubscribe functions
-        if (challengesUnsubscribeRef.current) {
-          challengesUnsubscribeRef.current();
-        }
-        challengesUnsubscribeRef.current = unsubscribeChallenges;
-        
-        if (activeGamesUnsubscribeRef.current) {
-          activeGamesUnsubscribeRef.current();
-        }
-        activeGamesUnsubscribeRef.current = activeGamesUnsubscribe;
+            invitesUnsubscribeRef.current = unsubscribeInvites;
+            
+            // Set up pending challenges listener
+            const challengesQuery = query(
+              collection(db, 'challenges'),
+              where('receiverId', '==', currentUser.uid),
+              where('status', '==', 'pending')
+            );
+            const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
+              const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              setPendingChallenges(challenges);
+            });
+            
+            // Set up active PvP games listener
+            const activeGamesQuery = query(
+              collection(db, 'games'),
+              where('playerId', '==', currentUser.uid),
+              where('status', 'in', ['waiting', 'ready'])
+            );
+            const activeGamesUnsubscribe = onSnapshot(activeGamesQuery, (snapshot) => {
+              const activeGames = [];
+              snapshot.forEach((doc) => {
+                const gameData = doc.data();
+                if (gameData.status === 'ready') {
+                  activeGames.push({ id: doc.id, ...gameData });
+                }
+              });
+              setActivePvPGame(activeGames.length > 0 ? activeGames[0] : null);
+            });
+            
+            // Store the unsubscribe functions for cleanup
+            if (invitesUnsubscribeRef.current) {
+              invitesUnsubscribeRef.current();
+            }
+            invitesUnsubscribeRef.current = unsubscribeInvites;
+            
+            // Store other unsubscribe functions
+            if (challengesUnsubscribeRef.current) {
+              challengesUnsubscribeRef.current();
+            }
+            challengesUnsubscribeRef.current = unsubscribeChallenges;
+            
+            if (activeGamesUnsubscribeRef.current) {
+              activeGamesUnsubscribeRef.current();
+            }
+            activeGamesUnsubscribeRef.current = activeGamesUnsubscribe;
+          } catch (error) {
+            console.error('HomeScreen: Failed to set up listeners:', error);
+          }
+        }, 100); // Small delay to ensure UI is responsive
         
       } else {
-        setDisplayName('Guest');
+        console.log('HomeScreen: No user document found, user might be anonymous');
+        // For anonymous users, try to get a name from Firebase user object
+        if (currentUser.isAnonymous) {
+          setDisplayName('Guest');
+        } else if (currentUser.email) {
+          const emailName = currentUser.email.split('@')[0];
+          setDisplayName(emailName);
+          console.log('HomeScreen: Using email prefix for anonymous user:', emailName);
+        } else {
+          setDisplayName('Guest');
+        }
       }
     } catch (error) {
       console.error('HomeScreen: Failed to load user profile:', error);
-      setDisplayName('Guest');
+      // Fallback to email prefix if available
+      if (currentUser.email) {
+        const emailName = currentUser.email.split('@')[0];
+        setDisplayName(emailName);
+        console.log('HomeScreen: Fallback to email prefix:', emailName);
+      } else {
+        setDisplayName('Guest');
+      }
     }
   };
 
@@ -119,13 +164,20 @@ const HomeScreen = () => {
       try {
         setIsAuthenticating(true);
         
-        // Check if user is already signed in
+        // Check if user is already signed in - this should be instant
         const currentUser = auth.currentUser;
         if (currentUser) {
           if (mounted) {
             setUser(currentUser);
-            await loadUserProfile(currentUser);
-            setIsAuthenticating(false);
+            setIsAuthenticating(false); // Set this immediately
+            
+            // Load profile and other data in background
+            Promise.all([
+              loadUserProfile(currentUser),
+              loadSounds(),
+              checkFirstLaunch(),
+              loadSavedGames()
+            ]).catch(console.error);
           }
           return;
         }
@@ -135,20 +187,36 @@ const HomeScreen = () => {
           if (mounted) {
             if (currentUser) {
               setUser(currentUser);
-              await loadUserProfile(currentUser);
+              setIsAuthenticating(false); // Set this immediately
+              
+              // Load profile and other data in background
+              Promise.all([
+                loadUserProfile(currentUser),
+                loadSounds(),
+                checkFirstLaunch(),
+                loadSavedGames()
+              ]).catch(console.error);
             } else {
               // Try anonymous auth
               try {
                 const anonymousUser = await authService.signInAnonymously();
                 if (mounted && anonymousUser) {
                   setUser(anonymousUser);
-                  await loadUserProfile(anonymousUser);
+                  setIsAuthenticating(false); // Set this immediately
+                  
+                  // Load profile and other data in background
+                  Promise.all([
+                    loadUserProfile(anonymousUser),
+                    loadSounds(),
+                    checkFirstLaunch(),
+                    loadSavedGames()
+                  ]).catch(console.error);
                 }
               } catch (error) {
                 console.error('HomeScreen: Anonymous auth failed:', error);
+                setIsAuthenticating(false);
               }
             }
-            setIsAuthenticating(false);
           }
         });
 
@@ -161,21 +229,8 @@ const HomeScreen = () => {
       }
     };
 
-    const initialize = async () => {
-      try {
-        await loadSounds();
-        await checkFirstLaunch();
-        await loadSavedGames();
-        await authenticate();
-      } catch (error) {
-        console.error('HomeScreen: Initialization failed:', error);
-        if (mounted) {
-          setIsAuthenticating(false);
-        }
-      }
-    };
-
-    initialize();
+    // Start authentication immediately
+    authenticate();
 
     return () => {
       mounted = false;
@@ -226,6 +281,18 @@ const HomeScreen = () => {
       setPendingChallenges([]);
     } catch (error) {
       console.error('HomeScreen: Sign out failed:', error);
+    }
+  };
+
+  const handleRefreshProfile = async () => {
+    try {
+      if (user) {
+        console.log('HomeScreen: Refreshing user profile...');
+        await loadUserProfile(user);
+        console.log('HomeScreen: Profile refresh completed');
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to refresh profile:', error);
     }
   };
 
@@ -299,36 +366,38 @@ const HomeScreen = () => {
     </View>
   );
 
-  return (
-    <SafeAreaView style={styles.screenContainer}>
-      <ScrollView
-        style={{ flex: 1, width: '100%' }}
-        contentContainerStyle={{ paddingBottom: 20, alignItems: 'center' }}
-        showsVerticalScrollIndicator={false}
-      >
+     return (
+     <View style={styles.screenContainer}>
+               {/* Fixed Header Image - Outside ScrollView */}
         <Image
           source={require('../assets/images/WhatsWord-header.png')}
-          style={styles.imageHeader}
+          style={[styles.imageHeader, { marginTop: 5, marginBottom: 10 }]}
           resizeMode="contain"
         />
-        <Text style={styles.header}>Welcome, {displayName}</Text>
+       
+       {/* Scrollable Content */}
+       <ScrollView
+         style={{ flex: 1, width: '100%' }}
+         contentContainerStyle={{ paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
+         showsVerticalScrollIndicator={false}
+       >
+         <Text style={[styles.header, { marginBottom: 10 }]}>Welcome, {displayName}</Text>
+        
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => {
+            playSound('chime');
+            navigation.navigate('Friends');
+          }}
+        >
+          <Text style={styles.buttonText}>Play A Friend</Text>
+        </TouchableOpacity>
         
         <TouchableOpacity
           style={styles.button}
           onPress={() => handleButtonPress('Game', { gameMode: 'solo', showDifficulty: true })}
         >
           <Text style={styles.buttonText}>Play Solo</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.button, isAuthenticating && styles.disabledButton]}
-          onPress={() => {
-            console.log('HomeScreen: Play A Friend button pressed, navigating to Friends screen');
-            navigation.navigate('Friends');
-          }}
-          disabled={isAuthenticating}
-        >
-          <Text style={styles.buttonText}>Play A Friend</Text>
         </TouchableOpacity>
         
         {activePvPGame && (
@@ -367,17 +436,16 @@ const HomeScreen = () => {
         
         <TouchableOpacity
           style={styles.button}
-          onPress={() => handleButtonPress('Leaderboard')}
+          onPress={() => {
+            handleButtonPress('Profile');
+            setShowMenuModal(false);
+          }}
         >
-          <Text style={styles.buttonText}>Leaderboard</Text>
+          <Text style={styles.buttonText}>Profile</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => navigation.navigate('Friends')}
-        >
-          <Text style={styles.buttonText}>Friends</Text>
-        </TouchableOpacity>
+
+
 
         {gameInvites.length > 0 && (
           <>
@@ -392,12 +460,12 @@ const HomeScreen = () => {
         )}
       </ScrollView>
       
-      <TouchableOpacity
-        style={styles.fabTop}
-        onPress={() => setShowMenuModal(true)}
-      >
-        <Text style={styles.fabText}>☰</Text>
-      </TouchableOpacity>
+             <TouchableOpacity
+         style={[styles.fabTop, { top: -50, right: 20 }]}
+         onPress={() => setShowMenuModal(true)}
+       >
+         <Text style={styles.fabText}>☰</Text>
+       </TouchableOpacity>
       
       <Modal visible={showMenuModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -449,12 +517,20 @@ const HomeScreen = () => {
                 <Text style={styles.buttonText}>Sign In</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity
-                style={styles.button}
-                onPress={handleSignOut}
-              >
-                <Text style={styles.buttonText}>Sign Out</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={handleSignOut}
+                >
+                  <Text style={styles.buttonText}>Sign Out</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={handleRefreshProfile}
+                >
+                  <Text style={styles.buttonText}>Refresh Profile</Text>
+                </TouchableOpacity>
+              </>
             )}
             <TouchableOpacity
               style={styles.button}
@@ -511,8 +587,8 @@ const HomeScreen = () => {
         <View style={styles.loadingOverlay}>
           <Text style={styles.loadingText}>Authenticating...</Text>
         </View>
-      )}
-    </SafeAreaView>
+             )}
+     </View>
   );
 };
 
