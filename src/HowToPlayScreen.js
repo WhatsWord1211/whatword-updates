@@ -27,22 +27,20 @@ const HowToPlayScreen = () => {
   dummyAlphabetPresent['T'.charCodeAt(0) - 65] = 'present'; // T as present
   dummyAlphabetPresent['O'.charCodeAt(0) - 65] = 'present'; // O as present
 
-  // Calculate max width for grid based on screen size
-  const windowWidth = Dimensions.get('window').width;
-
   const steps = [
     {
-      title: 'Welcome to',
+      title: 'Welcome To',
       description: (
         <View style={{ alignItems: 'center', width: '100%', paddingHorizontal: 5 }}>
           <Image
-            source={require('../assets/images/WhatsWord-header.png')}
-            style={{ width: 300, height: 150, resizeMode: 'contain' }}
+            source={require('../assets/images/WhatWord-header.png')}
+            style={{ width: 200, height: 80, marginBottom: 20 }}
+            resizeMode="contain"
           />
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 20 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             1. Pick a word you think will stump your opponent.
           </Text>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 20 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             2. Solve their word before they solve yours.
           </Text>
         </View>
@@ -53,27 +51,27 @@ const HowToPlayScreen = () => {
       title: 'Understanding Feedback',
       description: (
         <View style={{ width: '100%', paddingHorizontal: 5 }}>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 20 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             1. After each guess, you'll get feedback on which letters are in the mystery word.
           </Text>
-          <View style={[styles.feedbackGuide, { flexDirection: 'column' }]}>
-            <View style={[styles.feedbackItem, { marginBottom: 20 }]}>
-              <View style={[styles.feedbackCircle, {marginTop: 10 }] } />
-              <Text style={[styles.feedbackText, { color: '#FFFFFF', marginTop: 10, fontSize: 22 }]}>
+          <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#F59E0B', marginRight: 10 }} />
+              <Text style={{ color: '#FFFFFF', fontSize: 18 }}>
                 Correct Letter - Wrong Spot
               </Text>
             </View>
-            <View style={styles.feedbackItem}>
-              <View style={[styles.feedbackDot,{ marginBottom: 20}]} />
-              <Text style={[styles.feedbackText, { color: '#FFFFFF', marginBottom: 20, fontSize: 22 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#10B981', marginRight: 10 }} />
+              <Text style={{ color: '#FFFFFF', fontSize: 18 }}>
                 Correct Letter - Right Spot
               </Text>
             </View>
           </View>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 20 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             2. If you don't get any feedback, none of the letters in your guess are in the mystery word.
           </Text>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 20 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             3. Your job is to figure out where each letter belongs!
           </Text>
         </View>
@@ -82,12 +80,12 @@ const HowToPlayScreen = () => {
     {
       title: 'Toggling Letters',
       description: (
-        <View style={{ width: windowWidth, paddingHorizontal: 5, margin: 0 }}>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 15, marginHorizontal: 0 }]}>
+        <View style={{ width: '100%', paddingHorizontal: 5 }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             Long-press a letter to shade what letters you think you've eliminated.
           </Text>
-          <View style={[styles.alphabetContainer, { marginBottom: 10, padding: 0, margin: 0, width: windowWidth }]}>
-            <View style={[styles.alphabetGrid, { width: windowWidth, alignSelf: 'center', padding: 0, margin: 0, flexShrink: 1 }]}>
+          <View style={[styles.alphabetContainer, { marginBottom: 10, padding: 0, margin: 0, width: '100%' }]}>
+            <View style={[styles.alphabetGrid, { width: '100%', alignSelf: 'center', padding: 0, margin: 0, flexShrink: 1 }]}>
               {qwertyKeys.map((row, rowIndex) => (
                 <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 2 }}>
                   {row.map((letter) => {
@@ -104,11 +102,11 @@ const HowToPlayScreen = () => {
               ))}
             </View>
           </View>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginBottom: 15, marginHorizontal: 0 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 15, textAlign: 'center' }}>
             Long-press again to mark letters you think are in the word.
           </Text>
-          <View style={[styles.alphabetContainer, { marginBottom: 10, padding: 0, margin: 0, width: windowWidth }]}>
-            <View style={[styles.alphabetGrid, { width: windowWidth, alignSelf: 'center', padding: 0, margin: 0, flexShrink: 1 }]}>
+          <View style={[styles.alphabetContainer, { marginBottom: 10, padding: 0, margin: 0, width: '100%' }]}>
+            <View style={[styles.alphabetGrid, { width: '100%', alignSelf: 'center', padding: 0, margin: 0, flexShrink: 1 }]}>
               {qwertyKeys.map((row, rowIndex) => (
                 <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 2 }}>
                   {row.map((letter) => {
@@ -125,7 +123,7 @@ const HowToPlayScreen = () => {
               ))}
             </View>
           </View>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22, marginHorizontal: 0 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, textAlign: 'center' }}>
             Another long-press returns to normal. 
           </Text>
         </View>
@@ -135,10 +133,10 @@ const HowToPlayScreen = () => {
       title: 'Solo Mode',
       description: (
         <View style={{ width: '100%', paddingHorizontal: 5 }}>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', marginBottom: 30, fontSize: 22 }]}>
+          <Text style={{ color: '#FFFFFF', marginBottom: 20, fontSize: 18, textAlign: 'center' }}>
             Test your skills in solo mode. Solve mystery words and climb the leaderboard by keeping your average guesses low.
           </Text>
-          <Text style={[styles.tutorialText, { color: '#FFFFFF', fontSize: 22 }]}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, textAlign: 'center' }}>
             Use up to three hints to reveal letters. Using a hint disqualifies that game from the leaderboard. Use them wisely. Good luck!
           </Text>
         </View>
@@ -197,13 +195,19 @@ const HowToPlayScreen = () => {
         contentContainerStyle={{
           flexGrow: 1,
           alignItems: 'center',
-          padding: 5,
+          padding: 20,
           justifyContent: 'space-between',
         }}
         horizontal={false}
       >
         <View style={{ alignItems: 'center', width: '100%' }}>
-          <Text style={[styles.header, { color: '#FFFFFF', fontSize: 28 }]}>
+          <Text style={{ 
+            color: '#FFFFFF', 
+            fontSize: 24, 
+            fontWeight: 'bold',
+            marginBottom: 20,
+            textAlign: 'center'
+          }}>
             {steps[step].title}
           </Text>
           {steps[step].description}
@@ -213,7 +217,7 @@ const HowToPlayScreen = () => {
             style={[styles.button, { marginBottom: 10 }]}
             onPress={handleNext}
           >
-            <Text style={[styles.buttonText, { color: '#FFFFFF', fontSize: 20 }]}>
+            <Text style={[styles.buttonText, { color: '#FFFFFF', fontSize: 18 }]}>
               {step < steps.length - 1 ? 'Next' : 'Start Playing'}
             </Text>
           </TouchableOpacity>
@@ -221,7 +225,7 @@ const HowToPlayScreen = () => {
             style={styles.button}
             onPress={step === 0 ? handleBack : handleBackOtherPages}
           >
-            <Text style={[styles.buttonText, { color: '#FFFFFF', fontSize: 20 }]}>
+            <Text style={[styles.buttonText, { color: '#FFFFFF', fontSize: 18 }]}>
               {step === 0 ? 'Home' : 'Back'}
             </Text>
           </TouchableOpacity>

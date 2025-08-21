@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
@@ -19,7 +19,7 @@ const HomeScreen = () => {
   const [user, setUser] = useState(null);
   const [isAuthenticating, setIsAuthenticating] = useState(true);
   const [gameInvites, setGameInvites] = useState([]);
-  const [displayName, setDisplayName] = useState('Guest');
+  const [displayName, setDisplayName] = useState('Player');
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [activePvPGame, setActivePvPGame] = useState(null);
   const [pendingChallenges, setPendingChallenges] = useState([]);
@@ -37,7 +37,7 @@ const HomeScreen = () => {
         console.log('HomeScreen: User data from Firestore:', userData);
         
         // Try multiple sources for display name
-        let displayNameToUse = 'Guest';
+        let displayNameToUse = 'Player';
         
         if (currentUser.displayName && currentUser.displayName.trim()) {
           displayNameToUse = currentUser.displayName.trim();
@@ -57,7 +57,7 @@ const HomeScreen = () => {
         console.log('HomeScreen: Final displayName set to:', displayNameToUse);
         setDisplayName(displayNameToUse);
         
-        // Set up listeners in background without blocking
+        // Set up listeners for all authenticated users
         setTimeout(() => {
           try {
             // Set up game invites listener
@@ -125,17 +125,24 @@ const HomeScreen = () => {
         }, 100); // Small delay to ensure UI is responsive
         
       } else {
-        console.log('HomeScreen: No user document found, user might be anonymous');
-        // For anonymous users, try to get a name from Firebase user object
-        if (currentUser.isAnonymous) {
-          setDisplayName('Guest');
-        } else if (currentUser.email) {
-          const emailName = currentUser.email.split('@')[0];
-          setDisplayName(emailName);
-          console.log('HomeScreen: Using email prefix for anonymous user:', emailName);
-        } else {
-          setDisplayName('Guest');
-        }
+        console.log('HomeScreen: No user document found, creating one...');
+        // Create user profile if it doesn't exist
+        const username = currentUser.email ? currentUser.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`;
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          uid: currentUser.uid,
+          username: username,
+          displayName: username,
+          email: currentUser.email,
+          createdAt: new Date(),
+          lastLogin: new Date(),
+          gamesPlayed: 0,
+          gamesWon: 0,
+          bestScore: 0,
+          totalScore: 0,
+          friends: [],
+          isAnonymous: false
+        });
+        setDisplayName(username);
       }
     } catch (error) {
       console.error('HomeScreen: Failed to load user profile:', error);
@@ -145,31 +152,22 @@ const HomeScreen = () => {
         setDisplayName(emailName);
         console.log('HomeScreen: Fallback to email prefix:', emailName);
       } else {
-        setDisplayName('Guest');
+        setDisplayName('Player');
       }
     }
   };
-
-  useEffect(() => {
-    // Check if navigation is ready
-    if (navigation && navigation.isReady) {
-      setNavigationReady(true);
-    }
-  }, [navigation]);
 
   useEffect(() => {
     let mounted = true;
 
     const authenticate = async () => {
       try {
-        setIsAuthenticating(true);
-        
         // Check if user is already signed in - this should be instant
         const currentUser = auth.currentUser;
         if (currentUser) {
           if (mounted) {
             setUser(currentUser);
-            setIsAuthenticating(false); // Set this immediately
+            setIsAuthenticating(false);
             
             // Load profile and other data in background
             Promise.all([
@@ -187,7 +185,7 @@ const HomeScreen = () => {
           if (mounted) {
             if (currentUser) {
               setUser(currentUser);
-              setIsAuthenticating(false); // Set this immediately
+              setIsAuthenticating(false);
               
               // Load profile and other data in background
               Promise.all([
@@ -197,25 +195,8 @@ const HomeScreen = () => {
                 loadSavedGames()
               ]).catch(console.error);
             } else {
-              // Try anonymous auth
-              try {
-                const anonymousUser = await authService.signInAnonymously();
-                if (mounted && anonymousUser) {
-                  setUser(anonymousUser);
-                  setIsAuthenticating(false); // Set this immediately
-                  
-                  // Load profile and other data in background
-                  Promise.all([
-                    loadUserProfile(anonymousUser),
-                    loadSounds(),
-                    checkFirstLaunch(),
-                    loadSavedGames()
-                  ]).catch(console.error);
-                }
-              } catch (error) {
-                console.error('HomeScreen: Anonymous auth failed:', error);
-                setIsAuthenticating(false);
-              }
+              // No user authenticated - this shouldn't happen in the new flow
+              setIsAuthenticating(false);
             }
           }
         });
@@ -274,7 +255,7 @@ const HomeScreen = () => {
     try {
       await authService.signOut();
       setUser(null);
-      setDisplayName('Guest');
+      setDisplayName('Player');
       setSavedGames([]);
       setGameInvites([]);
       setActivePvPGame(null);
@@ -366,23 +347,24 @@ const HomeScreen = () => {
     </View>
   );
 
-     return (
-     <View style={styles.screenContainer}>
-               {/* Fixed Header Image - Outside ScrollView */}
-        <Image
-          source={require('../assets/images/WhatsWord-header.png')}
-          style={[styles.imageHeader, { marginTop: 5, marginBottom: 10 }]}
-          resizeMode="contain"
-        />
-       
-       {/* Scrollable Content */}
-       <ScrollView
-         style={{ flex: 1, width: '100%' }}
-         contentContainerStyle={{ paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
-         showsVerticalScrollIndicator={false}
-       >
-         <Text style={[styles.header, { marginBottom: 10 }]}>Welcome, {displayName}</Text>
+  return (
+    <View style={styles.screenContainer}>
+      {/* Fixed Header Image - Outside ScrollView */}
+      <Image
+        source={require('../assets/images/WhatWord-header.png')}
+        style={[styles.imageHeader, { marginTop: 5, marginBottom: 10 }]}
+        resizeMode="contain"
+      />
+      
+      {/* Scrollable Content */}
+      <ScrollView
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.header, { marginBottom: 10 }]}>Welcome, {displayName}</Text>
         
+        {/* PvP Button */}
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
@@ -400,6 +382,7 @@ const HomeScreen = () => {
           <Text style={styles.buttonText}>Play Solo</Text>
         </TouchableOpacity>
         
+        {/* Active PvP Game */}
         {activePvPGame && (
           <TouchableOpacity
             style={[styles.button, { backgroundColor: '#10B981' }]}
@@ -434,19 +417,18 @@ const HomeScreen = () => {
           <Text style={styles.buttonText}>How To Play</Text>
         </TouchableOpacity>
         
+        {/* Profile Button */}
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            handleButtonPress('Profile');
-            setShowMenuModal(false);
+            playSound('chime');
+            navigation.navigate('Profile');
           }}
         >
           <Text style={styles.buttonText}>Profile</Text>
         </TouchableOpacity>
 
-
-
-
+        {/* Game Invites */}
         {gameInvites.length > 0 && (
           <>
             <Text style={styles.header}>Game Invites</Text>
@@ -454,84 +436,41 @@ const HomeScreen = () => {
               data={gameInvites}
               renderItem={renderInvite}
               keyExtractor={item => item.id}
-              style={{ width: '100%', maxHeight: 200 }}
+              style={{ width: "100%", maxHeight: 200 }}
             />
           </>
         )}
+
+
       </ScrollView>
       
-             <TouchableOpacity
-         style={[styles.fabTop, { top: -50, right: 20 }]}
-         onPress={() => setShowMenuModal(true)}
-       >
-         <Text style={styles.fabText}>☰</Text>
-       </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.fabTop, { top: 50, right: 20, zIndex: 1000 }]}
+        onPress={() => {
+          console.log('🔧 DEV MODE: FAB button tapped!');
+          setShowMenuModal(true);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.fabText}>☰</Text>
+      </TouchableOpacity>
       
       <Modal visible={showMenuModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow]}>
             <Text style={styles.header}>Menu</Text>
-            {user?.isAnonymous ? (
-              <TouchableOpacity
-                style={styles.button}
-                onPress={() => {
-                  try {
-                    console.log('Navigation state:', {
-                      hasNavigation: !!navigation,
-                      hasNavigate: !!(navigation && navigation.navigate),
-                      isAuthenticating,
-                      navigationReady,
-                      navigationKeys: navigation ? Object.keys(navigation) : 'No navigation'
-                    });
-                    
-                    if (navigation && navigation.navigate && !isAuthenticating) {
-                      console.log('Attempting to navigate to Auth screen...');
-                      try {
-                        // Try using push instead of navigate
-                        if (navigation.push) {
-                          navigation.push('Auth');
-                          console.log('Navigation to Auth using push successful');
-                        } else {
-                          navigation.navigate('Auth');
-                          console.log('Navigation to Auth using navigate successful');
-                        }
-                      } catch (navError) {
-                        console.error('Navigation failed:', navError);
-                        // Try alternative navigation method
-                        try {
-                          navigation.goBack();
-                          navigation.navigate('Auth');
-                        } catch (altError) {
-                          console.error('Alternative navigation also failed:', altError);
-                        }
-                      }
-                    } else {
-                      console.warn('Navigation not ready yet or still authenticating. Navigation ready:', navigationReady);
-                    }
-                  } catch (error) {
-                    console.error('Navigation error:', error);
-                  }
-                }}
-                disabled={isAuthenticating || !navigationReady}
-              >
-                <Text style={styles.buttonText}>Sign In</Text>
-              </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={styles.button}
-                  onPress={handleSignOut}
-                >
-                  <Text style={styles.buttonText}>Sign Out</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.button}
-                  onPress={handleRefreshProfile}
-                >
-                  <Text style={styles.buttonText}>Refresh Profile</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleSignOut}
+            >
+              <Text style={styles.buttonText}>Sign Out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleRefreshProfile}
+            >
+              <Text style={styles.buttonText}>Refresh Profile</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.button}
               onPress={() => {
@@ -583,12 +522,12 @@ const HomeScreen = () => {
         </View>
       </Modal>
       
-      {isAuthenticating && (
+      {isAuthenticating && !user && (
         <View style={styles.loadingOverlay}>
           <Text style={styles.loadingText}>Authenticating...</Text>
         </View>
-             )}
-     </View>
+        )}
+    </View>
   );
 };
 

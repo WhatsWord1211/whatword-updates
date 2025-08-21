@@ -26,6 +26,7 @@ const GameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { showDifficulty, gameMode, wordLength, soloWord, gameId: initialGameId, playerId, isCreator, guesses: savedGuesses, inputWord: savedInputWord, alphabet: savedAlphabet, targetWord: savedTargetWord, gameState: savedGameState, hintCount: savedHintCount } = route.params || {};
+
   const [difficulty, setDifficulty] = useState(null);
   const [inputWord, setInputWord] = useState(savedInputWord || '');
   const [guesses, setGuesses] = useState(savedGuesses || []);
@@ -622,6 +623,7 @@ const GameScreen = () => {
             await playSound('victory').catch(() => {});
             const newScore = guesses.length + 1;
             try {
+              // Always save to local storage for all users
               const leaderboard = await AsyncStorage.getItem('leaderboard') || '[]';
               const leaderboardData = JSON.parse(leaderboard);
               leaderboardData.push({ 
@@ -632,12 +634,16 @@ const GameScreen = () => {
               });
               if (leaderboardData.length > 15) leaderboardData.shift();
               await AsyncStorage.setItem('leaderboard', JSON.stringify(leaderboardData));
-              await setDoc(doc(db, 'leaderboard', `score_${auth.currentUser?.uid}_${Date.now()}`), {
-                mode: gameMode,
-                guesses: newScore,
-                timestamp: new Date().toISOString(), 
-                userId: auth.currentUser?.uid || 'Anonymous',
-              }, { merge: true });
+              
+              // Only save to Firebase for authenticated users (not guests)
+              if (auth.currentUser?.uid) {
+                await setDoc(doc(db, 'leaderboard', `score_${auth.currentUser.uid}_${Date.now()}`), {
+                  mode: gameMode,
+                  guesses: newScore,
+                  timestamp: new Date().toISOString(), 
+                  userId: auth.currentUser.uid,
+                }, { merge: true });
+              }
             } catch (error) {
               console.error('GameScreen: Failed to update leaderboard', error);
             }

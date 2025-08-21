@@ -154,18 +154,18 @@ class FriendsService {
       if (!this.currentUser) throw new Error('User not authenticated');
       
       const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-      const q = query(friendsRef, where('status', '==', 'accepted'));
-      const querySnapshot = await getDocs(q);
+      const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+      const querySnapshot = await getDocs(friendsQuery);
       
       const friends = [];
-      for (const friendDoc of querySnapshot.docs) {
-        const friendData = friendDoc.data();
+      for (const friendDocSnapshot of querySnapshot.docs) {
+        const friendData = friendDocSnapshot.data();
         // Get the friend's user profile
-        const userDoc = await getDoc(doc(db, 'users', friendDoc.id));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
+        const userDocRef = await getDoc(doc(db, 'users', friendDocSnapshot.id));
+        if (userDocRef.exists()) {
+          const userData = userDocRef.data();
           friends.push({
-            id: friendDoc.id,
+            id: friendDocSnapshot.id,
             username: userData.username,
             displayName: userData.displayName,
             photoURL: userData.photoURL,
@@ -189,18 +189,18 @@ class FriendsService {
       if (!this.currentUser) throw new Error('User not authenticated');
       
       const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-      const q = query(friendsRef, where('status', '==', 'pending'));
-      const querySnapshot = await getDocs(q);
+      const requestsQuery = query(friendsRef, where('status', '==', 'pending'));
+      const querySnapshot = await getDocs(requestsQuery);
       
       const requests = [];
-      for (const requestDoc of querySnapshot.docs) {
-        const requestData = requestDoc.data();
+      for (const requestDocSnapshot of querySnapshot.docs) {
+        const requestData = requestDocSnapshot.data();
         // Get the sender's user profile
-        const userDoc = await getDoc(doc(db, 'users', requestDoc.id));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
+        const userDocRef = await getDoc(doc(db, 'users', requestDocSnapshot.id));
+        if (userDocRef.exists()) {
+          const userData = userDocRef.data();
           requests.push({
-            id: requestDoc.id,
+            id: requestDocSnapshot.id,
             username: userData.username,
             displayName: userData.displayName,
             photoURL: userData.photoURL,
@@ -244,22 +244,22 @@ class FriendsService {
   }
 
   // Friend Search
-  async searchUsers(query) {
+  async searchUsers(usernameQuery) {
     try {
-      if (!query || query.length < 2) return [];
+      if (!usernameQuery || usernameQuery.length < 2) return [];
       
       const usersRef = collection(db, 'users');
-      const q = query(
+      const searchQuery = query(
         usersRef,
-        where('username', '>=', query),
-        where('username', '<=', query + '\uf8ff'),
+        where('username', '>=', usernameQuery),
+        where('username', '<=', usernameQuery + '\uf8ff'),
         orderBy('username'),
         limit(10)
       );
       
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await getDocs(searchQuery);
       const results = querySnapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }))
         .filter(user => user.id !== this.currentUser?.uid);
       
       // Add friendship status to search results
@@ -432,18 +432,18 @@ class FriendsService {
     if (!this.currentUser) return null;
     
     const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-    const q = query(friendsRef, where('status', '==', 'accepted'));
+    const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
     
-    this.friendsUnsubscribe = onSnapshot(q, async (snapshot) => {
+    this.friendsUnsubscribe = onSnapshot(friendsQuery, async (snapshot) => {
       const friends = [];
-      for (const friendDoc of snapshot.docs) {
-        const friendData = friendDoc.data();
+      for (const friendDocSnapshot of snapshot.docs) {
+        const friendData = friendDocSnapshot.data();
         // Get the friend's user profile
-        const userDoc = await getDoc(doc(db, 'users', friendDoc.id));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
+        const userDocRef = await getDoc(doc(db, 'users', friendDocSnapshot.id));
+        if (userDocRef.exists()) {
+          const userData = userDocRef.data();
           friends.push({
-            id: friendDoc.id,
+            id: friendDocSnapshot.id,
             username: userData.username,
             displayName: userData.displayName,
             photoURL: userData.photoURL,
@@ -463,18 +463,18 @@ class FriendsService {
     if (!this.currentUser) return null;
     
     const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-    const q = query(friendsRef, where('status', '==', 'pending'));
+    const requestsQuery = query(friendsRef, where('status', '==', 'pending'));
     
-    this.requestsUnsubscribe = onSnapshot(q, async (snapshot) => {
+    this.requestsUnsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
       const requests = [];
-      for (const requestDoc of snapshot.docs) {
-        const requestData = requestDoc.data();
+      for (const requestDocSnapshot of snapshot.docs) {
+        const requestData = requestDocSnapshot.data();
         // Get the sender's user profile
-        const userDoc = await getDoc(doc(db, 'users', requestDoc.id));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
+        const userDocRef = await getDoc(doc(db, 'users', requestDocSnapshot.id));
+        if (userDocRef.exists()) {
+          const userData = userDocRef.data();
           requests.push({
-            id: requestDoc.id,
+            id: requestDocSnapshot.id,
             username: userData.username,
             displayName: userData.displayName,
             photoURL: userData.photoURL,
@@ -494,15 +494,15 @@ class FriendsService {
     if (!this.currentUser) return null;
     
     const challengesRef = collection(db, 'challenges');
-    const q = query(
+    const challengesQuery = query(
       challengesRef,
       where('toUid', '==', this.currentUser.uid),
       where('status', '==', 'pending'),
       orderBy('createdAt', 'desc')
     );
     
-    this.challengesUnsubscribe = onSnapshot(q, (snapshot) => {
-      const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    this.challengesUnsubscribe = onSnapshot(challengesQuery, (snapshot) => {
+      const challenges = snapshot.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }));
       callback(challenges);
     });
     

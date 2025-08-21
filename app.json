@@ -1,11 +1,13 @@
 {
-  "expo": {
-    "name": "WhatWord",
-    "slug": "whatword",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+      "expo": {
+      "name": "WhatWord",
+      "slug": "whatword",
+      "owner": "wilderbssmstr",
+      "version": "1.0.0",
+      "orientation": "portrait",
+      "icon": "./assets/icon.png",
+      "userInterfaceStyle": "light",
+      "scheme": "com.whatword.app",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -47,12 +49,12 @@
       "eas": {
         "projectId": "b189d504-5441-4ee4-977f-2ad58d77659d"
       },
-      "firebaseApiKey": "AIzaSyC1pxEdLS7La9HOq7AnIlIFMpYCfNbp0cY",
+      "firebaseApiKey": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
       "firebaseAuthDomain": "whatword-a3f4b.firebaseapp.com",
       "firebaseProjectId": "whatword-a3f4b",
       "firebaseStorageBucket": "whatword-a3f4b.firebasestorage.app",
       "firebaseMessagingSenderId": "1052433400571",
-      "firebaseAppId": "1:1052433400571:android:44c66d29f40cb480d9265e",
+      "firebaseAppId": "1:1052433400571:web:16122dad5c5a1344d9265e",
       "firebaseMeasurementId": "G-TWN7PXQ55G"
     }
   }

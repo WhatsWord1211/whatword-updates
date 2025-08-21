@@ -1,41 +1,112 @@
-// AuthScreen with full authentication functionality
+// AuthScreen with clean authentication flow - no guest mode
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView } from "react-native";
-import { signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Linking } from "react-native";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential } from "firebase/auth";
+import { doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { auth, db, googleProvider } from "./firebase";
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+
+// Ensure WebBrowser redirects work properly
+WebBrowser.maybeCompleteAuthSession();
 
 const AuthScreen = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
-  const handleAnonymousSignIn = async () => {
+  const handleFacebookSignIn = async () => {
+    Alert.alert(
+      "Coming Soon", 
+      "Facebook sign-in will be available soon! For now, please use Google or email sign-in.",
+      [{ text: "OK" }]
+    );
+  };
+
+  const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
-      const result = await signInAnonymously(auth);
+      console.log('🔧 DEV MODE: Starting Google sign-in with manual OAuth flow...');
+
+      // Try using Expo's built-in Google authentication
+      console.log('🔧 DEV MODE: Attempting to use Expo built-in Google auth...');
       
-      // Create user profile in Firestore
-      const username = `Player${Math.floor(Math.random() * 10000)}`;
-      await setDoc(doc(db, 'users', result.user.uid), {
-        uid: result.user.uid,
-        username: username,
-        displayName: username, // Add displayName field
-        email: null,
-        createdAt: new Date(),
-        lastLogin: new Date(),
-        gamesPlayed: 0,
-        gamesWon: 0,
-        bestScore: 0,
-        totalScore: 0,
-        friends: [],
-        isAnonymous: true
-      });
+      try {
+        // Use the custom scheme redirect URI for standalone builds
+        const request = new AuthSession.AuthRequest({
+          clientId: '1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com',
+          scopes: ['openid', 'profile', 'email'],
+          redirectUri: 'com.whatword.app://auth',
+          responseType: AuthSession.ResponseType.Code,
+        });
+
+        console.log('🔧 DEV MODE: Auth request created:', request);
+        
+        // Get the auth URL
+        const authUrl = await request.makeAuthUrlAsync();
+        console.log('🔧 DEV MODE: Auth URL created:', authUrl);
+
+        // Open the auth session
+        const result = await request.promptAsync({
+          authUrl,
+          showInRecents: true,
+        });
+
+        console.log('🔧 DEV MODE: Auth session result:', result);
+
+        if (result.type === 'success') {
+          console.log('🔧 DEV MODE: Auth session successful:', result);
+          console.log('🔧 DEV MODE: Authorization code received:', result.params.code);
+          
+          // Exchange the authorization code for tokens
+          console.log('🔧 DEV MODE: Starting token exchange...');
+          
+          const discovery = {
+            authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+            tokenEndpoint: 'https://oauth2.googleapis.com/token',
+            revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
+          };
+          
+                      const tokenResult = await AuthSession.exchangeCodeAsync(
+              {
+                clientId: '1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com',
+                code: result.params.code,
+                redirectUri: 'com.whatword.app://auth',
+                extraParams: {
+                  code_verifier: request.codeChallenge,
+                },
+              },
+              discovery
+            );
+          
+          console.log('🔧 DEV MODE: Token exchange successful:', tokenResult);
+          
+          // Continue with Firebase authentication...
+          return await handleGoogleTokenExchange(tokenResult);
+          
+        } else if (result.type === 'cancel') {
+          console.log('🔧 DEV MODE: OAuth flow cancelled by user');
+          Alert.alert("Sign In Cancelled", "You cancelled the sign-in process.");
+        } else {
+          console.log('🔧 DEV MODE: OAuth flow failed:', result);
+          Alert.alert("Google Sign-In Error", "Failed to complete Google sign-in. Please try again.");
+        }
+        
+      } catch (authError) {
+        console.error('🔧 DEV MODE: Expo auth failed:', authError);
+        Alert.alert("Expo Auth Error", "Failed to start Expo authentication. Please try again.");
+      }
+
+      console.log('🔧 DEV MODE: Auth URL created:', authUrl);
+
+                  // This section is now handled by the Expo AuthSession approach above
       
-      Alert.alert("Success!", "Signed in anonymously");
     } catch (error) {
-      Alert.alert("Error", error.message);
+      console.error('🔧 DEV MODE: Google sign-in error:', error);
+      console.error('🔧 DEV MODE: Error message:', error.message);
+      Alert.alert("Google Sign-In Error", error.message || "An error occurred during Google sign-in.");
     } finally {
       setLoading(false);
     }
@@ -49,27 +120,40 @@ const AuthScreen = () => {
 
     try {
       setLoading(true);
+      console.log('🔧 DEV MODE: Starting email auth...');
+      console.log('🔧 DEV MODE: Auth instance:', auth);
+      console.log('🔧 DEV MODE: DB instance:', db);
+      
       let result;
 
       if (isLogin) {
+        console.log('🔧 DEV MODE: Attempting sign in...');
         result = await signInWithEmailAndPassword(auth, email, password);
+        console.log('🔧 DEV MODE: Sign in successful:', result.user.uid);
         
         // Ensure user profile exists and is updated on sign in
         const userDocRef = doc(db, 'users', result.user.uid);
+        console.log('🔧 DEV MODE: User doc ref created:', userDocRef.path);
+        
+        console.log('🔧 DEV MODE: Attempting to get user doc...');
         const userDoc = await getDoc(userDocRef);
+        console.log('🔧 DEV MODE: User doc retrieved:', userDoc.exists());
         
         if (userDoc.exists()) {
           // Update existing profile with last login time
+          console.log('🔧 DEV MODE: Updating existing profile...');
           await updateDoc(userDocRef, {
             lastLogin: new Date(),
             email: email
           });
+          console.log('🔧 DEV MODE: Profile updated successfully');
         } else {
-          // Create profile if it doesn't exist (shouldn't happen for existing users, but just in case)
+          // Create profile if it doesn't exist
+          console.log('🔧 DEV MODE: Creating new profile...');
           await setDoc(userDocRef, {
             uid: result.user.uid,
             username: email.split('@')[0],
-            displayName: email.split('@')[0], // Add displayName field
+            displayName: email.split('@')[0],
             email: email,
             createdAt: new Date(),
             lastLogin: new Date(),
@@ -80,17 +164,29 @@ const AuthScreen = () => {
             friends: [],
             isAnonymous: false
           });
+          console.log('🔧 DEV MODE: Profile created successfully');
         }
         
         Alert.alert("Success!", "Signed in successfully");
+        console.log('🔧 DEV MODE: Sign in completed, user should be redirected automatically');
+        console.log('🔧 DEV MODE: Current auth user:', auth.currentUser);
+        
+        // Add a small delay to ensure App.js state update propagates
+        setTimeout(() => {
+          console.log('🔧 DEV MODE: Delayed check - auth user:', auth.currentUser);
+        }, 1000);
       } else {
+        // Create new account
+        console.log('🔧 DEV MODE: Creating new account...');
         result = await createUserWithEmailAndPassword(auth, email, password);
+        console.log('🔧 DEV MODE: Account created:', result.user.uid);
         
         // Create user profile in Firestore
+        console.log('🔧 DEV MODE: Creating user profile...');
         await setDoc(doc(db, 'users', result.user.uid), {
           uid: result.user.uid,
           username: email.split('@')[0],
-          displayName: email.split('@')[0], // Add displayName field
+          displayName: email.split('@')[0],
           email: email,
           createdAt: new Date(),
           lastLogin: new Date(),
@@ -101,81 +197,156 @@ const AuthScreen = () => {
           friends: [],
           isAnonymous: false
         });
+        console.log('🔧 DEV MODE: Profile created successfully');
         
-        Alert.alert("Success!", "Account created successfully");
+        Alert.alert("Success!", "Account created successfully! You can now customize your profile.");
+        console.log('🔧 DEV MODE: Account creation completed, user should be redirected automatically');
+        console.log('🔧 DEV MODE: Current auth user:', auth.currentUser);
+        
+        // Add a small delay to ensure App.js state update propagates
+        setTimeout(() => {
+          console.log('🔧 DEV MODE: Delayed check - auth user:', auth.currentUser);
+        }, 1000);
       }
     } catch (error) {
+      console.error('🔧 DEV MODE: Auth error:', error);
+      console.error('🔧 DEV MODE: Error code:', error.code);
+      console.error('🔧 DEV MODE: Error message:', error.message);
       Alert.alert("Error", error.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleTermsPress = () => {
+    Alert.alert(
+      "Terms & Privacy", 
+      "Terms of Service and Privacy Policy will be available soon.",
+      [{ text: "OK" }]
+    );
+  };
+
+
+
+  if (showEmailForm) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+                  <Text style={styles.welcomeText}>Welcome To</Text>
+        
+        <Image
+          source={require('../assets/images/WhatWord-header.png')}
+          style={styles.headerImage}
+          resizeMode="contain"
+        />
+        
+        <Text style={styles.subtitle}>
+          {isLogin ? "Welcome back!" : "Create your account"}
+        </Text>
+          
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#9CA3AF"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            
+            <TouchableOpacity 
+              style={[styles.button, loading && styles.disabledButton]}
+              onPress={handleEmailAuth}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>
+                {loading ? "Loading..." : (isLogin ? "Sign In" : "Create Account")}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.textButton}
+              onPress={() => setIsLogin(!isLogin)}
+            >
+              <Text style={styles.textButtonText}>
+                {isLogin ? "Need an account? Create Account" : "Have an account? Sign In"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setShowEmailForm(false)}
+          >
+            <Text style={styles.backButtonText}>← Back to Sign In Options</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>WhatWord</Text>
-        <Text style={styles.subtitle}>Word Guessing Game</Text>
+        <Text style={styles.welcomeText}>Welcome To</Text>
         
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#9CA3AF"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#9CA3AF"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+        <Image
+          source={require('../assets/images/WhatWord-header.png')}
+          style={styles.headerImage}
+          resizeMode="contain"
+        />
+        
+        <Text style={styles.subtitle}>Sign in to start playing with friends!</Text>
+        
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={[styles.socialButton, styles.facebookButton]}
+            onPress={handleFacebookSignIn}
+          >
+            <Text style={styles.facebookButtonText}>📘 Sign in with Facebook</Text>
+          </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.button, loading && styles.disabledButton]}
-            onPress={handleEmailAuth}
+            style={[styles.socialButton, styles.googleButton, loading && styles.disabledButton]}
+            onPress={handleGoogleSignIn}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>
-              {loading ? "Loading..." : (isLogin ? "Sign In" : "Sign Up")}
+            <Text style={styles.googleButtonText}>
+              {loading ? "Signing in..." : "🔍 Sign in with Google"}
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.textButton}
-            onPress={() => setIsLogin(!isLogin)}
+            style={[styles.socialButton, styles.emailButton]}
+            onPress={() => setShowEmailForm(true)}
           >
-            <Text style={styles.textButtonText}>
-              {isLogin ? "Need an account? Sign Up" : "Have an account? Sign In"}
-            </Text>
+            <Text style={styles.emailButtonText}>✉️ Sign in with Email</Text>
           </TouchableOpacity>
-        </View>
-        
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
         </View>
         
         <TouchableOpacity 
-          style={[styles.anonymousButton, loading && styles.disabledButton]}
-          onPress={handleAnonymousSignIn}
-          disabled={loading}
+          style={styles.termsContainer}
+          onPress={handleTermsPress}
         >
-          <Text style={styles.anonymousButtonText}>
-            {loading ? "Loading..." : "Play as Guest"}
+          <Text style={styles.termsText}>
+            By continuing, you agree to the{" "}
+            <Text style={styles.termsLink}>terms</Text>
+            {" "}and{" "}
+            <Text style={styles.termsLink}>privacy policy</Text>
           </Text>
         </TouchableOpacity>
         
-        <Text style={styles.firebaseStatus}>
-          Firebase: {auth ? "Connected ✅" : "Not Connected ❌"}
-        </Text>
+
       </View>
     </SafeAreaView>
   );
@@ -188,9 +359,22 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: "center",
+    justifyContent: "space-between",
     alignItems: "center",
     padding: 20,
+  },
+  headerImage: {
+    width: "100%",
+    height: 120,
+    marginTop: 20,
+    maxWidth: 350,
+  },
+  welcomeText: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#E5E7EB",
+    marginBottom: 20,
+    textAlign: "center",
   },
   title: {
     fontSize: 48,
@@ -204,6 +388,46 @@ const styles = StyleSheet.create({
     color: "#E5E7EB",
     marginBottom: 40,
     textAlign: "center",
+  },
+  buttonContainer: {
+    width: "100%",
+    maxWidth: 300,
+    marginBottom: 40,
+  },
+  socialButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 16,
+    borderWidth: 2,
+  },
+  facebookButton: {
+    backgroundColor: "#1877F2",
+    borderColor: "#1877F2",
+  },
+  facebookButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  googleButton: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DB4437",
+  },
+  googleButtonText: {
+    color: "#DB4437",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  emailButton: {
+    backgroundColor: "#F59E0B",
+    borderColor: "#F59E0B",
+  },
+  emailButtonText: {
+    color: "#1F2937",
+    fontSize: 16,
+    fontWeight: "600",
   },
   form: {
     width: "100%",
@@ -239,44 +463,97 @@ const styles = StyleSheet.create({
     color: "#F59E0B",
     fontSize: 14,
   },
-  divider: {
-    flexDirection: "row",
+  backButton: {
     alignItems: "center",
-    marginVertical: 30,
-    width: "100%",
-    maxWidth: 300,
+    marginBottom: 20,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#4B5563",
-  },
-  dividerText: {
+  backButtonText: {
     color: "#9CA3AF",
-    marginHorizontal: 15,
     fontSize: 14,
-  },
-  anonymousButton: {
-    backgroundColor: "#374151",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  anonymousButtonText: {
-    color: "#E5E7EB",
-    fontSize: 16,
-    fontWeight: "600",
   },
   disabledButton: {
     opacity: 0.6,
   },
-  firebaseStatus: {
+  termsContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  termsText: {
     color: "#9CA3AF",
     fontSize: 12,
     textAlign: "center",
+    lineHeight: 18,
+  },
+  termsLink: {
+    color: "#F59E0B",
+    textDecorationLine: "underline",
+  },
+  testButton: {
+    backgroundColor: "#6B7280",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  testButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
+
+// Helper function to handle Google token exchange and Firebase authentication
+const handleGoogleTokenExchange = async (tokenResult) => {
+  try {
+    console.log('🔧 DEV MODE: Starting Firebase authentication...');
+    
+    // Create Firebase credential
+    const credential = googleProvider.credential(tokenResult.idToken);
+    
+    // Sign in to Firebase
+    const firebaseResult = await signInWithCredential(auth, credential);
+    console.log('🔧 DEV MODE: Firebase authentication successful:', firebaseResult.user.uid);
+    
+    // Check if user profile exists
+    const userDocRef = doc(db, 'users', firebaseResult.user.uid);
+    const userDoc = await getDoc(userDocRef);
+    
+    if (userDoc.exists()) {
+      // Update existing profile
+      await updateDoc(userDocRef, {
+        lastLogin: new Date(),
+        email: firebaseResult.user.email,
+        displayName: firebaseResult.user.displayName || firebaseResult.user.email.split('@')[0]
+      });
+      console.log('🔧 DEV MODE: Profile updated successfully');
+    } else {
+      // Create new profile
+      await setDoc(userDocRef, {
+        uid: firebaseResult.user.uid,
+        username: firebaseResult.user.email ? firebaseResult.user.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`,
+        displayName: firebaseResult.user.displayName || (firebaseResult.user.email ? firebaseResult.user.email.split('@')[0] : 'Player'),
+        email: firebaseResult.user.email,
+        createdAt: new Date(),
+        lastLogin: new Date(),
+        gamesPlayed: 0,
+        gamesWon: 0,
+        bestScore: 0,
+        totalScore: 0,
+        friends: [],
+        isAnonymous: false,
+      });
+      console.log('🔧 DEV MODE: Profile created successfully');
+    }
+    
+    Alert.alert("Success!", "Signed in with Google successfully!");
+    console.log('🔧 DEV MODE: Google sign-in completed, user should be redirected automatically');
+    
+  } catch (error) {
+    console.error('🔧 DEV MODE: Firebase authentication error:', error);
+    Alert.alert("Firebase Error", "Failed to authenticate with Firebase. Please try again.");
+    throw error;
+  }
+};
 
 export default AuthScreen;

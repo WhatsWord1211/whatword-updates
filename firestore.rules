@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow users to read and write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow users to read other users for search functionality
+      allow read: if request.auth != null;
+      
+      // Allow users to read and write their own friends subcollection
+      match /friends/{friendId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Allow authenticated users to read and write challenges
+    match /challenges/{challengeId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Allow authenticated users to read and write games
+    match /games/{gameId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Allow authenticated users to read and write friend requests
+    match /friendRequests/{requestId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Allow authenticated users to read and write notifications
+    match /notifications/{notificationId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

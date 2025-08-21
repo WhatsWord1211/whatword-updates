@@ -1874,7 +1874,6 @@ export const easyWordList = [
   'yoke',
   'yolk',
   'your',
-  'yuan',
   'yuck',
   'zeal',
   'zero',

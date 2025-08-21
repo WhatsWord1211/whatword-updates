@@ -436,7 +436,7 @@ class NotificationService {
   async openAndroidSettings() {
     try {
       // Try to open app-specific settings
-      const packageName = 'com.anonymous.WhatsWord';
+      const packageName = 'com.anonymous.WhatWord';
       const canOpen = await Linking.canOpenURL(`package:${packageName}`);
       if (canOpen) {
         await Linking.openURL(`package:${packageName}`);

@@ -12,7 +12,20 @@
           "package_name": "com.whatword.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1052433400571-nrr57ilqiph0k6fnbicp4rmin3q96irn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.whatword.app",
+            "certificate_hash": "ccd7e1b8e0ac56eb57cc882991eae976e879a475"
+          }
+        },
+        {
+          "client_id": "1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC1pxEdLS7La9HOq7AnIlIFMpYCfNbp0cY"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1052433400571-2527tei861c1injvqgei44afot23t6j9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.whatword.app"
+              }
+            }
+          ]
         }
       }
     }
