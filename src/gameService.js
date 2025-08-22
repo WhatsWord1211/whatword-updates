@@ -2,6 +2,7 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  getDocs,
   updateDoc, 
   onSnapshot,
   collection,
@@ -31,9 +32,9 @@ class GameService {
       const gameData = {
         gameId,
         challengeId: challengeData.challengeId,
-        playerIds: [challengeData.fromUid, challengeData.toUid],
+        players: [challengeData.fromUid, challengeData.toUid],
         wordLength: challengeData.wordLength,
-        gameMode: 'pvp',
+        type: 'pvp',
         status: 'ready', // ready, active, completed
         createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString(),
@@ -59,7 +60,7 @@ class GameService {
       };
 
       await setDoc(doc(db, 'games', gameId), gameData);
-      console.log('GameService: PvP game created successfully', { gameId, playerIds: gameData.playerIds });
+      console.log('GameService: PvP game created successfully', { gameId, players: gameData.players });
       
       return gameId;
     } catch (error) {
@@ -81,7 +82,7 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user has access to this game
-      if (!gameData.playerIds.includes(this.currentUser.uid)) {
+      if (!gameData.players.includes(this.currentUser.uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -103,7 +104,7 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user is a player in this game
-      if (!gameData.playerIds.includes(this.currentUser.uid)) {
+      if (!gameData.players.includes(this.currentUser.uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -189,16 +190,59 @@ class GameService {
           updates.opponentSolveTime = solveTime;
         }
         
-        // Check if game is over
-        if (gameData.playerSolved || gameData.opponentSolved) {
+        // Check if game is over based on completion conditions
+        const isGameOver = this.checkGameCompletion(gameData, updates);
+        if (isGameOver) {
           updates.status = 'completed';
-          updates.winnerId = this.currentUser.uid;
           updates.completedAt = new Date().toISOString();
+          
+          // Determine winner based on completion conditions
+          if (updates.playerSolved && updates.opponentSolved) {
+            // Both solved - determine winner by attempts
+            const playerAttempts = (isCreator ? updates.playerGuesses : gameData.playerGuesses).length;
+            const opponentAttempts = (isCreator ? gameData.opponentGuesses : updates.opponentGuesses).length;
+            
+            if (playerAttempts < opponentAttempts) {
+              updates.winnerId = this.currentUser.uid;
+            } else if (opponentAttempts < playerAttempts) {
+              updates.winnerId = gameData.players.find(id => id !== this.currentUser.uid);
+            } else {
+              updates.tie = true;
+              updates.winnerId = null;
+            }
+          } else if (updates.playerSolved) {
+            // Only current player solved - check if opponent has max attempts
+            const opponentGuesses = isCreator ? gameData.opponentGuesses : gameData.playerGuesses;
+            if (opponentGuesses.length >= 25) {
+              updates.winnerId = this.currentUser.uid;
+            }
+                      } else if (updates.opponentSolved) {
+              // Only opponent solved - check if current player has max attempts
+              const playerGuesses = isCreator ? gameData.playerGuesses : gameData.opponentGuesses;
+              if (playerGuesses.length >= 25) {
+                updates.winnerId = gameData.players.find(id => id !== this.currentUser.uid);
+              }
+            }
         }
       } else {
         // Switch turns if guess is incorrect
-        const nextPlayer = gameData.playerIds.find(id => id !== this.currentUser.uid);
+        const nextPlayer = gameData.players.find(id => id !== this.currentUser.uid);
         updates.currentTurn = nextPlayer;
+        
+        // Check if game is over due to max attempts (without solving)
+        const currentPlayerGuesses = isCreator ? updates.playerGuesses : gameData.playerGuesses;
+        const opponentGuesses = isCreator ? gameData.opponentGuesses : updates.opponentGuesses;
+        
+        if (currentPlayerGuesses.length >= 25 && opponentGuesses.length >= 25) {
+          // Both players reached max attempts without solving
+          const isGameOver = this.checkGameCompletion(gameData, updates);
+          if (isGameOver) {
+            updates.status = 'completed';
+            updates.completedAt = new Date().toISOString();
+            updates.tie = true;
+            updates.winnerId = null;
+          }
+        }
       }
       
       await updateDoc(doc(db, 'games', gameId), updates);
@@ -219,13 +263,13 @@ class GameService {
       const gamesRef = collection(db, 'games');
       const q = query(
         gamesRef,
-        where('playerIds', 'array-contains', this.currentUser.uid),
-        where('gameMode', '==', 'pvp'),
+        where('players', 'array-contains', this.currentUser.uid),
+        where('type', '==', 'pvp'),
         where('status', 'in', ['ready', 'active']),
         orderBy('lastActivity', 'desc')
       );
       
-      const querySnapshot = await getDoc(q);
+      const querySnapshot = await getDocs(q);
       const games = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       return games;
@@ -243,14 +287,14 @@ class GameService {
       const gamesRef = collection(db, 'games');
       const q = query(
         gamesRef,
-        where('playerIds', 'array-contains', this.currentUser.uid),
-        where('gameMode', '==', 'pvp'),
+        where('players', 'array-contains', this.currentUser.uid),
+        where('type', '==', 'pvp'),
         where('status', '==', 'completed'),
         orderBy('completedAt', 'desc'),
         limit(limit)
       );
       
-      const querySnapshot = await getDoc(q);
+      const querySnapshot = await getDocs(q);
       const games = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       return games;
@@ -271,7 +315,7 @@ class GameService {
         const gameData = doc.data();
         
         // Verify user has access to this game
-        if (gameData.playerIds.includes(this.currentUser.uid)) {
+        if (gameData.players.includes(this.currentUser.uid)) {
           callback({ id: doc.id, ...gameData });
         } else {
           console.warn('GameService: Access denied to game updates');
@@ -295,10 +339,10 @@ class GameService {
     const gamesRef = collection(db, 'games');
     const q = query(
       gamesRef,
-      where('playerIds', 'array-contains', this.currentUser.uid),
-      where('gameMode', '==', 'pvp'),
-      where('status', 'in', ['ready', 'active']),
-      orderBy('lastActivity', 'desc')
+      where('players', 'array-contains', this.currentUser.uid),
+              where('type', '==', 'pvp'),
+        where('status', 'in', ['ready', 'active']),
+        orderBy('lastActivity', 'desc')
     );
     
     this.activeGamesUnsubscribe = onSnapshot(q, (snapshot) => {
@@ -344,6 +388,41 @@ class GameService {
     }
   }
 
+  // Check if game should be completed based on various conditions
+  checkGameCompletion(gameData, updates) {
+    // Get current state including updates
+    const playerSolved = updates.playerSolved !== undefined ? updates.playerSolved : gameData.playerSolved;
+    const opponentSolved = updates.opponentSolved !== undefined ? updates.opponentSolved : gameData.opponentSolved;
+    
+    // Get current guess counts including updates
+    const playerGuesses = updates.playerGuesses || gameData.playerGuesses || [];
+    const opponentGuesses = updates.opponentGuesses || gameData.opponentGuesses || [];
+    
+    // Game completion conditions:
+    // 1. Both players solved their opponent's word
+    if (playerSolved && opponentSolved) {
+      return true;
+    }
+    
+    // 2. One player solved and the other reached max attempts
+    if (playerSolved && opponentGuesses.length >= 25) {
+      return true;
+    }
+    
+    if (opponentSolved && playerGuesses.length >= 25) {
+      return true;
+    }
+    
+    // 3. Both players reached max attempts without solving
+    if (playerGuesses.length >= 25 && opponentGuesses.length >= 25) {
+      return true;
+    }
+    
+    // 4. One player forfeited (handled separately in forfeitGame)
+    
+    return false;
+  }
+
   // Forfeit game
   async forfeitGame(gameId) {
     try {
@@ -355,12 +434,12 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user is a player in this game
-      if (!gameData.playerIds.includes(this.currentUser.uid)) {
+      if (!gameData.players.includes(this.currentUser.uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
       // Determine winner (the other player)
-      const winnerId = gameData.playerIds.find(id => id !== this.currentUser.uid);
+      const winnerId = gameData.players.find(id => id !== this.currentUser.uid);
       
       const updates = {
         status: 'completed',

@@ -191,6 +191,14 @@ const HowToPlayScreen = () => {
 
   return (
     <SafeAreaView style={[styles.screenContainer, { padding: 0 }]}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => navigation.navigate('Home')}
+      >
+        <Text style={styles.fabText}>🏠</Text>
+      </TouchableOpacity>
+      
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,

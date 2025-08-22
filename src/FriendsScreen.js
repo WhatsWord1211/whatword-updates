@@ -5,9 +5,10 @@ import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, setDoc, addDoc, updateDoc, collection, query, where, onSnapshot, arrayUnion, arrayRemove, orderBy, limit } from 'firebase/firestore';
 import styles from './styles';
 import { playSound } from './soundsUtil';
+import { showChallengeNotification, showFriendRequestNotification } from './notificationUtil';
 
 const FriendsScreen = () => {
-  console.log('🔧 FriendsScreen: Component is rendering');
+
   const navigation = useNavigation();
   const [friends, setFriends] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -21,14 +22,17 @@ const FriendsScreen = () => {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activePvPGame, setActivePvPGame] = useState(null);
+  const [hasShownGameStartPopup, setHasShownGameStartPopup] = useState(false);
   const friendsUnsubscribeRef = useRef(null);
   const requestsUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
+  const activeGamesUnsubscribeRef = useRef(null);
 
   useEffect(() => {
-    console.log('🔧 FriendsScreen: useEffect running, setting up auth listener');
+
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      console.log('🔧 FriendsScreen: Auth state changed:', currentUser ? currentUser.uid : 'null');
+      
       if (currentUser) {
         setUser(currentUser);
         loadUserProfile(currentUser);
@@ -86,9 +90,17 @@ const FriendsScreen = () => {
       );
       
       const unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
-        console.log('🔍 Friend requests listener triggered, found', snapshot.docs.length, 'requests');
         const requests = snapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() }));
-        console.log('🔍 Mapped requests:', requests);
+        
+        // Check for new friend requests (show notifications)
+        const previousRequestIds = pendingRequests.map(r => r.id);
+        const newRequests = requests.filter(r => !previousRequestIds.includes(r.id));
+        
+        // Show notifications for new friend requests
+        newRequests.forEach(request => {
+          showFriendRequestNotification(request.fromUsername || request.from);
+        });
+        
         setPendingRequests(requests);
       });
 
@@ -100,15 +112,126 @@ const FriendsScreen = () => {
       );
       
       const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
-        console.log('🔍 Challenges listener triggered, found', snapshot.docs.length, 'challenges');
         const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log('🔍 Mapped challenges:', challenges);
+        
+        // Check for new challenges (show notifications)
+        const previousChallengeIds = pendingChallenges.map(c => c.id);
+        const newChallenges = challenges.filter(c => !previousChallengeIds.includes(c.id));
+        
+        // Show notifications for new challenges
+        newChallenges.forEach(challenge => {
+          showChallengeNotification(challenge.fromUsername, challenge.difficulty);
+        });
+        
         setPendingChallenges(challenges);
+      });
+
+      // Set up sent challenges listener (for Player 1 to see when their challenge is accepted)
+      const sentChallengesQuery = query(
+        collection(db, 'challenges'),
+        where('from', '==', user.uid),
+        where('status', 'in', ['pending', 'accepted'])
+      );
+      
+      const unsubscribeSentChallenges = onSnapshot(sentChallengesQuery, (snapshot) => {
+        const sentChallenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Check if any sent challenges were just accepted
+        sentChallenges.forEach(challenge => {
+          if (challenge.status === 'accepted' && challenge.gameId) {
+            // Challenge was accepted and game created - show notification
+            Alert.alert(
+              '🎮 Challenge Accepted!',
+              `${challenge.toUsername} has accepted your challenge! A PvP game has been created.`,
+              [
+                {
+                  text: 'Play Now',
+                  onPress: () => {
+                    playSound('chime').catch(() => {});
+                    navigation.navigate('PvPGame', { gameId: challenge.gameId });
+                  }
+                },
+                {
+                  text: 'Later',
+                  style: 'cancel'
+                }
+              ]
+            );
+          }
+        });
       });
 
       friendsUnsubscribeRef.current = unsubscribeFriends;
       requestsUnsubscribeRef.current = unsubscribeRequests;
       challengesUnsubscribeRef.current = unsubscribeChallenges;
+
+      // Set up active PvP games listener
+      const activeGamesQuery = query(
+        collection(db, 'games'),
+        where('players', 'array-contains', user.uid),
+        where('status', 'in', ['ready', 'active'])
+      );
+      
+      // Reset popup state when setting up new listener
+      setHasShownGameStartPopup(false);
+      
+      const unsubscribeActiveGames = onSnapshot(activeGamesQuery, (snapshot) => {
+        const activeGames = [];
+        snapshot.forEach((doc) => {
+          const gameData = doc.data();
+          
+          // Check both possible field names and only include truly active games
+          const isPvPGame = gameData.type === 'pvp' || gameData.gameMode === 'pvp';
+          const isActiveStatus = ['ready', 'active'].includes(gameData.status);
+          
+          if (isPvPGame && isActiveStatus) {
+            activeGames.push({ id: doc.id, ...gameData });
+          }
+        });
+        
+        // Check if this is a new game starting (notification for Player 1)
+        // Only show popup if we haven't shown it yet and this is a truly new game
+        if (activeGames.length > 0 && !hasShownGameStartPopup) {
+          const newGame = activeGames[0];
+          
+          // Check if this is actually a new game (created recently)
+          const gameCreatedAt = newGame.createdAt;
+          const isRecentGame = gameCreatedAt && 
+            (new Date().getTime() - new Date(gameCreatedAt).getTime()) < 60000; // Within last minute
+          
+          if (isRecentGame) {
+            // Show notification that the game has started
+            Alert.alert(
+              '🎮 PvP Game Started!',
+              `Your challenge to ${newGame.player2?.username || 'your opponent'} has been accepted! The game is ready to begin.`,
+              [
+                {
+                  text: 'Play Now',
+                  onPress: () => {
+                    playSound('chime').catch(() => {});
+                    setHasShownGameStartPopup(true); // Mark as shown
+                    navigation.navigate('PvPGame', { gameId: newGame.id });
+                  }
+                },
+                {
+                  text: 'Later',
+                  style: 'cancel',
+                  onPress: () => {
+                    setHasShownGameStartPopup(true); // Mark as shown even if dismissed
+                  }
+                }
+              ]
+            );
+          } else {
+            // This is an old stuck game, mark popup as shown to prevent it from appearing
+            setHasShownGameStartPopup(true);
+          }
+        }
+        
+        setActivePvPGame(activeGames.length > 0 ? activeGames[0] : null);
+      });
+      
+      activeGamesUnsubscribeRef.current = unsubscribeActiveGames;
 
       return () => {
         if (friendsUnsubscribeRef.current) {
@@ -120,38 +243,123 @@ const FriendsScreen = () => {
         if (challengesUnsubscribeRef.current) {
           challengesUnsubscribeRef.current();
         }
+        if (activeGamesUnsubscribeRef.current) {
+          activeGamesUnsubscribeRef.current();
+        }
+        if (unsubscribeSentChallenges) {
+          unsubscribeSentChallenges();
+        }
       };
     }
   }, [user]);
 
+  // Debug function to check for stuck games
+  const checkForStuckGames = async () => {
+    try {
+      console.log('🔍 Checking for stuck games...');
+      const gamesQuery = query(
+        collection(db, 'games'),
+        where('players', 'array-contains', user.uid)
+      );
+      
+      const snapshot = await getDocs(gamesQuery);
+      console.log('🔍 Total games found:', snapshot.docs.length);
+      
+      snapshot.forEach((doc) => {
+        const gameData = doc.data();
+        console.log('🔍 Game:', { 
+          id: doc.id, 
+          status: gameData.status, 
+          type: gameData.type, 
+          gameMode: gameData.gameMode,
+          createdAt: gameData.createdAt,
+          completedAt: gameData.completedAt
+        });
+      });
+    } catch (error) {
+      console.error('🔍 Error checking for stuck games:', error);
+    }
+  };
+
+  // Function to fix stuck games by marking them as completed
+  const fixStuckGames = async () => {
+    try {
+      console.log('🔧 Fixing stuck games...');
+      const gamesQuery = query(
+        collection(db, 'games'),
+        where('players', 'array-contains', user.uid),
+        where('status', '==', 'active')
+      );
+      
+      const snapshot = await getDocs(gamesQuery);
+      console.log('🔧 Found', snapshot.docs.length, 'stuck active games');
+      
+      for (const doc of snapshot.docs) {
+        const gameData = doc.data();
+        
+        // Check if this game should be completed
+        if (gameData.type === 'pvp') {
+          const playerGuesses = gameData.playerGuesses || [];
+          const opponentGuesses = gameData.opponentGuesses || [];
+          const playerSolved = gameData.playerSolved || false;
+          const opponentSolved = gameData.opponentSolved || false;
+          
+          // If both players have made guesses or one has solved, mark as completed
+          if ((playerGuesses.length > 0 || opponentGuesses.length > 0) || playerSolved || opponentSolved) {
+            console.log('🔧 Fixing stuck game:', doc.id);
+            
+            const updates = {
+              status: 'completed',
+              completedAt: new Date().toISOString(),
+              lastUpdated: new Date().toISOString()
+            };
+            
+            // Determine winner if possible
+            if (playerSolved && !opponentSolved) {
+              updates.winnerId = gameData.creatorId;
+            } else if (opponentSolved && !playerSolved) {
+              updates.winnerId = gameData.players.find(id => id !== gameData.creatorId);
+            } else if (playerSolved && opponentSolved) {
+              // Both solved - determine winner by attempts
+              if (playerGuesses.length < opponentGuesses.length) {
+                updates.winnerId = gameData.creatorId;
+              } else if (opponentGuesses.length < playerGuesses.length) {
+                updates.winnerId = gameData.players.find(id => id !== gameData.creatorId);
+              } else {
+                updates.tie = true;
+                updates.winnerId = null;
+              }
+            } else if (playerGuesses.length >= 25 && opponentGuesses.length >= 25) {
+              // Both reached max attempts without solving
+              updates.tie = true;
+              updates.winnerId = null;
+            }
+            
+            await updateDoc(doc(db, 'games', doc.id), updates);
+            console.log('🔧 Fixed game:', doc.id);
+          }
+        }
+      }
+      
+      console.log('🔧 Finished fixing stuck games');
+      Alert.alert('Success', 'Stuck games have been fixed!');
+    } catch (error) {
+      console.error('🔧 Error fixing stuck games:', error);
+      Alert.alert('Error', 'Failed to fix stuck games: ' + error.message);
+    }
+  };
+
   const searchUsers = async () => {
     const trimmedQuery = searchQuery.trim();
-    console.log('🔍 Search function called with query:', trimmedQuery);
-    console.log('🔍 Original query length:', searchQuery.length, 'Trimmed query length:', trimmedQuery.length);
-    console.log('🔍 Current user state:', user);
-    console.log('🔍 Current friends state:', friends);
-    console.log('🔍 Current pending requests state:', pendingRequests);
     
     if (!trimmedQuery) {
-      console.log('🔍 Empty search query, clearing results');
       setSearchResults([]);
       return;
     }
 
     try {
-      console.log('🔍 Starting search for:', trimmedQuery);
-      
       // First, let's see what's actually in the users collection
-      console.log('🔍 Checking all users in collection...');
       const allUsersSnapshot = await getDocs(collection(db, 'users'));
-      console.log('🔍 Total users in collection:', allUsersSnapshot.docs.length);
-      
-      if (allUsersSnapshot.docs.length > 0) {
-        console.log('🔍 Sample user data:');
-        allUsersSnapshot.docs.slice(0, 3).forEach((doc, index) => {
-          console.log(`🔍 User ${index + 1}:`, { id: doc.id, ...doc.data() });
-        });
-      }
       
       // Search by username or display name
       const usersQuery = query(
@@ -160,28 +368,17 @@ const FriendsScreen = () => {
         where('username', '<=', trimmedQuery + '\uf8ff'),
         limit(10)
       );
-
-      console.log('🔍 Query created, executing...');
-      console.log('🔍 Query details:', {
-        field: 'username',
-        startValue: trimmedQuery,
-        endValue: trimmedQuery + '\uf8ff'
-      });
       
       const snapshot = await getDocs(usersQuery);
-      console.log('🔍 Query executed, found', snapshot.docs.length, 'documents');
       
       let results = snapshot.docs
         .map(doc => ({ uid: doc.id, ...doc.data() }))
         .filter(searchUser => searchUser.uid !== user?.uid) // Exclude current user
         .filter(searchUser => !friends.some(friend => friend.uid === searchUser.uid)) // Exclude existing friends
         .filter(searchUser => !pendingRequests.some(req => req.from === searchUser.uid)); // Exclude pending requests
-
-      console.log('🔍 Filtered results:', results.length, 'users');
       
       // If no results from the range query, try a simple contains search
       if (results.length === 0) {
-        console.log('🔍 No results from range query, trying simple search...');
         const simpleResults = allUsersSnapshot.docs
           .map(doc => ({ uid: doc.id, ...doc.data() }))
           .filter(searchUser => {
@@ -198,11 +395,8 @@ const FriendsScreen = () => {
           .filter(searchUser => !pendingRequests.some(req => req.from === searchUser.uid)) // Exclude pending requests
           .slice(0, 10); // Limit to 10 results
         
-        console.log('🔍 Simple search results:', simpleResults.length, 'users');
         results = simpleResults;
       }
-      
-      console.log('🔍 Final results:', results);
       
       setSearchResults(results);
     } catch (error) {
@@ -222,10 +416,7 @@ const FriendsScreen = () => {
         timestamp: new Date(),
       };
 
-      console.log('🔍 Attempting to create friend request with data:', requestData);
-      console.log('🔍 Current user UID:', user.uid);
-      console.log('🔍 Request data "from" field:', requestData.from);
-      console.log('🔍 Are they equal?', user.uid === requestData.from);
+
 
       await addDoc(collection(db, 'friendRequests'), requestData);
       
@@ -326,7 +517,7 @@ const FriendsScreen = () => {
 
 
   const challengeFriend = async (friend) => {
-    console.log('🔍 Challenge button pressed for friend:', friend);
+
     
     // Navigate to SetWordScreen to set the mystery word
     navigation.navigate('SetWord', {
@@ -447,10 +638,45 @@ const FriendsScreen = () => {
     );
   }
 
-  console.log('🔧 FriendsScreen: About to render main UI');
   return (
     <View style={styles.screenContainer}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => navigation.navigate('Home')}
+      >
+        <Text style={styles.fabText}>🏠</Text>
+      </TouchableOpacity>
+      
       <Text style={styles.header}>Friends & Challenges</Text>
+      
+      {/* Active PvP Game Notification */}
+      {activePvPGame && (
+        <View style={styles.activeGameIndicator}>
+          <Text style={styles.activeGameText}>
+            🎮 Active PvP Game in Progress!
+          </Text>
+          <TouchableOpacity
+            style={styles.viewChallengesButton}
+            onPress={() => {
+              playSound('chime');
+              navigation.navigate('PvPGame', { gameId: activePvPGame.id });
+            }}
+          >
+            <Text style={styles.viewChallengesButtonText}>Continue Game</Text>
+          </TouchableOpacity>
+          {/* Debug: Force remove stuck game */}
+          <TouchableOpacity
+            style={[styles.viewChallengesButton, { backgroundColor: '#EF4444', marginTop: 10 }]}
+            onPress={() => {
+              console.log('🔍 Force removing stuck game:', activePvPGame.id);
+              setActivePvPGame(null);
+            }}
+          >
+            <Text style={styles.viewChallengesButtonText}>Remove Stuck Game</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       
       {/* Main Navigation Cards */}
       <View style={styles.navigationContainer}>
@@ -468,25 +694,50 @@ const FriendsScreen = () => {
           </Text>
         </TouchableOpacity>
 
-        {/* Games Section */}
+        {/* Pending Challenges */}
         <TouchableOpacity
           style={styles.navCard}
           onPress={() => navigation.navigate('PendingChallenges')}
         >
-          <Text style={styles.navCardTitle}>Games</Text>
+          <Text style={styles.navCardTitle}>Pending Challenges</Text>
           <Text style={styles.navCardSubtitle}>
-            {pendingChallenges.length > 0 ? `${pendingChallenges.length} pending challenges` : 'Accept and create challenges'}
+            {pendingChallenges.length > 0 ? `${pendingChallenges.length} challenges to respond to` : 'No pending challenges'}
           </Text>
         </TouchableOpacity>
 
-        {/* Create Challenge Button */}
+        {/* Debug: Check for stuck games */}
         <TouchableOpacity
-          style={[styles.navCard, styles.createChallengeCard]}
-          onPress={() => navigation.navigate('FriendsList')}
+          style={[styles.navCard, { backgroundColor: '#7C3AED' }]}
+          onPress={checkForStuckGames}
         >
-          <Text style={styles.navCardTitle}>Create Challenge</Text>
+          <Text style={styles.navCardTitle}>🔍 Debug: Check Games</Text>
           <Text style={styles.navCardSubtitle}>
-            Challenge a friend to a PvP game
+            Check for stuck or completed games
+          </Text>
+        </TouchableOpacity>
+
+        {/* Fix stuck games */}
+        <TouchableOpacity
+          style={[styles.navCard, { backgroundColor: '#10B981' }]}
+          onPress={fixStuckGames}
+        >
+          <Text style={styles.navCardTitle}>🔧 Fix Stuck Games</Text>
+          <Text style={styles.navCardSubtitle}>
+            Automatically fix stuck active games
+          </Text>
+        </TouchableOpacity>
+
+        {/* Force dismiss popup */}
+        <TouchableOpacity
+          style={[styles.navCard, { backgroundColor: '#F59E0B' }]}
+          onPress={() => {
+            setHasShownGameStartPopup(true);
+            Alert.alert('Popup Dismissed', 'The game start popup has been dismissed.');
+          }}
+        >
+          <Text style={styles.navCardTitle}>🚫 Dismiss Popup</Text>
+          <Text style={styles.navCardSubtitle}>
+            Force dismiss the game start popup
           </Text>
         </TouchableOpacity>
       </View>

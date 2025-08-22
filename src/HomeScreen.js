@@ -21,11 +21,9 @@ const HomeScreen = () => {
   const [gameInvites, setGameInvites] = useState([]);
   const [displayName, setDisplayName] = useState('Player');
   const [showMenuModal, setShowMenuModal] = useState(false);
-  const [activePvPGame, setActivePvPGame] = useState(null);
   const [pendingChallenges, setPendingChallenges] = useState([]);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
-  const activeGamesUnsubscribeRef = useRef(null);
 
   // Load user profile and set up listeners
   const loadUserProfile = async (currentUser) => {
@@ -78,29 +76,12 @@ const HomeScreen = () => {
             // Set up pending challenges listener
             const challengesQuery = query(
               collection(db, 'challenges'),
-              where('receiverId', '==', currentUser.uid),
+              where('to', '==', currentUser.uid),
               where('status', '==', 'pending')
             );
             const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
               const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
               setPendingChallenges(challenges);
-            });
-            
-            // Set up active PvP games listener
-            const activeGamesQuery = query(
-              collection(db, 'games'),
-              where('playerId', '==', currentUser.uid),
-              where('status', 'in', ['waiting', 'ready'])
-            );
-            const activeGamesUnsubscribe = onSnapshot(activeGamesQuery, (snapshot) => {
-              const activeGames = [];
-              snapshot.forEach((doc) => {
-                const gameData = doc.data();
-                if (gameData.status === 'ready') {
-                  activeGames.push({ id: doc.id, ...gameData });
-                }
-              });
-              setActivePvPGame(activeGames.length > 0 ? activeGames[0] : null);
             });
             
             // Store the unsubscribe functions for cleanup
@@ -114,11 +95,6 @@ const HomeScreen = () => {
               challengesUnsubscribeRef.current();
             }
             challengesUnsubscribeRef.current = unsubscribeChallenges;
-            
-            if (activeGamesUnsubscribeRef.current) {
-              activeGamesUnsubscribeRef.current();
-            }
-            activeGamesUnsubscribeRef.current = activeGamesUnsubscribe;
           } catch (error) {
             console.error('HomeScreen: Failed to set up listeners:', error);
           }
@@ -258,7 +234,6 @@ const HomeScreen = () => {
       setDisplayName('Player');
       setSavedGames([]);
       setGameInvites([]);
-      setActivePvPGame(null);
       setPendingChallenges([]);
     } catch (error) {
       console.error('HomeScreen: Sign out failed:', error);
@@ -364,12 +339,32 @@ const HomeScreen = () => {
       >
         <Text style={[styles.header, { marginBottom: 10 }]}>Welcome, {displayName}</Text>
         
+        {/* Pending Challenges Indicator */}
+        {pendingChallenges.length > 0 && (
+          <View style={styles.pendingChallengesIndicator}>
+            <Text style={styles.pendingChallengesText}>
+              🎯 You have {pendingChallenges.length} pending challenge{pendingChallenges.length > 1 ? 's' : ''}!
+            </Text>
+            <TouchableOpacity
+              style={styles.viewChallengesButton}
+              onPress={() => {
+                playSound('chime');
+                navigation.navigate('PendingChallenges');
+              }}
+            >
+              <Text style={styles.viewChallengesButtonText}>View Challenges</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+
+        
         {/* PvP Button */}
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
             playSound('chime');
-            navigation.navigate('Friends');
+            navigation.navigate('CreateChallenge');
           }}
         >
           <Text style={styles.buttonText}>Play A Friend</Text>
@@ -382,25 +377,7 @@ const HomeScreen = () => {
           <Text style={styles.buttonText}>Play Solo</Text>
         </TouchableOpacity>
         
-        {/* Active PvP Game */}
-        {activePvPGame && (
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#10B981' }]}
-            onPress={() => {
-              console.log('HomeScreen: Return to Game button pressed', { gameId: activePvPGame.id });
-              navigation.navigate('Game', {
-                gameMode: 'pvp',
-                gameId: activePvPGame.id,
-                showDifficulty: false,
-                gameState: activePvPGame.status === 'ready' ? 'playing' : 'waiting',
-                isCreator: true,
-                wordLength: activePvPGame.wordLength
-              });
-            }}
-          >
-            <Text style={styles.buttonText}>Return to Game ({activePvPGame.status === 'ready' ? 'Ready' : 'Waiting'})</Text>
-          </TouchableOpacity>
-        )}
+
         
         <TouchableOpacity
           style={[styles.button, savedGames.length === 0 && styles.disabledButton]}
@@ -441,11 +418,16 @@ const HomeScreen = () => {
           </>
         )}
 
+        {/* Debug: Show Pending Challenges Count */}
+        <Text style={styles.debugText}>
+          Debug: {pendingChallenges.length} pending challenges
+        </Text>
+
 
       </ScrollView>
       
       <TouchableOpacity
-        style={[styles.fabTop, { top: 50, right: 20, zIndex: 1000 }]}
+        style={styles.fabTop}
         onPress={() => {
           console.log('🔧 DEV MODE: FAB button tapped!');
           setShowMenuModal(true);

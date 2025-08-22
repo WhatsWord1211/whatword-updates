@@ -150,6 +150,14 @@ const LeaderboardScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => navigation.navigate('Home')}
+      >
+        <Text style={styles.fabText}>🏠</Text>
+      </TouchableOpacity>
+      
       <ScrollView 
         style={{ flex: 1, width: '100%' }}
         refreshControl={

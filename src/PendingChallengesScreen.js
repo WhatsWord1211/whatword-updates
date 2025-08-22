@@ -99,6 +99,14 @@ const PendingChallengesScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => navigation.navigate('Home')}
+      >
+        <Text style={styles.fabText}>🏠</Text>
+      </TouchableOpacity>
+      
       <Text style={styles.header}>Game Challenges</Text>
       
       {pendingChallenges.length === 0 ? (

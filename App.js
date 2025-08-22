@@ -7,18 +7,18 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/firebase';
 
 import AuthScreen from './src/AuthScreen';
-import HomeScreen from './src/HomeScreen';
-import FriendsScreen from './src/FriendsScreen';
+import CustomTabNavigator from './src/CustomTabNavigator';
 import AddFriendsScreen from './src/AddFriendsScreen';
 import FriendRequestsScreen from './src/FriendRequestsScreen';
 import PendingChallengesScreen from './src/PendingChallengesScreen';
 import FriendsListScreen from './src/FriendsListScreen';
-import LeaderboardScreen from './src/LeaderboardScreen';
 import HowToPlayScreen from './src/HowToPlayScreen';
 import GameScreen from './src/GameScreen';
 import ProfileScreen from './src/ProfileScreen';
 import SetWordScreen from './src/SetWordScreen';
 import SetWordGameScreen from './src/SetWordGameScreen';
+import CreateChallengeScreen from './src/CreateChallengeScreen';
+import PvPGameScreen from './src/PvPGameScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -26,57 +26,7 @@ const Tab = createBottomTabNavigator();
 // Main tab navigator - MOVED OUTSIDE App component
 const MainTabs = () => {
   console.log('🔧 DEV MODE: MainTabs component is rendering!');
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        tabBarStyle: {
-          backgroundColor: "#1F2937",
-          borderTopColor: "#374151",
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: "#F59E0B",
-        tabBarInactiveTintColor: "#9CA3AF",
-        headerStyle: {
-          backgroundColor: "#1F2937",
-        },
-        headerTintColor: "#E5E7EB",
-        headerTitleStyle: {
-          fontWeight: "600",
-        },
-      }}
-    >
-      <Tab.Screen 
-        name="Home" 
-        component={HomeScreen}
-        options={{
-          title: "",
-          tabBarIcon: ({ color, size }) => (
-            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏠</Text>
-          ),
-        }}
-      />
-      <Tab.Screen 
-        name="Friends" 
-        component={FriendsScreen}
-        options={{
-          title: "Friends",
-          tabBarIcon: ({ color, size }) => (
-            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👥</Text>
-          ),
-        }}
-      />
-      <Tab.Screen 
-        name="Leaderboard" 
-        component={LeaderboardScreen}
-        options={{
-          title: "Leaderboard",
-          tabBarIcon: ({ color, size }) => (
-            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏆</Text>
-          ),
-        }}
-      />
-    </Tab.Navigator>
-  );
+  return <CustomTabNavigator />;
 };
 
 // Main app component
@@ -134,6 +84,8 @@ export default function App() {
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="SetWord" component={SetWordScreen} />
             <Stack.Screen name="SetWordGame" component={SetWordGameScreen} />
+            <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
+            <Stack.Screen name="PvPGame" component={PvPGameScreen} />
             <Stack.Screen name="AddFriends" component={AddFriendsScreen} />
             <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
             <Stack.Screen name="PendingChallenges" component={PendingChallengesScreen} />

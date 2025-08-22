@@ -8,6 +8,28 @@
       "icon": "./assets/icon.png",
       "userInterfaceStyle": "light",
       "scheme": "com.whatword.app",
+    "android": {
+      "package": "com.whatword.app",
+      "googleServicesFile": "./firebase/google-services.json",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b189d504-5441-4ee4-977f-2ad58d77659d"
+      },
+      "firebaseApiKey": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
+      "firebaseAuthDomain": "whatword-a3f4b.firebaseapp.com",
+      "firebaseProjectId": "whatword-a3f4b",
+      "firebaseStorageBucket": "whatword-a3f4b.firebasestorage.app",
+      "firebaseMessagingSenderId": "1052433400571",
+      "firebaseAppId": "1:1052433400571:web:16122dad5c5a1344d9265e",
+      "firebaseMeasurementId": "G-TWN7PXQ55G",
+      "googleClientId": "1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -21,17 +43,9 @@
       "bundleIdentifier": "com.whatword.app",
       "googleServicesFile": "./firebase/GoogleService-Info.plist"
     },
-    "android": {
-      "package": "com.whatword.app",
-      "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 1,
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
-      }
-    },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       [
@@ -44,18 +58,6 @@
           }
         }
       ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "b189d504-5441-4ee4-977f-2ad58d77659d"
-      },
-      "firebaseApiKey": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
-      "firebaseAuthDomain": "whatword-a3f4b.firebaseapp.com",
-      "firebaseProjectId": "whatword-a3f4b",
-      "firebaseStorageBucket": "whatword-a3f4b.firebasestorage.app",
-      "firebaseMessagingSenderId": "1052433400571",
-      "firebaseAppId": "1:1052433400571:web:16122dad5c5a1344d9265e",
-      "firebaseMeasurementId": "G-TWN7PXQ55G"
-    }
+    ]
   }
 }

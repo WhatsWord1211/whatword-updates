@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
@@ -16,6 +16,7 @@ const SetWordGameScreen = () => {
   const [loading, setLoading] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
+  const [showMenuPopup, setShowMenuPopup] = useState(false);
 
 
 
@@ -75,33 +76,45 @@ const SetWordGameScreen = () => {
              throw new Error('Challenge data is incomplete. Please try again.');
            }
            
-           const gameData = {
-             type: 'pvp',
-             difficulty: difficulty,
-             players: [challenge.from, challenge.to],
-             status: 'active',
-             createdAt: new Date(),
-             player1: {
-               uid: challenge.from,
-               username: challenge.fromUsername || challenge.from || 'Player 1',
-               word: challenge.player1Word,
-               guesses: [],
-               solved: false
-             },
-             player2: {
-               uid: challenge.to,
-               username: challenge.toUsername || challenge.to || 'Player 2',
-               word: word.trim().toLowerCase(),
-               guesses: [],
-               solved: false
-             }
-           };
+                       const gameData = {
+              type: 'pvp',
+              difficulty: difficulty,
+              wordLength: difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6,
+              players: [challenge.from, challenge.to],
+              status: 'active',
+              createdAt: new Date(),
+              currentTurn: challenge.from, // Player 1 goes first
+              player1: {
+                uid: challenge.from,
+                username: challenge.fromUsername || challenge.from || 'Player 1',
+                word: challenge.player1Word,
+                guesses: [],
+                solved: false,
+                attempts: 0
+              },
+              player2: {
+                uid: challenge.to,
+                username: challenge.toUsername || challenge.to || 'Player 2',
+                word: word.trim().toLowerCase(),
+                guesses: [],
+                solved: false,
+                attempts: 0
+              },
+              gameHistory: [],
+              maxAttempts: 25
+            };
 
-         console.log('🔍 Creating game with data:', gameData);
+         console.log('🔍 About to create game with data:', gameData);
+         console.log('🔍 Current user UID:', auth.currentUser?.uid);
+         console.log('🔍 Games collection path:', collection(db, 'games').path);
+         
          const gameRef = await addDoc(collection(db, 'games'), gameData);
          console.log('🔍 Game created successfully:', gameRef.id);
          
          // Update challenge status and link to game
+         console.log('🔍 About to update challenge:', challenge.id);
+         console.log('🔍 Challenge document path:', doc(db, 'challenges', challenge.id).path);
+         
          await updateDoc(doc(db, 'challenges', challenge.id), {
            status: 'accepted',
            player2Word: word.trim().toLowerCase(),
@@ -113,7 +126,7 @@ const SetWordGameScreen = () => {
         Alert.alert('Game Started!', 'Both players can now play at their own pace!', [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('Home')
+            onPress: () => navigation.navigate('PvPGame', { gameId: gameRef.id })
           }
         ]);
         playSound('chime');
@@ -133,15 +146,21 @@ const SetWordGameScreen = () => {
           gameId: null
         };
 
+        console.log('🔍 About to create challenge with data:', challengeData);
+        console.log('🔍 Current user UID:', auth.currentUser?.uid);
+        console.log('🔍 Challenge collection path:', collection(db, 'challenges').path);
+        
         const challengeRef = await addDoc(collection(db, 'challenges'), challengeData);
         
         console.log('🔍 Challenge created successfully:', challengeRef.id);
         console.log('🔍 Challenge data:', challengeData);
+        console.log('🔍 Challenge document path:', challengeRef.path);
+        console.log('🔍 Challenge should be visible to user:', challengeData.to);
         
         Alert.alert('Challenge Sent!', `Challenge sent to ${challenge.toUsername}!`, [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('Friends')
+            onPress: () => navigation.navigate('CreateChallenge')
           }
         ]);
         playSound('chime');
@@ -185,6 +204,14 @@ const SetWordGameScreen = () => {
   if (showDifficultySelection) {
     return (
       <View style={styles.screenContainer}>
+        {/* FAB */}
+        <TouchableOpacity 
+          style={styles.fabTop} 
+          onPress={() => setShowMenuPopup(true)}
+        >
+          <Text style={styles.fabText}>☰</Text>
+        </TouchableOpacity>
+        
         <View style={styles.difficultyContainer}>
           <Text style={styles.header}>Choose Difficulty</Text>
           <Text style={styles.subtitle}>
@@ -221,6 +248,14 @@ const SetWordGameScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => setShowMenuPopup(true)}
+      >
+        <Text style={styles.fabText}>☰</Text>
+      </TouchableOpacity>
+      
       <ScrollView contentContainerStyle={styles.gameScrollContainer}>
         {/* Header */}
         <Text style={styles.header}>
@@ -301,11 +336,47 @@ const SetWordGameScreen = () => {
           style={styles.textButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.textButtonText}>Cancel</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </View>
-  );
+                   <Text style={styles.textButtonText}>Cancel</Text>
+       </TouchableOpacity>
+     </ScrollView>
+
+     {/* Menu Popup Modal */}
+     <Modal visible={showMenuPopup} transparent animationType="fade">
+       <View style={styles.modalOverlay}>
+         <View style={[styles.modalContainer, styles.modalShadow]}>
+           <Text style={styles.header}>Game Menu</Text>
+           
+           <TouchableOpacity
+             style={styles.button}
+             onPress={() => {
+               setShowMenuPopup(false);
+               navigation.navigate('Home');
+             }}
+           >
+             <Text style={styles.buttonText}>Return to Home</Text>
+           </TouchableOpacity>
+           
+           <TouchableOpacity
+             style={styles.button}
+             onPress={() => {
+               setShowMenuPopup(false);
+               navigation.goBack();
+             }}
+           >
+             <Text style={styles.buttonText}>Go Back</Text>
+           </TouchableOpacity>
+           
+           <TouchableOpacity
+             style={styles.button}
+             onPress={() => setShowMenuPopup(false)}
+           >
+             <Text style={styles.buttonText}>Cancel</Text>
+           </TouchableOpacity>
+         </View>
+       </View>
+     </Modal>
+   </View>
+ );
 };
 
 export default SetWordGameScreen;

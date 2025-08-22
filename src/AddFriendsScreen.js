@@ -179,6 +179,14 @@ const AddFriendsScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => navigation.navigate('Home')}
+      >
+        <Text style={styles.fabText}>🏠</Text>
+      </TouchableOpacity>
+      
       <Text style={styles.header}>Friends Management</Text>
       
       {/* Tab Navigation */}

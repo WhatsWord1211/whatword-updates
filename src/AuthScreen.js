@@ -1,14 +1,12 @@
 // AuthScreen with clean authentication flow - no guest mode
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Linking } from "react-native";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential } from "firebase/auth";
 import { doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 
-// Ensure WebBrowser redirects work properly
-WebBrowser.maybeCompleteAuthSession();
+
 
 const AuthScreen = () => {
   const [email, setEmail] = useState("");
@@ -16,6 +14,10 @@ const AuthScreen = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
+
+
+
+
 
   const handleFacebookSignIn = async () => {
     Alert.alert(
@@ -28,84 +30,48 @@ const AuthScreen = () => {
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
-      console.log('🔧 DEV MODE: Starting Google sign-in with manual OAuth flow...');
-
-      // Try using Expo's built-in Google authentication
-      console.log('🔧 DEV MODE: Attempting to use Expo built-in Google auth...');
+      console.log('🔧 DEV MODE: Starting Google sign-in...');
       
-      try {
-        // Use the custom scheme redirect URI for standalone builds
-        const request = new AuthSession.AuthRequest({
-          clientId: '1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com',
-          scopes: ['openid', 'profile', 'email'],
-          redirectUri: 'com.whatword.app://auth',
-          responseType: AuthSession.ResponseType.Code,
+      // Use Firebase's built-in Google Sign-In
+      const result = await signInWithCredential(auth, googleProvider.credential());
+      console.log('🔧 DEV MODE: Google sign-in successful:', result.user.uid);
+      
+      // Check if user profile exists
+      const userDocRef = doc(db, 'users', result.user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        // Update existing profile
+        await updateDoc(userDocRef, {
+          lastLogin: new Date(),
+          email: result.user.email,
+          displayName: result.user.displayName || result.user.email.split('@')[0]
         });
-
-        console.log('🔧 DEV MODE: Auth request created:', request);
-        
-        // Get the auth URL
-        const authUrl = await request.makeAuthUrlAsync();
-        console.log('🔧 DEV MODE: Auth URL created:', authUrl);
-
-        // Open the auth session
-        const result = await request.promptAsync({
-          authUrl,
-          showInRecents: true,
+        console.log('🔧 DEV MODE: Profile updated successfully');
+      } else {
+        // Create new profile
+        await setDoc(userDocRef, {
+          uid: result.user.uid,
+          username: result.user.email ? result.user.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`,
+          displayName: result.user.displayName || (result.user.email ? result.user.email.split('@')[0] : 'Player'),
+          email: result.user.email,
+          createdAt: new Date(),
+          lastLogin: new Date(),
+          gamesPlayed: 0,
+          gamesWon: 0,
+          bestScore: 0,
+          totalScore: 0,
+          friends: [],
+          isAnonymous: false,
         });
-
-        console.log('🔧 DEV MODE: Auth session result:', result);
-
-        if (result.type === 'success') {
-          console.log('🔧 DEV MODE: Auth session successful:', result);
-          console.log('🔧 DEV MODE: Authorization code received:', result.params.code);
-          
-          // Exchange the authorization code for tokens
-          console.log('🔧 DEV MODE: Starting token exchange...');
-          
-          const discovery = {
-            authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-            tokenEndpoint: 'https://oauth2.googleapis.com/token',
-            revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
-          };
-          
-                      const tokenResult = await AuthSession.exchangeCodeAsync(
-              {
-                clientId: '1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com',
-                code: result.params.code,
-                redirectUri: 'com.whatword.app://auth',
-                extraParams: {
-                  code_verifier: request.codeChallenge,
-                },
-              },
-              discovery
-            );
-          
-          console.log('🔧 DEV MODE: Token exchange successful:', tokenResult);
-          
-          // Continue with Firebase authentication...
-          return await handleGoogleTokenExchange(tokenResult);
-          
-        } else if (result.type === 'cancel') {
-          console.log('🔧 DEV MODE: OAuth flow cancelled by user');
-          Alert.alert("Sign In Cancelled", "You cancelled the sign-in process.");
-        } else {
-          console.log('🔧 DEV MODE: OAuth flow failed:', result);
-          Alert.alert("Google Sign-In Error", "Failed to complete Google sign-in. Please try again.");
-        }
-        
-      } catch (authError) {
-        console.error('🔧 DEV MODE: Expo auth failed:', authError);
-        Alert.alert("Expo Auth Error", "Failed to start Expo authentication. Please try again.");
+        console.log('🔧 DEV MODE: Profile created successfully');
       }
-
-      console.log('🔧 DEV MODE: Auth URL created:', authUrl);
-
-                  // This section is now handled by the Expo AuthSession approach above
+      
+      Alert.alert("Success!", "Signed in with Google successfully!");
+      console.log('🔧 DEV MODE: Google sign-in completed, user should be redirected automatically');
       
     } catch (error) {
       console.error('🔧 DEV MODE: Google sign-in error:', error);
-      console.error('🔧 DEV MODE: Error message:', error.message);
       Alert.alert("Google Sign-In Error", error.message || "An error occurred during Google sign-in.");
     } finally {
       setLoading(false);
@@ -502,58 +468,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-
-// Helper function to handle Google token exchange and Firebase authentication
-const handleGoogleTokenExchange = async (tokenResult) => {
-  try {
-    console.log('🔧 DEV MODE: Starting Firebase authentication...');
-    
-    // Create Firebase credential
-    const credential = googleProvider.credential(tokenResult.idToken);
-    
-    // Sign in to Firebase
-    const firebaseResult = await signInWithCredential(auth, credential);
-    console.log('🔧 DEV MODE: Firebase authentication successful:', firebaseResult.user.uid);
-    
-    // Check if user profile exists
-    const userDocRef = doc(db, 'users', firebaseResult.user.uid);
-    const userDoc = await getDoc(userDocRef);
-    
-    if (userDoc.exists()) {
-      // Update existing profile
-      await updateDoc(userDocRef, {
-        lastLogin: new Date(),
-        email: firebaseResult.user.email,
-        displayName: firebaseResult.user.displayName || firebaseResult.user.email.split('@')[0]
-      });
-      console.log('🔧 DEV MODE: Profile updated successfully');
-    } else {
-      // Create new profile
-      await setDoc(userDocRef, {
-        uid: firebaseResult.user.uid,
-        username: firebaseResult.user.email ? firebaseResult.user.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`,
-        displayName: firebaseResult.user.displayName || (firebaseResult.user.email ? firebaseResult.user.email.split('@')[0] : 'Player'),
-        email: firebaseResult.user.email,
-        createdAt: new Date(),
-        lastLogin: new Date(),
-        gamesPlayed: 0,
-        gamesWon: 0,
-        bestScore: 0,
-        totalScore: 0,
-        friends: [],
-        isAnonymous: false,
-      });
-      console.log('🔧 DEV MODE: Profile created successfully');
-    }
-    
-    Alert.alert("Success!", "Signed in with Google successfully!");
-    console.log('🔧 DEV MODE: Google sign-in completed, user should be redirected automatically');
-    
-  } catch (error) {
-    console.error('🔧 DEV MODE: Firebase authentication error:', error);
-    Alert.alert("Firebase Error", "Failed to authenticate with Firebase. Please try again.");
-    throw error;
-  }
-};
 
 export default AuthScreen;

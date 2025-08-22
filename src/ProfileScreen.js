@@ -159,6 +159,14 @@ const ProfileScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
+      {/* FAB */}
+      <TouchableOpacity 
+        style={styles.fabTop} 
+        onPress={() => navigation.navigate('Home')}
+      >
+        <Text style={styles.fabText}>☰</Text>
+      </TouchableOpacity>
+      
       <ScrollView style={{ flex: 1, width: '100%' }}>
         {/* Welcome Header */}
         <View style={styles.welcomeContainer}>
@@ -288,27 +296,6 @@ const ProfileScreen = () => {
 
         {/* Actions */}
         <View style={styles.actionsSection}>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => navigation.navigate('HowToPlay')}
-          >
-            <Text style={styles.buttonText}>How to Play</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => navigation.navigate('Leaderboard')}
-          >
-            <Text style={styles.buttonText}>View Leaderboard</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.button, styles.signOutButton]}
-            onPress={handleSignOut}
-          >
-            <Text style={styles.buttonText}>Sign Out</Text>
-          </TouchableOpacity>
-          
           <TouchableOpacity
             style={[styles.button, styles.deleteButton]}
             onPress={() => setShowDeleteModal(true)}
