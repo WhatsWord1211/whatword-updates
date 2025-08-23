@@ -126,7 +126,8 @@ const ProfileScreen = () => {
   const handleSignOut = async () => {
     try {
       await auth.signOut();
-      navigation.navigate('Auth');
+      // Don't navigate manually - let App.js handle the auth state change
+      // navigation.navigate('Auth'); // Removed this line
     } catch (error) {
       console.error('Failed to sign out:', error);
       Alert.alert('Error', 'Failed to sign out. Please try again.');

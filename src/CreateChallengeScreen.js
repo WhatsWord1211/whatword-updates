@@ -54,8 +54,7 @@ const CreateChallengeScreen = () => {
             const friendData = friendDoc.data();
             friendsData.push({
               uid: friendId,
-              username: friendData.username || friendData.displayName || 'Unknown Player',
-              email: friendData.email || 'No email'
+              username: friendData.username || friendData.displayName || 'Unknown Player'
             });
           }
         } catch (error) {
@@ -120,9 +119,14 @@ const CreateChallengeScreen = () => {
         contentContainerStyle={{ 
           paddingHorizontal: 20, 
           paddingBottom: 30,
-          alignItems: 'center'
+          alignItems: 'center',
+          paddingTop: 20,
+          minHeight: '100%' // Ensure content fills the screen
         }}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        bounces={true}
+        alwaysBounceVertical={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.header}>Create Challenge</Text>
         
@@ -156,15 +160,14 @@ const CreateChallengeScreen = () => {
         ) : (
           <>
             <Text style={styles.subtitle}>
-              Select a friend to challenge:
+              Select a friend to challenge ({friends.length} available):
             </Text>
             
             <View style={styles.friendsContainer}>
-              {friends.map((friend) => (
-                <View key={friend.uid} style={styles.friendItem}>
+              {friends.map((friend, index) => (
+                <View key={friend.uid} style={[styles.friendItem, index === friends.length - 1 && styles.lastFriendItem]}>
                   <View style={styles.friendInfo}>
                     <Text style={styles.friendUsername}>{friend.username}</Text>
-                    <Text style={styles.friendEmail}>{friend.email}</Text>
                   </View>
                   <TouchableOpacity
                     style={styles.challengeButton}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Text, View, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet, TouchableOpacity, PanGestureHandler, State, Animated, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -16,6 +16,8 @@ const CustomTabNavigator = () => {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [activePvPGames, setActivePvPGames] = useState([]);
   const [notificationsSeen, setNotificationsSeen] = useState(false);
+  const [dismissedNotifications, setDismissedNotifications] = useState(new Set());
+  const [badgeScale] = useState(new Animated.Value(1));
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -90,14 +92,80 @@ const CustomTabNavigator = () => {
     }, [])
   );
 
+  // Animate notification badge dismissal
+  const animateDismissal = () => {
+    Animated.sequence([
+      Animated.timing(badgeScale, {
+        toValue: 1.2,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeScale, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      badgeScale.setValue(1);
+    });
+  };
+
+  // Dismiss specific notification by ID
+  const dismissNotification = (notificationId, type) => {
+    animateDismissal();
+    setDismissedNotifications(prev => new Set([...prev, `${type}_${notificationId}`]));
+    // Add subtle visual feedback
+    console.log(`Notification dismissed: ${type} ${notificationId}`);
+  };
+
+  // Dismiss all notifications
+  const dismissAllNotifications = () => {
+    animateDismissal();
+    setDismissedNotifications(prev => {
+      const newSet = new Set(prev);
+      // Add all current notifications to dismissed set
+      pendingChallenges.forEach(challenge => newSet.add(`challenge_${challenge.id}`));
+      pendingRequests.forEach(request => newSet.add(`request_${request.id}`));
+      if (activePvPGames.length > 0) {
+        newSet.add('activeGame_1');
+      }
+      return newSet;
+    });
+    setNotificationsSeen(true);
+    console.log('All notifications dismissed');
+  };
+
+  // Show help for notification dismissal
+  const showNotificationHelp = () => {
+    Alert.alert(
+      'Notification Help',
+      '💡 Tap notification badge to dismiss individual notifications\n\n👆 Long press to dismiss all notifications\n\n📱 Notifications also auto-dismiss when you visit the Friends tab',
+      [{ text: 'Got it!', style: 'default' }]
+    );
+  };
+
+  // Check if a specific notification is dismissed
+  const isNotificationDismissed = (notificationId, type) => {
+    return dismissedNotifications.has(`${type}_${notificationId}`);
+  };
+
   const getNotificationCount = () => {
     // Only count items that are actually visible and actionable on the Friends screen
     // - pendingChallenges: shown in "Pending Challenges" section
     // - pendingRequests: shown in "Friends Management" section  
     // - activePvPGames: shown as "Active PvP Game" notification (count as 1 if exists)
-    // Only show count if notifications haven't been seen yet
+    // Only show count if notifications haven't been seen yet and haven't been manually dismissed
+    const visibleChallenges = pendingChallenges.filter(challenge => 
+      !isNotificationDismissed(challenge.id, 'challenge')
+    );
+    const visibleRequests = pendingRequests.filter(request => 
+      !isNotificationDismissed(request.id, 'request')
+    );
+    const visibleActiveGames = activePvPGames.length > 0 && 
+      !isNotificationDismissed('1', 'activeGame') ? 1 : 0;
+    
     const count = !notificationsSeen ? 
-      pendingChallenges.length + pendingRequests.length + (activePvPGames.length > 0 ? 1 : 0) : 0;
+      visibleChallenges.length + visibleRequests.length + visibleActiveGames : 0;
     
     return count;
   };
@@ -106,11 +174,27 @@ const CustomTabNavigator = () => {
     <View style={styles.tabIconContainer}>
       <Text style={{ color, fontSize: size, fontWeight: "bold" }}>{icon}</Text>
       {hasNotifications && (
-        <View style={styles.notificationBadge}>
-          <Text style={styles.notificationText}>
-            {getNotificationCount() > 99 ? '99+' : getNotificationCount()}
-          </Text>
-        </View>
+                        <Animated.View style={[styles.notificationBadge, { transform: [{ scale: badgeScale }] }]}>
+                  <TouchableOpacity
+                    style={styles.notificationBadgeInner}
+                    onPress={() => {
+                      // Tap to dismiss this specific notification type
+                      if (pendingChallenges.length > 0) {
+                        dismissNotification(pendingChallenges[0].id, 'challenge');
+                      } else if (pendingRequests.length > 0) {
+                        dismissNotification(pendingRequests[0].id, 'request');
+                      } else if (activePvPGames.length > 0) {
+                        dismissNotification('1', 'activeGame');
+                      }
+                    }}
+                    onLongPress={dismissAllNotifications}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.notificationText}>
+                      {getNotificationCount() > 99 ? '99+' : getNotificationCount()}
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
       )}
     </View>
   );
@@ -149,11 +233,47 @@ const CustomTabNavigator = () => {
         component={FriendsScreen}
         options={{
           title: "Friends",
-          tabBarIcon: ({ color, size }) => renderTabIcon(
-            "👥", 
-            color, 
-            size, 
-            (pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0) && !notificationsSeen
+          tabBarIcon: ({ color, size }) => (
+            <View style={styles.tabIconContainer}>
+              <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👥</Text>
+              {(pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0) && !notificationsSeen && (
+                <TouchableOpacity
+                  style={styles.notificationBadge}
+                  onPress={() => {
+                    // Tap to dismiss this specific notification type
+                    if (pendingChallenges.length > 0) {
+                      dismissNotification(pendingChallenges[0].id, 'challenge');
+                    } else if (pendingRequests.length > 0) {
+                      dismissNotification(pendingRequests[0].id, 'request');
+                    } else if (activePvPGames.length > 0) {
+                      dismissNotification('1', 'activeGame');
+                    }
+                  }}
+                  onLongPress={dismissAllNotifications}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.notificationText}>
+                    {getNotificationCount() > 99 ? '99+' : getNotificationCount()}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {/* Small help indicator for first-time users */}
+              {getNotificationCount() > 0 && (
+                <TouchableOpacity
+                  style={styles.helpIndicator}
+                  onPress={showNotificationHelp}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.helpText}>💡</Text>
+                </TouchableOpacity>
+              )}
+              {/* Small hint text for notification interaction */}
+              {getNotificationCount() > 0 && (
+                <View style={styles.hintContainer}>
+                  <Text style={styles.hintText}>Tap to dismiss</Text>
+                </View>
+              )}
+            </View>
           ),
         }}
       />
@@ -189,12 +309,63 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#1F2937',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  notificationBadgeInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
   },
   notificationText: {
     color: 'white',
     fontSize: 10,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  helpIndicator: {
+    position: 'absolute',
+    bottom: -15,
+    left: '50%',
+    marginLeft: -10,
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+    width: 20,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.8,
+  },
+  helpText: {
+    color: 'white',
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  hintContainer: {
+    position: 'absolute',
+    bottom: -25,
+    left: '50%',
+    marginLeft: -40,
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+    width: 80,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.8,
+  },
+  hintText: {
+    color: 'white',
+    fontSize: 8,
+    fontWeight: 'bold',
   },
 });
 

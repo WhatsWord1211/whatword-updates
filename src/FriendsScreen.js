@@ -139,24 +139,33 @@ const FriendsScreen = () => {
         // Check if any sent challenges were just accepted
         sentChallenges.forEach(challenge => {
           if (challenge.status === 'accepted' && challenge.gameId) {
-            // Challenge was accepted and game created - show notification
-            Alert.alert(
-              '🎮 Challenge Accepted!',
-              `${challenge.toUsername} has accepted your challenge! A PvP game has been created.`,
-              [
-                {
-                  text: 'Play Now',
-                  onPress: () => {
-                    playSound('chime').catch(() => {});
-                    navigation.navigate('PvPGame', { gameId: challenge.gameId });
+            // Check if this is a recent challenge acceptance (within last 5 minutes)
+            const challengeAcceptedAt = challenge.acceptedAt || challenge.timestamp;
+            const isRecentAcceptance = challengeAcceptedAt && 
+              (new Date().getTime() - new Date(challengeAcceptedAt.toDate?.() || challengeAcceptedAt).getTime()) < 300000; // 5 minutes
+            
+            if (isRecentAcceptance) {
+              // Challenge was recently accepted and game created - show notification
+              Alert.alert(
+                '🎮 Challenge Accepted!',
+                `${challenge.toUsername} has accepted your challenge! A PvP game has been created.`,
+                [
+                  {
+                    text: 'Play Now',
+                    onPress: () => {
+                      playSound('chime').catch(() => {});
+                      navigation.navigate('PvPGame', { gameId: challenge.gameId });
+                    }
+                  },
+                  {
+                    text: 'Later',
+                    style: 'cancel'
                   }
-                },
-                {
-                  text: 'Later',
-                  style: 'cancel'
-                }
-              ]
-            );
+                ]
+              );
+            } else {
+              console.log('🚫 Preventing old challenge accepted notification:', challenge.id);
+            }
           }
         });
       });
@@ -199,7 +208,11 @@ const FriendsScreen = () => {
           const isRecentGame = gameCreatedAt && 
             (new Date().getTime() - new Date(gameCreatedAt).getTime()) < 60000; // Within last minute
           
-          if (isRecentGame) {
+          // Additional check: ensure game is in a valid state
+          const isValidGame = newGame.status === 'ready' || 
+            (newGame.status === 'active' && newGame.playerWord && newGame.opponentWord);
+          
+          if (isRecentGame && isValidGame) {
             // Show notification that the game has started
             Alert.alert(
               '🎮 PvP Game Started!',
@@ -223,12 +236,23 @@ const FriendsScreen = () => {
               ]
             );
           } else {
-            // This is an old stuck game, mark popup as shown to prevent it from appearing
+            // This is an old stuck game or invalid game, mark popup as shown to prevent it from appearing
+            console.log('🚫 Preventing notification for old/invalid game:', newGame.id, newGame.status);
             setHasShownGameStartPopup(true);
           }
         }
         
         setActivePvPGame(activeGames.length > 0 ? activeGames[0] : null);
+        
+        // Auto-detect and fix stuck games where both players have solved
+        if (activeGames.length > 0) {
+          const game = activeGames[0];
+          if (game.player1?.solved && game.player2?.solved && game.status === 'active') {
+            console.log('🔧 Auto-detected stuck completed game:', game.id);
+            // Don't auto-fix here, just log it for now to avoid interrupting user experience
+            // User can use the "Remove Stuck Game" button to fix it
+          }
+        }
       });
       
       activeGamesUnsubscribeRef.current = unsubscribeActiveGames;
@@ -273,7 +297,8 @@ const FriendsScreen = () => {
           type: gameData.type, 
           gameMode: gameData.gameMode,
           createdAt: gameData.createdAt,
-          completedAt: gameData.completedAt
+          completedAt: gameData.completedAt,
+          lastUpdated: gameData.lastUpdated
         });
       });
     } catch (error) {
@@ -288,7 +313,7 @@ const FriendsScreen = () => {
       const gamesQuery = query(
         collection(db, 'games'),
         where('players', 'array-contains', user.uid),
-        where('status', '==', 'active')
+        where('status', 'in', ['ready', 'active'])
       );
       
       const snapshot = await getDocs(gamesQuery);
@@ -298,43 +323,75 @@ const FriendsScreen = () => {
         const gameData = doc.data();
         
         // Check if this game should be completed
-        if (gameData.type === 'pvp') {
-          const playerGuesses = gameData.playerGuesses || [];
-          const opponentGuesses = gameData.opponentGuesses || [];
-          const playerSolved = gameData.playerSolved || false;
-          const opponentSolved = gameData.opponentSolved || false;
+        if (gameData.type === 'pvp' || gameData.gameMode === 'pvp') {
+          let shouldComplete = false;
+          let updates = {
+            status: 'completed',
+            completedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+          };
           
-          // If both players have made guesses or one has solved, mark as completed
-          if ((playerGuesses.length > 0 || opponentGuesses.length > 0) || playerSolved || opponentSolved) {
-            console.log('🔧 Fixing stuck game:', doc.id);
+          // Check current data structure (gameHistory + player1/player2)
+          if (gameData.gameHistory && gameData.player1 && gameData.player2) {
+            const player1Solved = gameData.player1.solved || false;
+            const player2Solved = gameData.player2.solved || false;
             
-            const updates = {
-              status: 'completed',
-              completedAt: new Date().toISOString(),
-              lastUpdated: new Date().toISOString()
-            };
-            
-            // Determine winner if possible
-            if (playerSolved && !opponentSolved) {
-              updates.winnerId = gameData.creatorId;
-            } else if (opponentSolved && !playerSolved) {
-              updates.winnerId = gameData.players.find(id => id !== gameData.creatorId);
-            } else if (playerSolved && opponentSolved) {
-              // Both solved - determine winner by attempts
-              if (playerGuesses.length < opponentGuesses.length) {
-                updates.winnerId = gameData.creatorId;
-              } else if (opponentGuesses.length < playerGuesses.length) {
-                updates.winnerId = gameData.players.find(id => id !== gameData.creatorId);
+            // If both players have solved their words, game should be completed
+            if (player1Solved && player2Solved) {
+              shouldComplete = true;
+              console.log('🔧 Both players solved - completing game:', doc.id);
+              
+              // Determine winner by attempts
+              const player1Attempts = gameData.player1.attempts || 0;
+              const player2Attempts = gameData.player2.attempts || 0;
+              
+              if (player1Attempts < player2Attempts) {
+                updates.winnerId = gameData.player1.uid;
+              } else if (player2Attempts < player1Attempts) {
+                updates.winnerId = gameData.player2.uid;
               } else {
                 updates.tie = true;
                 updates.winnerId = null;
               }
-            } else if (playerGuesses.length >= 25 && opponentGuesses.length >= 25) {
-              // Both reached max attempts without solving
-              updates.tie = true;
-              updates.winnerId = null;
             }
+          }
+          
+          // Fallback: Check old data structure
+          if (!shouldComplete) {
+            const playerGuesses = gameData.playerGuesses || [];
+            const opponentGuesses = gameData.opponentGuesses || [];
+            const playerSolved = gameData.playerSolved || false;
+            const opponentSolved = gameData.opponentSolved || false;
             
+            if ((playerGuesses.length > 0 || opponentGuesses.length > 0) || playerSolved || opponentSolved) {
+              shouldComplete = true;
+              console.log('🔧 Using fallback logic for game:', doc.id);
+              
+              // Determine winner if possible
+              if (playerSolved && !opponentSolved) {
+                updates.winnerId = gameData.creatorId;
+              } else if (opponentSolved && !playerSolved) {
+                updates.winnerId = gameData.players.find(id => id !== gameData.creatorId);
+              } else if (playerSolved && opponentSolved) {
+                // Both solved - determine winner by attempts
+                if (playerGuesses.length < opponentGuesses.length) {
+                  updates.winnerId = gameData.creatorId;
+                } else if (opponentGuesses.length < playerGuesses.length) {
+                  updates.winnerId = gameData.players.find(id => id !== gameData.creatorId);
+                } else {
+                  updates.tie = true;
+                  updates.winnerId = null;
+                }
+              } else if (playerGuesses.length >= 25 && opponentGuesses.length >= 25) {
+                // Both reached max attempts without solving
+                updates.tie = true;
+                updates.winnerId = null;
+              }
+            }
+          }
+          
+          if (shouldComplete) {
+            console.log('🔧 Fixing stuck game:', doc.id, 'with updates:', updates);
             await updateDoc(doc(db, 'games', doc.id), updates);
             console.log('🔧 Fixed game:', doc.id);
           }
@@ -343,9 +400,107 @@ const FriendsScreen = () => {
       
       console.log('🔧 Finished fixing stuck games');
       Alert.alert('Success', 'Stuck games have been fixed!');
+      
+      // The screen will automatically refresh through the existing onSnapshot listeners
+      // No need to manually call a function
     } catch (error) {
       console.error('🔧 Error fixing stuck games:', error);
       Alert.alert('Error', 'Failed to fix stuck games: ' + error.message);
+    }
+  };
+
+  // Function to clean up old notifications and challenges
+  const cleanupOldNotifications = async () => {
+    try {
+      console.log('🧹 Cleaning up old notifications...');
+      
+      // Clean up old challenges that are no longer valid
+      const oldChallengesQuery = query(
+        collection(db, 'challenges'),
+        where('to', '==', user.uid),
+        where('status', '==', 'pending')
+      );
+      
+      const challengesSnapshot = await getDocs(oldChallengesQuery);
+      let cleanedCount = 0;
+      
+      for (const doc of challengesSnapshot.docs) {
+        const challengeData = doc.data();
+        
+        // Check if challenge is older than 7 days
+        const challengeAge = new Date().getTime() - new Date(challengeData.timestamp?.toDate?.() || challengeData.timestamp).getTime();
+        const isOld = challengeAge > (7 * 24 * 60 * 60 * 1000); // 7 days
+        
+        if (isOld) {
+          await updateDoc(doc(db, 'challenges', doc.id), {
+            status: 'expired',
+            expiredAt: new Date().toISOString()
+          });
+          cleanedCount++;
+        }
+      }
+      
+      console.log('🧹 Cleaned up', cleanedCount, 'old challenges');
+      Alert.alert('Cleanup Complete', `Cleaned up ${cleanedCount} old notifications!`);
+    } catch (error) {
+      console.error('🧹 Error cleaning up notifications:', error);
+      Alert.alert('Error', 'Failed to cleanup notifications: ' + error.message);
+    }
+  };
+
+  // Function to force remove stuck active game
+  const forceRemoveStuckGame = async () => {
+    try {
+      if (activePvPGame) {
+        console.log('🗑️ Force removing stuck game:', activePvPGame.id);
+        
+        // Check if this game should actually be completed instead of abandoned
+        if (activePvPGame.player1?.solved && activePvPGame.player2?.solved) {
+          console.log('🗑️ Game is actually completed, marking as such instead of abandoned');
+          
+          // Determine winner by attempts
+          const player1Attempts = activePvPGame.player1.attempts || 0;
+          const player2Attempts = activePvPGame.player2.attempts || 0;
+          
+          let updates = {
+            status: 'completed',
+            completedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+          };
+          
+          if (player1Attempts < player2Attempts) {
+            updates.winnerId = activePvPGame.player1.uid;
+          } else if (player2Attempts < player1Attempts) {
+            updates.winnerId = activePvPGame.player2.uid;
+          } else {
+            updates.tie = true;
+            updates.winnerId = null;
+          }
+          
+          await updateDoc(doc(db, 'games', activePvPGame.id), updates);
+          console.log('🗑️ Successfully marked game as completed');
+          Alert.alert('Success', 'Game has been properly marked as completed!');
+        } else {
+          // Mark the game as abandoned
+          await updateDoc(doc(db, 'games', activePvPGame.id), {
+            status: 'abandoned',
+            abandonedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString(),
+            abandonedBy: user.uid
+          });
+          
+          console.log('🗑️ Successfully marked game as abandoned');
+          Alert.alert('Success', 'Stuck game has been marked as abandoned!');
+        }
+        
+        setActivePvPGame(null);
+        
+        // The screen will automatically refresh through the existing onSnapshot listeners
+        // No need to manually call a function
+      }
+    } catch (error) {
+      console.error('🗑️ Error removing stuck game:', error);
+      Alert.alert('Error', 'Failed to remove stuck game: ' + error.message);
     }
   };
 
@@ -668,12 +823,9 @@ const FriendsScreen = () => {
           {/* Debug: Force remove stuck game */}
           <TouchableOpacity
             style={[styles.viewChallengesButton, { backgroundColor: '#EF4444', marginTop: 10 }]}
-            onPress={() => {
-              console.log('🔍 Force removing stuck game:', activePvPGame.id);
-              setActivePvPGame(null);
-            }}
+            onPress={forceRemoveStuckGame}
           >
-            <Text style={styles.viewChallengesButtonText}>Remove Stuck Game</Text>
+            <Text style={styles.viewChallengesButtonText}>🔧 Fix Completed Game</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -724,6 +876,17 @@ const FriendsScreen = () => {
           <Text style={styles.navCardTitle}>🔧 Fix Stuck Games</Text>
           <Text style={styles.navCardSubtitle}>
             Automatically fix stuck active games
+          </Text>
+        </TouchableOpacity>
+
+        {/* Clean up old notifications */}
+        <TouchableOpacity
+          style={[styles.navCard, { backgroundColor: '#F59E0B' }]}
+          onPress={cleanupOldNotifications}
+        >
+          <Text style={styles.navCardTitle}>🧹 Clean Notifications</Text>
+          <Text style={styles.navCardSubtitle}>
+            Remove old expired challenges
           </Text>
         </TouchableOpacity>
 

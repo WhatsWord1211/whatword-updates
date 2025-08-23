@@ -1,40 +1,73 @@
 // AuthScreen with clean authentication flow - no guest mode
+// NOTE: Facebook and Google sign-in buttons are temporarily hidden for production
+// They will be re-enabled once OAuth is properly configured and tested
+// UPDATE: Main screen bypassed - goes directly to email form since it's the only sign-in option
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Linking } from "react-native";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential } from "firebase/auth";
-import { doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
-import { auth, db, googleProvider } from "./firebase";
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image } from "react-native";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential, GoogleAuthProvider } from "firebase/auth";
+import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
 import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 
-
+// Configure WebBrowser for OAuth
+WebBrowser.maybeCompleteAuthSession();
 
 const AuthScreen = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(true); // Auto-show email form since it's the only option
 
-
-
-
-
-  const handleFacebookSignIn = async () => {
-    Alert.alert(
-      "Coming Soon", 
-      "Facebook sign-in will be available soon! For now, please use Google or email sign-in.",
-      [{ text: "OK" }]
-    );
+  // Google OAuth configuration
+  const googleConfig = {
+    clientId: Constants.expoConfig.extra.googleClientId,
+    scopes: ['openid', 'profile', 'email'],
+    redirectUri: AuthSession.makeRedirectUri({
+      scheme: 'com.whatword.app'
+    }),
   };
+
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(googleConfig);
+
+  // Handle Google OAuth response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      handleGoogleSignInSuccess(authentication.accessToken);
+    }
+  }, [response]);
 
   const handleGoogleSignIn = async () => {
     try {
+      console.log('🔧 DEV MODE: Starting Google OAuth...');
+      await promptAsync();
+    } catch (error) {
+      console.error('🔧 DEV MODE: Google OAuth prompt error:', error);
+      Alert.alert("Google Sign-In Error", "Failed to start Google sign-in process.");
+    }
+  };
+
+  const handleGoogleSignInSuccess = async (accessToken) => {
+    try {
       setLoading(true);
-      console.log('🔧 DEV MODE: Starting Google sign-in...');
+      console.log('🔧 DEV MODE: Google OAuth successful, getting user info...');
       
-      // Use Firebase's built-in Google Sign-In
-      const result = await signInWithCredential(auth, googleProvider.credential());
-      console.log('🔧 DEV MODE: Google sign-in successful:', result.user.uid);
+      // Get user info from Google
+      const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const userInfo = await userInfoResponse.json();
+      
+      console.log('🔧 DEV MODE: Google user info:', userInfo);
+      
+      // Create Firebase credential using the access token
+      const credential = GoogleAuthProvider.credential(null, accessToken);
+      const result = await signInWithCredential(auth, credential);
+      
+      console.log('🔧 DEV MODE: Firebase sign-in successful:', result.user.uid);
       
       // Check if user profile exists
       const userDocRef = doc(db, 'users', result.user.uid);
@@ -45,15 +78,15 @@ const AuthScreen = () => {
         await updateDoc(userDocRef, {
           lastLogin: new Date(),
           email: result.user.email,
-          displayName: result.user.displayName || result.user.email.split('@')[0]
+          displayName: result.user.displayName || userInfo.name || result.user.email.split('@')[0]
         });
         console.log('🔧 DEV MODE: Profile updated successfully');
       } else {
         // Create new profile
         await setDoc(userDocRef, {
           uid: result.user.uid,
-          username: result.user.email ? result.user.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`,
-          displayName: result.user.displayName || (result.user.email ? result.user.email.split('@')[0] : 'Player'),
+          username: userInfo.name || result.user.email.split('@')[0],
+          displayName: userInfo.name || result.user.email.split('@')[0],
           email: result.user.email,
           createdAt: new Date(),
           lastLogin: new Date(),
@@ -76,6 +109,16 @@ const AuthScreen = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+
+
+  const handleFacebookSignIn = async () => {
+    Alert.alert(
+      "Coming Soon", 
+      "Facebook sign-in will be available soon! For now, please use Google or email sign-in.",
+      [{ text: "OK" }]
+    );
   };
 
   const handleEmailAuth = async () => {
@@ -198,19 +241,23 @@ const AuthScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
-                  <Text style={styles.welcomeText}>Welcome To</Text>
+          <Text style={styles.welcomeTextEmail}>Welcome To</Text>
         
-        <Image
-          source={require('../assets/images/WhatWord-header.png')}
-          style={styles.headerImage}
-          resizeMode="contain"
-        />
+          <Image
+            source={require('../assets/images/WhatWord-header.png')}
+            style={styles.headerImageEmail}
+            resizeMode="contain"
+          />
         
         <Text style={styles.subtitle}>
-          {isLogin ? "Welcome back!" : "Create your account"}
+          {isLogin ? "" : "Create your account"}
+        </Text>
+        
+        <Text style={styles.gameDescription}>
+          Solve your friend's word before they solve yours
         </Text>
           
-          <View style={styles.form}>
+          <View style={styles.formEmail}>
             <TextInput
               style={styles.input}
               placeholder="Email"
@@ -250,17 +297,26 @@ const AuthScreen = () => {
             </TouchableOpacity>
           </View>
           
+          {/* Terms and Conditions */}
           <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => setShowEmailForm(false)}
+            style={styles.termsContainer}
+            onPress={handleTermsPress}
           >
-            <Text style={styles.backButtonText}>← Back to Sign In Options</Text>
+            <Text style={styles.termsText}>
+              By continuing, you agree to the{" "}
+              <Text style={styles.termsLink}>terms</Text>
+              {" "}and{" "}
+              <Text style={styles.termsLink}>privacy policy</Text>
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
+  // Main screen temporarily bypassed since only email sign-in is available
+  // This will be re-enabled when social sign-in options are added back
+  /*
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -272,26 +328,9 @@ const AuthScreen = () => {
           resizeMode="contain"
         />
         
-        <Text style={styles.subtitle}>Sign in to start playing with friends!</Text>
+        <Text style={styles.subtitle}>Sign in with your email to start playing with friends!</Text>
         
         <View style={styles.buttonContainer}>
-          <TouchableOpacity 
-            style={[styles.socialButton, styles.facebookButton]}
-            onPress={handleFacebookSignIn}
-          >
-            <Text style={styles.facebookButtonText}>📘 Sign in with Facebook</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.socialButton, styles.googleButton, loading && styles.disabledButton]}
-            onPress={handleGoogleSignIn}
-            disabled={loading}
-          >
-            <Text style={styles.googleButtonText}>
-              {loading ? "Signing in..." : "🔍 Sign in with Google"}
-            </Text>
-          </TouchableOpacity>
-          
           <TouchableOpacity 
             style={[styles.socialButton, styles.emailButton]}
             onPress={() => setShowEmailForm(true)}
@@ -312,10 +351,18 @@ const AuthScreen = () => {
           </Text>
         </TouchableOpacity>
         
-
+        <View style={styles.socialNoteContainer}>
+          <Text style={styles.socialNoteText}>
+            🔒 Social sign-in options (Google, Facebook) will be available soon!
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
+  */
+  
+  // Since we only have email sign-in, go directly to email form
+  return null;
 };
 
 const styles = StyleSheet.create({
@@ -335,11 +382,26 @@ const styles = StyleSheet.create({
     marginTop: 20,
     maxWidth: 350,
   },
+  headerImageEmail: {
+    width: "100%",
+    height: 120,
+    marginTop: -10,
+    marginBottom: 15,
+    maxWidth: 350,
+  },
   welcomeText: {
     fontSize: 36,
     fontWeight: "bold",
     color: "#E5E7EB",
     marginBottom: 20,
+    textAlign: "center",
+  },
+  welcomeTextEmail: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#E5E7EB",
+    marginBottom: 10,
+    marginTop: 30,
     textAlign: "center",
   },
   title: {
@@ -352,8 +414,17 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 18,
     color: "#E5E7EB",
-    marginBottom: 40,
+    marginBottom: 20,
     textAlign: "center",
+  },
+  gameDescription: {
+    fontSize: 20, // Increased from 16 to 20 for better visibility
+    color: "#E5E7EB", // Changed from #9CA3AF to #E5E7EB for better contrast
+    marginBottom: 30,
+    textAlign: "center",
+    fontStyle: "italic",
+    lineHeight: 26, // Increased line height to match larger font
+    fontWeight: "500", // Added medium weight for better readability
   },
   buttonContainer: {
     width: "100%",
@@ -400,6 +471,12 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     marginBottom: 30,
   },
+  formEmail: {
+    width: "100%",
+    maxWidth: 300,
+    marginBottom: 30,
+    marginTop: 10,
+  },
   input: {
     backgroundColor: "#374151",
     borderRadius: 8,
@@ -433,6 +510,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  backButtonEmail: {
+    alignItems: "center",
+    marginBottom: 20,
+    marginTop: 10,
+  },
   backButtonText: {
     color: "#9CA3AF",
     fontSize: 14,
@@ -453,6 +535,18 @@ const styles = StyleSheet.create({
   termsLink: {
     color: "#F59E0B",
     textDecorationLine: "underline",
+  },
+  socialNoteContainer: {
+    alignItems: "center",
+    marginTop: 15,
+    paddingHorizontal: 20,
+  },
+  socialNoteText: {
+    color: "#9CA3AF",
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 16,
+    fontStyle: "italic",
   },
   testButton: {
     backgroundColor: "#6B7280",

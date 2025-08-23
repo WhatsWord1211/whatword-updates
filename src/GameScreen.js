@@ -9,6 +9,7 @@ import { isValidWord, getFeedback, selectRandomWord } from './gameLogic';
 import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
 import { Audio } from 'expo-av';
+import PlayerProfileService from './playerProfileService';
 
 // Placeholder function for showing an ad
 const showAd = async () => {
@@ -637,12 +638,68 @@ const GameScreen = () => {
               
               // Only save to Firebase for authenticated users (not guests)
               if (auth.currentUser?.uid) {
-                await setDoc(doc(db, 'leaderboard', `score_${auth.currentUser.uid}_${Date.now()}`), {
+                // Double-check authentication state
+                if (!auth.currentUser || !auth.currentUser.uid) {
+                  console.log('GameScreen: User authentication lost, skipping Firebase update');
+                  return;
+                }
+                
+                const leaderboardData = {
                   mode: gameMode,
+                  difficulty: difficulty || 'regular', // Save difficulty level
+                  wordLength: wordLength || 5, // Save word length
                   guesses: newScore,
                   timestamp: new Date().toISOString(), 
                   userId: auth.currentUser.uid,
-                }, { merge: true });
+                };
+                console.log('GameScreen: Saving to leaderboard:', leaderboardData);
+                console.log('GameScreen: Current user UID:', auth.currentUser.uid);
+                console.log('GameScreen: Auth state:', auth.currentUser);
+                
+                try {
+                  const docId = `score_${auth.currentUser.uid}_${Date.now()}`;
+                  console.log('GameScreen: Creating document with ID:', docId);
+                  
+                  await setDoc(doc(db, 'leaderboard', docId), leaderboardData, { merge: true });
+                  console.log('GameScreen: Successfully saved to leaderboard collection');
+                  
+                  // Update user profile with game stats
+                  const playerProfileService = new PlayerProfileService();
+                  await playerProfileService.updateGameStats(auth.currentUser.uid, {
+                    won: true,
+                    score: newScore,
+                    bestScore: 0 // Will be updated by the service if it's better
+                  });
+                  console.log('GameScreen: Successfully updated user profile');
+                } catch (firebaseError) {
+                  console.error('GameScreen: Firebase error details:', {
+                    code: firebaseError.code,
+                    message: firebaseError.message,
+                    details: firebaseError.details
+                  });
+                  
+                  // Fallback: Save to local storage if Firebase fails
+                  try {
+                    console.log('GameScreen: Attempting fallback to local storage');
+                    const localLeaderboard = await AsyncStorage.getItem('leaderboard') || '[]';
+                    const localData = JSON.parse(localLeaderboard);
+                    localData.push({
+                      ...leaderboardData,
+                      fallback: true, // Mark as fallback entry
+                      firebaseError: firebaseError.message
+                    });
+                    if (localData.length > 15) localData.shift();
+                    await AsyncStorage.setItem('leaderboard', JSON.stringify(localData));
+                    console.log('GameScreen: Successfully saved to local storage as fallback');
+                  } catch (fallbackError) {
+                    console.error('GameScreen: Fallback to local storage also failed:', fallbackError);
+                  }
+                  
+                  // Don't throw the error - just log it and continue
+                  // This prevents the game from crashing due to leaderboard issues
+                }
+              } else {
+                console.log('GameScreen: No authenticated user, skipping Firebase leaderboard update');
               }
             } catch (error) {
               console.error('GameScreen: Failed to update leaderboard', error);
@@ -652,6 +709,20 @@ const GameScreen = () => {
           setGameState('gameOver');
           setShowLosePopup(true);
           await playSound('lose').catch(() => {});
+          
+          // Update user profile with game stats for lost game
+          if (auth.currentUser?.uid) {
+            try {
+              const playerProfileService = new PlayerProfileService();
+              await playerProfileService.updateGameStats(auth.currentUser.uid, {
+                won: false,
+                score: MAX_GUESSES,
+                bestScore: 0
+              });
+            } catch (error) {
+              console.error('GameScreen: Failed to update user profile for lost game', error);
+            }
+          }
         } else if (gameMode === 'pvp' && guesses.length + 1 >= MAX_GUESSES) {
           setGameState('maxGuesses');
           setShowMaxGuessesPopup(true);

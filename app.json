@@ -7,8 +7,7 @@
       "orientation": "portrait",
       "icon": "./assets/icon.png",
       "userInterfaceStyle": "light",
-      "scheme": "com.whatword.app",
-    "android": {
+      "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
       "versionCode": 1,

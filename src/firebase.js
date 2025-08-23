@@ -31,18 +31,6 @@ export const auth = initializeAuth(app, {
 
 // Export services
 export const db = getFirestore(app);
-export const googleProvider = new GoogleAuthProvider();
-
-// Configure Google provider
-googleProvider.addScope('openid');
-googleProvider.addScope('profile');
-googleProvider.addScope('email');
-
-// Set custom parameters for Google sign-in
-googleProvider.setCustomParameters({
-  prompt: 'select_account'
-});
-
 export { app };
 
 // Add debugging for dev mode

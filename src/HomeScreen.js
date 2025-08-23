@@ -150,7 +150,8 @@ const HomeScreen = () => {
               loadUserProfile(currentUser),
               loadSounds(),
               checkFirstLaunch(),
-              loadSavedGames()
+              loadSavedGames(),
+              clearStuckGameState() // Clear any stuck game state
             ]).catch(console.error);
           }
           return;
@@ -168,7 +169,8 @@ const HomeScreen = () => {
                 loadUserProfile(currentUser),
                 loadSounds(),
                 checkFirstLaunch(),
-                loadSavedGames()
+                loadSavedGames(),
+                clearStuckGameState() // Clear any stuck game state
               ]).catch(console.error);
             } else {
               // No user authenticated - this shouldn't happen in the new flow
@@ -215,15 +217,61 @@ const HomeScreen = () => {
     }
   };
 
+  const clearStuckGameState = async () => {
+    try {
+      // Clear any potentially stuck game state from AsyncStorage
+      const keysToRemove = ['savedGames', 'currentGame', 'gameState'];
+      
+      for (const key of keysToRemove) {
+        try {
+          await AsyncStorage.removeItem(key);
+          console.log(`HomeScreen: Cleared ${key} from AsyncStorage`);
+        } catch (error) {
+          console.error(`HomeScreen: Failed to clear ${key}:`, error);
+        }
+      }
+      
+      console.log('HomeScreen: Cleared stuck game state');
+    } catch (error) {
+      console.error('HomeScreen: Failed to clear stuck game state:', error);
+    }
+  };
+
   const loadSavedGames = async () => {
     try {
       const savedGamesData = await AsyncStorage.getItem('savedGames');
       if (savedGamesData) {
         const games = JSON.parse(savedGamesData);
-        setSavedGames(games);
+        
+        // Filter out invalid or stuck games
+        const validGames = games.filter(game => {
+          // Remove games that are older than 24 hours
+          const gameAge = Date.now() - new Date(game.timestamp).getTime();
+          const isRecent = gameAge < 24 * 60 * 60 * 1000; // 24 hours
+          
+          // Remove games that are in invalid states
+          const isValidState = game.gameState && game.gameState !== 'error';
+          
+          return isRecent && isValidState;
+        });
+        
+        // If we filtered out games, update AsyncStorage
+        if (validGames.length !== games.length) {
+          console.log(`HomeScreen: Filtered out ${games.length - validGames.length} invalid/stuck games`);
+          await AsyncStorage.setItem('savedGames', JSON.stringify(validGames));
+        }
+        
+        setSavedGames(validGames);
       }
     } catch (error) {
       console.error('HomeScreen: Failed to load saved games:', error);
+      // If there's an error loading games, clear them to prevent issues
+      try {
+        await AsyncStorage.removeItem('savedGames');
+        console.log('HomeScreen: Cleared corrupted saved games');
+      } catch (clearError) {
+        console.error('HomeScreen: Failed to clear corrupted games:', clearError);
+      }
     }
   };
 
@@ -235,6 +283,14 @@ const HomeScreen = () => {
       setSavedGames([]);
       setGameInvites([]);
       setPendingChallenges([]);
+      
+      // Clear all saved games from AsyncStorage to prevent stuck games
+      try {
+        await AsyncStorage.removeItem('savedGames');
+        console.log('HomeScreen: Cleared saved games from AsyncStorage');
+      } catch (error) {
+        console.error('HomeScreen: Failed to clear saved games:', error);
+      }
     } catch (error) {
       console.error('HomeScreen: Sign out failed:', error);
     }

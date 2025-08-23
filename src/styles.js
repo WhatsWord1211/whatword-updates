@@ -1697,38 +1697,48 @@ export default StyleSheet.create({
     backgroundColor: '#374151',
     padding: 15,
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 12, // Increased spacing between items
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#4B5563',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   friendInfo: {
     flex: 1,
   },
   friendUsername: {
-    fontSize: 16,
+    fontSize: 18, // Increased font size
     fontWeight: '600',
     color: '#E5E7EB',
     fontFamily: 'Roboto-Bold',
-    marginBottom: 4,
+    marginBottom: 0, // Removed bottom margin since no email below
   },
-  friendEmail: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    fontFamily: 'Roboto-Regular',
-  },
+  // friendEmail style removed since we no longer display emails
   challengeButton: {
     backgroundColor: '#10B981',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
+    paddingVertical: 12, // Increased padding for better touch target
+    paddingHorizontal: 24, // Increased horizontal padding
+    borderRadius: 8, // Increased border radius
     marginLeft: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   challengeButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15, // Increased font size
     fontWeight: '600',
     fontFamily: 'Roboto-Bold',
+    textAlign: 'center',
+  },
+  lastFriendItem: {
+    marginBottom: 0, // Remove bottom margin for last item
   },
   friendsList: {
     width: '100%',
@@ -1766,6 +1776,7 @@ export default StyleSheet.create({
   friendsContainer: {
     width: '100%',
     marginTop: 10,
+    paddingBottom: 20, // Add bottom padding for better scrolling
   },
   actionButtons: {
     flexDirection: 'row',
@@ -2274,5 +2285,59 @@ export default StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     flexWrap: 'wrap',
+  },
+  
+  // Tab styling for Leaderboard
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  activeTab: {
+    backgroundColor: '#F59E0B',
+  },
+  tabText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  activeTabText: {
+    color: '#1F2937',
+  },
+  
+  // Difficulty tab styling for Leaderboard
+  difficultyTabContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    gap: 8,
+  },
+  difficultyTab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: '#374151',
+    borderWidth: 1,
+    borderColor: '#4B5563',
+  },
+  activeDifficultyTab: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#F59E0B',
+  },
+  difficultyTabText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  activeDifficultyTabText: {
+    color: '#1F2937',
+    fontWeight: '700',
   },
 });

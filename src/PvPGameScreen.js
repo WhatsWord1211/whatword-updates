@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } fr
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
-import { doc, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, increment } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import { getFeedback, isValidWord } from './gameLogic';
 import styles from './styles';
@@ -47,6 +47,19 @@ const PvPGameScreen = () => {
   
   const getMaxGuesses = () => game?.maxAttempts || 25;
 
+  const updateUserStats = async (userId, isWin) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        gamesPlayed: increment(1),
+        ...(isWin && { gamesWon: increment(1) })
+      });
+      console.log('PvPGameScreen: Updated user stats', { userId, isWin });
+    } catch (error) {
+      console.error('PvPGameScreen: Failed to update user stats', error);
+    }
+  };
+
   const handleQuitGame = async () => {
     try {
       if (game && currentUser) {
@@ -81,6 +94,18 @@ const PvPGameScreen = () => {
     const unsubscribe = onSnapshot(gameRef, (doc) => {
       if (doc.exists()) {
         const gameData = { id: doc.id, ...doc.data() };
+        
+        // Validate game state
+        if (gameData.status === 'completed' || gameData.status === 'abandoned') {
+          Alert.alert('Game Ended', 'This game has already ended. Please return to the Friends screen.');
+          navigation.navigate('Friends');
+          return;
+        }
+        
+        if (!gameData.playerWord || !gameData.opponentWord) {
+          console.log('Game not ready:', gameData);
+        }
+        
         setGame(gameData);
 
         
@@ -197,16 +222,27 @@ const PvPGameScreen = () => {
     }
   };
 
-    const handleSubmit = async () => {
-    if (!game || !currentUser || !canGuess()) {
-      Alert.alert('Cannot Guess', 'You have either solved the word or reached the maximum attempts.');
-      return;
-    }
+        const handleSubmit = async () => {
+      if (!game || !currentUser || !canGuess()) {
+        Alert.alert('Cannot Guess', 'You have either solved the word or reached the maximum attempts.');
+        return;
+      }
 
-    if (!inputWord || inputWord.length !== game.wordLength) {
-      Alert.alert('Invalid Guess', `Please enter a ${game.wordLength}-letter word.`);
-      return;
-    }
+      // Validate game state before proceeding
+      if (!game.playerWord || !game.opponentWord) {
+        Alert.alert('Game Not Ready', 'This game is not properly set up. Please wait for both players to set their words.');
+        return;
+      }
+
+      if (game.status !== 'active') {
+        Alert.alert('Game Not Active', 'This game is not currently active. Please check the game status.');
+        return;
+      }
+
+      if (!inputWord || inputWord.length !== game.wordLength) {
+        Alert.alert('Invalid Guess', `Please enter a ${game.wordLength}-letter word.`);
+        return;
+      }
 
     // Validate word against the appropriate word list
     const isValid = await isValidWord(inputWord.toLowerCase(), game.wordLength);
@@ -251,10 +287,32 @@ const PvPGameScreen = () => {
          }
        }
 
-      await updateDoc(gameRef, updateData);
-      
-      setInputWord('');
-      playSound('chime').catch(() => {});
+      try {
+        await updateDoc(gameRef, updateData);
+        
+        setInputWord('');
+        playSound('chime').catch(() => {});
+      } catch (error) {
+        console.error('Failed to update game with guess:', error);
+        
+        // Check if game no longer exists or is in invalid state
+        if (error.code === 'not-found' || error.message.includes('not found')) {
+          Alert.alert('Game Error', 'This game no longer exists or has been deleted. Please return to the Friends screen.');
+          navigation.navigate('Friends');
+          return;
+        }
+        
+        // Check if game is in invalid state
+        if (error.message.includes('permission') || error.message.includes('access')) {
+          Alert.alert('Game Error', 'You no longer have access to this game. It may have been completed or abandoned.');
+          navigation.navigate('Friends');
+          return;
+        }
+        
+        // Generic error
+        Alert.alert('Error', 'Failed to submit guess. Please try again.');
+        return;
+      }
       
              if (isCorrect) {
          // Player solved the word - show congratulations
@@ -277,6 +335,9 @@ const PvPGameScreen = () => {
                  winnerId: currentUser.uid,
                  tie: false
                });
+               // Update stats for both players
+               await updateUserStats(currentUser.uid, true);
+               await updateUserStats(opponentPlayerData.uid, false);
              } else if (myAttempts > opponentAttempts) {
                // Current player lost
                await updateDoc(gameRef, {
@@ -285,6 +346,9 @@ const PvPGameScreen = () => {
                  winnerId: opponentPlayerData.uid,
                  tie: false
                });
+               // Update stats for both players
+               await updateUserStats(currentUser.uid, false);
+               await updateUserStats(opponentPlayerData.uid, true);
              } else {
                // Tie
                await updateDoc(gameRef, {
@@ -293,6 +357,9 @@ const PvPGameScreen = () => {
                  winnerId: null,
                  tie: true
                });
+               // Update stats for both players (tie counts as played but not won)
+               await updateUserStats(currentUser.uid, false);
+               await updateUserStats(opponentPlayerData.uid, false);
              }
            } else {
              // Only current player solved, opponent reached max attempts
@@ -302,6 +369,9 @@ const PvPGameScreen = () => {
                winnerId: currentUser.uid,
                tie: false
              });
+             // Update stats for both players
+             await updateUserStats(currentUser.uid, true);
+             await updateUserStats(opponentPlayerData.uid, false);
            }
          }
          // If game not over, player waits for opponent to finish
@@ -316,6 +386,9 @@ const PvPGameScreen = () => {
               winnerId: opponentPlayerData.uid,
               tie: false
             });
+            // Update stats for both players
+            await updateUserStats(currentUser.uid, false);
+            await updateUserStats(opponentPlayerData.uid, true);
           } else if (opponentPlayerData.attempts >= getMaxGuesses()) {
            // Both reached max attempts without solving
            await updateDoc(gameRef, {
@@ -324,6 +397,9 @@ const PvPGameScreen = () => {
              tie: true,
              winnerId: null
            });
+           // Update stats for both players (tie counts as played but not won)
+           await updateUserStats(currentUser.uid, false);
+           await updateUserStats(opponentPlayerData.uid, false);
          } else {
            // Current player reached max attempts, waiting for opponent
            setShowMaxGuessesPopup(true);

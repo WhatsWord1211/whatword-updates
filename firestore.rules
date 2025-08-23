@@ -33,5 +33,23 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read, write: if request.auth != null;
     }
+    
+    // Allow authenticated users to read and write leaderboard data
+    // Users can only write their own scores and read all scores
+    match /leaderboard/{scoreId} {
+      // Allow read for all authenticated users (for leaderboard display)
+      allow read: if request.auth != null;
+      
+      // Allow write only if the user is writing their own score
+      // The scoreId format is: score_{userId}_{timestamp}
+      allow create, update: if request.auth != null && 
+        (scoreId.matches('score_.*') && 
+         request.resource.data.userId == request.auth.uid);
+      
+      // Allow delete only if the user is deleting their own score
+      allow delete: if request.auth != null && 
+        (scoreId.matches('score_.*') && 
+         resource.data.userId == request.auth.uid);
+    }
   }
 }
