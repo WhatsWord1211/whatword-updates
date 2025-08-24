@@ -59,8 +59,16 @@ export default StyleSheet.create({
     flex: 1,
     backgroundColor: '#1F2937',
     alignItems: 'center',
-    padding: 20,
+    padding: 15,
     paddingHorizontal: 16,
+  },
+  // Immersive game container for maximum screen usage
+  immersiveGameContainer: {
+    flex: 1,
+    backgroundColor: '#1F2937',
+    alignItems: 'center',
+    padding: 8,
+    paddingHorizontal: 12,
   },
   difficultyContainer: {
     flex: 1,
@@ -303,7 +311,7 @@ export default StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    marginVertical: 12,
+    marginVertical: 3,
     textAlign: 'center',
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
@@ -330,11 +338,13 @@ export default StyleSheet.create({
   },
   scroll: {
     width: '100%',
-    paddingBottom: 50,
+    paddingBottom: 0,
+    flex: 1,
+    minHeight: 300,
   },
   inputDisplay: {
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 18,
   },
   inputLetter: {
     width: 44,
@@ -356,7 +366,7 @@ export default StyleSheet.create({
     backgroundColor: '#4B5563',
   },
   alphabetContainer: {
-    marginBottom: 10,
+    marginBottom: 0,
     width: '100%',
     alignItems: 'center',
   },
@@ -366,9 +376,10 @@ export default StyleSheet.create({
     alignItems: 'center',
     width: '100%',
     maxWidth: '100%',
-    marginHorizontal: 'auto',
-    paddingBottom: 1,
-    paddingHorizontal: 1,
+    alignSelf: 'center',
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    marginBottom: 0,
   },
   letter: {
     width: 26,
@@ -397,7 +408,8 @@ export default StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 15,
+    marginTop: -15,
   },
   backspaceButtonContainer: {
     backgroundColor: '#7C3AED',
@@ -405,6 +417,7 @@ export default StyleSheet.create({
     paddingHorizontal: 26,
     borderRadius: 8,
     marginHorizontal: 6,
+    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -417,6 +430,7 @@ export default StyleSheet.create({
     paddingHorizontal: 26,
     borderRadius: 8,
     marginHorizontal: 20,
+    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -432,7 +446,7 @@ export default StyleSheet.create({
   feedbackGuide: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   feedbackItem: {
     flexDirection: 'row',
@@ -460,24 +474,38 @@ export default StyleSheet.create({
     color: '#D1D5DB',
     fontFamily: 'Roboto-Regular',
   },
+  guessGrid: {
+    marginHorizontal: 20,
+    marginVertical: 2,
+  },
   guessRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginVertical: 2,
+    marginVertical: 0,
+    paddingVertical: 0,
   },
   guessWord: {
     flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 30,
+    width: 120, // Reduced width for tighter letter spacing
   },
   guessLetter: {
     fontSize: 26,
-    marginHorizontal: 3,
+    marginHorizontal: 0,
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    width: 24, // Reduced width for tighter letter spacing
+    height: 30,
+    lineHeight: 30,
+    flex: 1, // This ensures each letter takes equal space
   },
   feedbackContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 30,
   },
   fabTop: {
     position: 'absolute',
@@ -618,6 +646,14 @@ export default StyleSheet.create({
     textAlign: 'center',
     color: '#D1D5DB',
     fontFamily: 'Roboto-Regular',
+  },
+  waitingMessage: {
+    fontSize: 14,
+    marginBottom: 12,
+    textAlign: 'center',
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    fontStyle: 'italic',
   },
   winButtonContainer: {
     backgroundColor: '#F59E0B',
@@ -911,15 +947,16 @@ export default StyleSheet.create({
     elevation: 2,
   },
   hintLinkContainer: {
-    marginTop: 1,
-    padding: 1,
+    marginTop: 0,
+    marginBottom: 0,
+    padding: 0,
   },
   hintLink: {
     color: '#F59E0B',
     fontSize: 18,
     fontWeight: '600',
-    paddingTop: 1,
-    paddingBottom: 10,
+    paddingTop: 0,
+    paddingBottom: 0,
     textAlign: 'center',
     fontFamily: 'Roboto-Regular',
   },
@@ -1253,6 +1290,12 @@ export default StyleSheet.create({
     gap: 15,
     marginTop: 20,
   },
+  modalActionsVertical: {
+    flexDirection: 'column',
+    gap: 15,
+    marginTop: 20,
+    width: '100%',
+  },
   avatarSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1538,7 +1581,8 @@ export default StyleSheet.create({
   wordContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginVertical: 20,
+    marginTop: 20,
+    marginBottom: 40,
     gap: 8,
   },
   letterBox: {
@@ -1564,6 +1608,91 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Regular',
     textAlign: 'center',
   },
+  // Notification styles
+  notificationsContainer: {
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  notificationItem: {
+    backgroundColor: '#374151',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notificationText: {
+    color: '#E5E7EB',
+    fontSize: 16,
+    fontFamily: 'Roboto-Regular',
+    flex: 1,
+    marginRight: 10,
+  },
+  dismissNotificationButton: {
+    backgroundColor: '#6B7280',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dismissNotificationButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  stuckGameContainer: {
+    backgroundColor: '#374151',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    alignItems: 'center',
+  },
+  stuckGameText: {
+    color: '#E5E7EB',
+    fontSize: 16,
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 8,
+  },
+  stuckGameSubtext: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  removeStuckGameButton: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+  },
+  removeStuckGameButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'Roboto-Bold',
+  },
+  debugContainer: {
+    backgroundColor: '#1F2937',
+    padding: 10,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  debugText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 2,
+  },
+
   // Leaderboard styles
   leaderboardItem: {
     flexDirection: 'row',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, StatusBar } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
 import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
@@ -122,6 +123,24 @@ const SetWordGameScreen = () => {
            acceptedAt: new Date()
          });
          console.log('🔍 Challenge updated successfully');
+         
+         // Send notification to Player 1 that the game has started
+         try {
+           const notificationData = {
+             type: 'gameStarted',
+             from: auth.currentUser.uid,
+             to: challenge.from,
+             gameId: gameRef.id,
+             message: `${challenge.toUsername || 'Player 2'} has accepted your challenge! The game is ready to begin.`,
+             timestamp: new Date(),
+             read: false
+           };
+           
+           await addDoc(collection(db, 'notifications'), notificationData);
+           console.log('🔍 Game start notification sent to Player 1');
+         } catch (notificationError) {
+           console.error('🔍 Failed to send game start notification:', notificationError);
+         }
 
         Alert.alert('Game Started!', 'Both players can now play at their own pace!', [
           {
@@ -247,7 +266,7 @@ const SetWordGameScreen = () => {
   }
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.immersiveGameContainer}>
       {/* FAB */}
       <TouchableOpacity 
         style={styles.fabTop} 
@@ -256,7 +275,7 @@ const SetWordGameScreen = () => {
         <Text style={styles.fabText}>☰</Text>
       </TouchableOpacity>
       
-      <ScrollView contentContainerStyle={styles.gameScrollContainer}>
+
         {/* Header */}
         <Text style={styles.header}>
           {isAccepting ? 'Set Your Mystery Word' : 'Set Your Mystery Word'}
@@ -302,21 +321,21 @@ const SetWordGameScreen = () => {
                  {/* Alphabet Grid - Same as GameScreen */}
          <View style={styles.alphabetContainer}>
            <View style={styles.alphabetGrid}>
-             {qwertyKeys.map((row, rowIndex) => (
-               <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 2 }}>
-                 {row.map((letter) => (
-                   <TouchableOpacity
-                     key={letter}
-                     style={styles.letter}
-                     onPress={() => addLetter(letter)}
-                   >
-                     <Text style={styles.alphabetLetterText}>
-                       {letter}
-                     </Text>
-                   </TouchableOpacity>
+                              {qwertyKeys.map((row, rowIndex) => (
+                   <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 5 }}>
+                     {row.map((letter) => (
+                       <TouchableOpacity
+                         key={letter}
+                         style={styles.letter}
+                         onPress={() => addLetter(letter)}
+                       >
+                         <Text style={styles.letter}>
+                           {letter}
+                         </Text>
+                       </TouchableOpacity>
+                     ))}
+                   </View>
                  ))}
-               </View>
-             ))}
            </View>
          </View>
 
@@ -338,7 +357,6 @@ const SetWordGameScreen = () => {
         >
                    <Text style={styles.textButtonText}>Cancel</Text>
        </TouchableOpacity>
-     </ScrollView>
 
      {/* Menu Popup Modal */}
      <Modal visible={showMenuPopup} transparent animationType="fade">
@@ -375,7 +393,7 @@ const SetWordGameScreen = () => {
          </View>
        </View>
      </Modal>
-   </View>
+   </SafeAreaView>
  );
 };
 

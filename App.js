@@ -75,11 +75,25 @@ export default function App() {
   
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={{ 
+        headerShown: false, 
+        animation: 'none',
+        animationDuration: 0,
+        presentation: 'transparentModal'
+      }}>
         {user ? (
           <>
             <Stack.Screen name="MainTabs" component={MainTabs} />
-            <Stack.Screen name="HowToPlay" component={HowToPlayScreen} />
+            <Stack.Screen 
+              name="HowToPlay" 
+              component={HowToPlayScreen}
+              options={{ 
+                animation: 'none',
+                animationDuration: 0,
+                presentation: 'transparentModal',
+                gestureEnabled: false
+              }}
+            />
             <Stack.Screen name="Game" component={GameScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="SetWord" component={SetWordScreen} />

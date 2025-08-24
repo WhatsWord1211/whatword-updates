@@ -199,9 +199,7 @@ const HomeScreen = () => {
       if (challengesUnsubscribeRef.current) {
         challengesUnsubscribeRef.current();
       }
-      if (activeGamesUnsubscribeRef.current) {
-        activeGamesUnsubscribeRef.current();
-      }
+
     };
   }, []);
 
@@ -419,8 +417,23 @@ const HomeScreen = () => {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            playSound('chime');
-            navigation.navigate('CreateChallenge');
+            console.log('HomeScreen: Play A Friend button pressed');
+            // Play sound in background, don't wait for it
+            playSound('chime').catch(() => {});
+            // Navigate immediately with error handling
+            try {
+              navigation.navigate('CreateChallenge');
+            } catch (error) {
+              console.error('HomeScreen: Navigation failed:', error);
+              // Retry navigation after a short delay
+              setTimeout(() => {
+                try {
+                  navigation.navigate('CreateChallenge');
+                } catch (retryError) {
+                  console.error('HomeScreen: Navigation retry failed:', retryError);
+                }
+              }, 100);
+            }
           }}
         >
           <Text style={styles.buttonText}>Play A Friend</Text>

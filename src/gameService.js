@@ -8,24 +8,25 @@ import {
   collection,
   query,
   where,
-  orderBy
+  orderBy,
+  deleteDoc
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 class GameService {
   constructor() {
-    this.currentUser = null;
     this.gameUnsubscribe = null;
   }
 
-  setCurrentUser(user) {
-    this.currentUser = user;
+  // Get current user from auth state
+  getCurrentUser() {
+    return auth.currentUser;
   }
 
   // Create a new PvP game (called when challenge is accepted)
   async createPvPGame(challengeData) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gameId = `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
@@ -72,7 +73,7 @@ class GameService {
   // Get game document by ID
   async getGame(gameId) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gameDoc = await getDoc(doc(db, 'games', gameId));
       if (!gameDoc.exists()) {
@@ -82,7 +83,7 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user has access to this game
-      if (!gameData.players.includes(this.currentUser.uid)) {
+      if (!gameData.players.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -96,7 +97,7 @@ class GameService {
   // Update game word (when player sets their word)
   async setPlayerWord(gameId, word) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gameDoc = await getDoc(doc(db, 'games', gameId));
       if (!gameDoc.exists()) throw new Error('Game not found');
@@ -104,12 +105,12 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user is a player in this game
-      if (!gameData.players.includes(this.currentUser.uid)) {
+      if (!gameData.players.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
       // Determine which field to update based on user's position
-      const isCreator = this.currentUser.uid === gameData.creatorId;
+      const isCreator = this.getCurrentUser().uid === gameData.creatorId;
       const updateField = isCreator ? 'playerWord' : 'opponentWord';
       
       const updates = {
@@ -140,7 +141,7 @@ class GameService {
   // Add a guess to the game
   async addGuess(gameId, guess) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gameDoc = await getDoc(doc(db, 'games', gameId));
       if (!gameDoc.exists()) throw new Error('Game not found');
@@ -148,17 +149,17 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user is a player in this game
-      if (!gameData.playerIds.includes(this.currentUser.uid)) {
+      if (!gameData.playerIds.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
       // Verify it's the user's turn
-      if (gameData.currentTurn !== this.currentUser.uid) {
+      if (gameData.currentTurn !== this.getCurrentUser().uid) {
         throw new Error('Not your turn');
       }
       
       // Determine which guesses array to update
-      const isCreator = this.currentUser.uid === gameData.creatorId;
+      const isCreator = this.getCurrentUser().uid === gameData.creatorId;
       const guessesField = isCreator ? 'playerGuesses' : 'opponentGuesses';
       const targetWord = isCreator ? gameData.opponentWord : gameData.playerWord;
       
@@ -202,10 +203,10 @@ class GameService {
             const playerAttempts = (isCreator ? updates.playerGuesses : gameData.playerGuesses).length;
             const opponentAttempts = (isCreator ? gameData.opponentGuesses : updates.opponentGuesses).length;
             
-            if (playerAttempts < opponentAttempts) {
-              updates.winnerId = this.currentUser.uid;
+                        if (playerAttempts < opponentAttempts) {
+              updates.winnerId = this.getCurrentUser().uid;
             } else if (opponentAttempts < playerAttempts) {
-              updates.winnerId = gameData.players.find(id => id !== this.currentUser.uid);
+              updates.winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
             } else {
               updates.tie = true;
               updates.winnerId = null;
@@ -214,19 +215,19 @@ class GameService {
             // Only current player solved - check if opponent has max attempts
             const opponentGuesses = isCreator ? gameData.opponentGuesses : gameData.playerGuesses;
             if (opponentGuesses.length >= 25) {
-              updates.winnerId = this.currentUser.uid;
+              updates.winnerId = this.getCurrentUser().uid;
             }
-                      } else if (updates.opponentSolved) {
-              // Only opponent solved - check if current player has max attempts
-              const playerGuesses = isCreator ? gameData.playerGuesses : gameData.opponentGuesses;
-              if (playerGuesses.length >= 25) {
-                updates.winnerId = gameData.players.find(id => id !== this.currentUser.uid);
-              }
+          } else if (updates.opponentSolved) {
+            // Only opponent solved - check if current player has max attempts
+            const playerGuesses = isCreator ? gameData.playerGuesses : gameData.opponentGuesses;
+            if (playerGuesses.length >= 25) {
+              updates.winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
             }
+          }
         }
       } else {
         // Switch turns if guess is incorrect
-        const nextPlayer = gameData.players.find(id => id !== this.currentUser.uid);
+        const nextPlayer = gameData.players.find(id => id !== this.getCurrentUser().uid);
         updates.currentTurn = nextPlayer;
         
         // Check if game is over due to max attempts (without solving)
@@ -258,12 +259,12 @@ class GameService {
   // Get all active PvP games for the current user
   async getActivePvPGames() {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gamesRef = collection(db, 'games');
       const q = query(
         gamesRef,
-        where('players', 'array-contains', this.currentUser.uid),
+        where('players', 'array-contains', this.getCurrentUser().uid),
         where('type', '==', 'pvp'),
         where('status', 'in', ['ready', 'active']),
         orderBy('lastActivity', 'desc')
@@ -282,12 +283,12 @@ class GameService {
   // Get completed PvP games for the current user
   async getCompletedPvPGames(limit = 20) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gamesRef = collection(db, 'games');
       const q = query(
         gamesRef,
-        where('players', 'array-contains', this.currentUser.uid),
+        where('players', 'array-contains', this.getCurrentUser().uid),
         where('type', '==', 'pvp'),
         where('status', '==', 'completed'),
         orderBy('completedAt', 'desc'),
@@ -306,7 +307,7 @@ class GameService {
 
   // Listen to real-time game updates
   listenToGame(gameId, callback) {
-    if (!this.currentUser || !gameId) return null;
+    if (!this.getCurrentUser() || !gameId) return null;
     
     const gameRef = doc(db, 'games', gameId);
     
@@ -315,7 +316,7 @@ class GameService {
         const gameData = doc.data();
         
         // Verify user has access to this game
-        if (gameData.players.includes(this.currentUser.uid)) {
+        if (gameData.players.includes(this.getCurrentUser().uid)) {
           callback({ id: doc.id, ...gameData });
         } else {
           console.warn('GameService: Access denied to game updates');
@@ -334,12 +335,12 @@ class GameService {
 
   // Listen to all active PvP games for the current user
   listenToActivePvPGames(callback) {
-    if (!this.currentUser) return null;
+    if (!this.getCurrentUser()) return null;
     
     const gamesRef = collection(db, 'games');
     const q = query(
       gamesRef,
-      where('players', 'array-contains', this.currentUser.uid),
+      where('players', 'array-contains', this.getCurrentUser().uid),
               where('type', '==', 'pvp'),
         where('status', 'in', ['ready', 'active']),
         orderBy('lastActivity', 'desc')
@@ -359,7 +360,7 @@ class GameService {
   // Update game status
   async updateGameStatus(gameId, status, additionalData = {}) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gameDoc = await getDoc(doc(db, 'games', gameId));
       if (!gameDoc.exists()) throw new Error('Game not found');
@@ -367,7 +368,7 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user is a player in this game
-      if (!gameData.playerIds.includes(this.currentUser.uid)) {
+      if (!gameData.playerIds.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -423,10 +424,46 @@ class GameService {
     return false;
   }
 
+  // Check for game timeouts and forfeits
+  checkGameTimeouts(gameData) {
+    const now = new Date();
+    const gameAge = now - new Date(gameData.createdAt);
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    
+    if (gameData.status === 'ready') {
+      // Challenge phase: 7 days for P2 to accept + set word
+      if (gameAge > sevenDays) {
+        return 'challenge_expired'; // P2 took too long, challenge expires
+      }
+    }
+    
+    if (gameData.status === 'active') {
+      // Active phase: 7 days for both players to solve
+      const lastActivity = new Date(gameData.lastActivity);
+      const daysSinceActivity = (now - lastActivity) / (24 * 60 * 60 * 1000);
+      
+      if (daysSinceActivity > 7) {
+        // Determine who forfeited based on last activity
+        const player1Active = gameData.player1?.lastGuess || gameData.player1?.solved;
+        const player2Active = gameData.player2?.lastGuess || gameData.player2?.solved;
+        
+        if (player1Active && !player2Active) {
+          return 'player2_forfeited'; // Player 2 inactive
+        } else if (player2Active && !player1Active) {
+          return 'player1_forfeited'; // Player 1 inactive
+        } else {
+          return 'both_forfeited'; // Both inactive
+        }
+      }
+    }
+    
+    return 'active'; // Game is still active
+  }
+
   // Forfeit game
   async forfeitGame(gameId) {
     try {
-      if (!this.currentUser) throw new Error('User not authenticated');
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
       
       const gameDoc = await getDoc(doc(db, 'games', gameId));
       if (!gameDoc.exists()) throw new Error('Game not found');
@@ -434,29 +471,132 @@ class GameService {
       const gameData = gameDoc.data();
       
       // Verify user is a player in this game
-      if (!gameData.players.includes(this.currentUser.uid)) {
+      if (!gameData.players.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
       // Determine winner (the other player)
-      const winnerId = gameData.players.find(id => id !== this.currentUser.uid);
+      const winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
       
       const updates = {
         status: 'completed',
         winnerId,
-        forfeitedBy: this.currentUser.uid,
+        forfeitedBy: this.getCurrentUser().uid,
         completedAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString(),
         lastActivity: new Date().toISOString()
       };
       
       await updateDoc(doc(db, 'games', gameId), updates);
-      console.log('GameService: Game forfeited successfully', { gameId, forfeitedBy: this.currentUser.uid });
+      console.log('GameService: Game forfeited successfully', { gameId, forfeitedBy: this.getCurrentUser().uid });
+      
+      // Delete completed game and preserve statistics
+      await this.deleteCompletedGame(gameId, { ...gameData, ...updates });
       
       return true;
     } catch (error) {
       console.error('GameService: Failed to forfeit game:', error);
       throw error;
+    }
+  }
+
+  // Handle game timeouts automatically
+  async handleGameTimeout(gameId, timeoutType) {
+    try {
+      if (!this.getCurrentUser()) throw new Error('User not authenticated');
+      
+      const gameDoc = await getDoc(doc(db, 'games', gameId));
+      if (!gameDoc.exists()) throw new Error('Game not found');
+      
+      const gameData = gameDoc.data();
+      
+      let updates = {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        lastActivity: new Date().toISOString()
+      };
+      
+      switch (timeoutType) {
+        case 'challenge_expired':
+          // P2 didn't accept within 7 days - no game created
+          await deleteDoc(doc(db, 'games', gameId));
+          return true;
+          
+        case 'player1_forfeited':
+          // Player 1 inactive for 7 days - Player 2 wins
+          updates.winnerId = gameData.players.find(id => id !== gameData.players[0]);
+          updates.forfeitedBy = gameData.players[0];
+          break;
+          
+        case 'player2_forfeited':
+          // Player 2 inactive for 7 days - Player 1 wins
+          updates.winnerId = gameData.players.find(id => id !== gameData.players[1]);
+          updates.forfeitedBy = gameData.players[1];
+          break;
+          
+        case 'both_forfeited':
+          // Both inactive for 7 days - tie
+          updates.tie = true;
+          updates.winnerId = null;
+          break;
+      }
+      
+      await updateDoc(doc(db, 'games', gameId), updates);
+      
+      // Delete completed game and preserve statistics
+      await this.deleteCompletedGame(gameId, { ...gameData, ...updates });
+      
+      return true;
+    } catch (error) {
+      console.error('GameService: Failed to handle game timeout:', error);
+      throw error;
+    }
+  }
+
+  // Delete completed game and preserve only statistics
+  async deleteCompletedGame(gameId, gameData) {
+    try {
+      console.log('🗑️ GameService: Deleting completed game:', gameId);
+      
+      // Extract only the statistics needed for leaderboard
+      const gameStats = {
+        gameId: gameId,
+        players: gameData.players,
+        completedAt: gameData.completedAt,
+        winnerId: gameData.winnerId,
+        tie: gameData.tie,
+        type: 'pvp',
+        forfeitedBy: gameData.forfeitedBy,
+        // Preserve player performance data for leaderboard calculations
+        playerStats: {
+          [gameData.players[0]]: {
+            attempts: gameData.player1?.attempts || gameData.playerGuesses?.length || 0,
+            solved: gameData.player1?.solved || false,
+            solveTime: gameData.player1?.solveTime
+          },
+          [gameData.players[1]]: {
+            attempts: gameData.player2?.attempts || gameData.opponentGuesses?.length || 0,
+            solved: gameData.player2?.solved || false,
+            solveTime: gameData.player2?.solveTime
+          }
+        }
+      };
+      
+      // Save statistics to a separate collection for leaderboard purposes
+      const statsRef = doc(db, 'gameStats', gameId);
+      await setDoc(statsRef, gameStats);
+      console.log('📊 GameService: Game statistics preserved for leaderboard');
+      
+      // Delete the actual game document
+      await deleteDoc(doc(db, 'games', gameId));
+      console.log('🗑️ GameService: Game document deleted successfully');
+      
+      return true;
+    } catch (error) {
+      console.error('GameService: Failed to delete completed game:', error);
+      // Don't throw error - just log it to avoid breaking the game flow
+      return false;
     }
   }
 

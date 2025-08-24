@@ -157,19 +157,21 @@ const LeaderboardScreen = () => {
         }
       }
       
-      // Add current user to friends list for ranking
-      const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (currentUserDoc.exists()) {
-        const currentUserData = currentUserDoc.data();
-        friends.push({
-          uid: currentUser.uid,
-          ...currentUserData
-        });
-        console.log('LeaderboardScreen: Added current user to friends list:', {
-          uid: currentUser.uid,
-          username: currentUserData.username,
-          gamesPlayed: currentUserData.gamesPlayed
-        });
+      // Add current user to friends list for ranking (only if not already present)
+      if (!friends.some(friend => friend.uid === currentUser.uid)) {
+        const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (currentUserDoc.exists()) {
+          const currentUserData = currentUserDoc.data();
+          friends.push({
+            uid: currentUser.uid,
+            ...currentUserData
+          });
+          console.log('LeaderboardScreen: Added current user to friends list:', {
+            uid: currentUser.uid,
+            username: currentUserData.username,
+            gamesPlayed: currentUserData.gamesPlayed
+          });
+        }
       }
       
       console.log('LeaderboardScreen: Total friends loaded:', friends.length);
@@ -198,25 +200,21 @@ const LeaderboardScreen = () => {
         try {
           console.log('LeaderboardScreen: Checking leaderboard for friend:', friend.uid, friend.username, 'difficulty:', activeDifficulty);
           
-          // Create difficulty-specific query
+          // Use simple query without orderBy to avoid index requirements
           let leaderboardQuery;
           if (activeDifficulty === 'easy') {
             leaderboardQuery = query(
               collection(db, 'leaderboard'),
               where('userId', '==', friend.uid),
               where('mode', '==', 'solo'),
-              where('difficulty', '==', 'easy'),
-              orderBy('timestamp', 'desc'),
-              limit(15)
+              where('difficulty', '==', 'easy')
             );
           } else if (activeDifficulty === 'hard') {
             leaderboardQuery = query(
               collection(db, 'leaderboard'),
               where('userId', '==', friend.uid),
               where('mode', '==', 'solo'),
-              where('difficulty', '==', 'hard'),
-              orderBy('timestamp', 'desc'),
-              limit(15)
+              where('difficulty', '==', 'hard')
             );
           } else {
             // Regular difficulty (default)
@@ -224,142 +222,36 @@ const LeaderboardScreen = () => {
               collection(db, 'leaderboard'),
               where('userId', '==', friend.uid),
               where('mode', '==', 'solo'),
-              where('difficulty', '==', 'regular'),
-              orderBy('timestamp', 'desc'),
-              limit(15)
+              where('difficulty', '==', 'regular')
             );
           }
           
-          try {
-            const gamesSnapshot = await getDocs(leaderboardQuery);
-            const recentGames = gamesSnapshot.docs.map(doc => doc.data());
-            console.log('LeaderboardScreen: Found', recentGames.length, 'solo games for friend:', friend.uid);
+          const gamesSnapshot = await getDocs(leaderboardQuery);
+          const recentGames = gamesSnapshot.docs.map(doc => doc.data());
+          console.log('LeaderboardScreen: Found', recentGames.length, 'solo games for friend:', friend.uid);
+          
+          if (recentGames.length > 0) {
+            // Sort manually and take last 15 games
+            const sortedGames = recentGames.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
+            const totalAttempts = sortedGames.reduce((sum, game) => sum + game.guesses, 0);
+            const runningAverage = totalAttempts / sortedGames.length;
             
-            if (recentGames.length > 0) {
-              // Calculate running average of attempts (last 15 games)
-              const totalAttempts = recentGames.reduce((sum, game) => sum + game.guesses, 0);
-              const runningAverage = totalAttempts / recentGames.length;
-              
-              leaderboardData.push({
-                uid: friend.uid,
-                username: friend.username || friend.displayName || 'Unknown Player',
-                displayName: friend.displayName || friend.username || 'Unknown Player',
-                runningAverage: runningAverage,
-                gamesCount: recentGames.length,
-                totalGames: friend.gamesPlayed || 0
-              });
-              
-              console.log('LeaderboardScreen: Added friend to leaderboard:', {
-                uid: friend.uid,
-                username: friend.username,
-                runningAverage,
-                gamesCount: recentGames.length,
-                totalGames: friend.gamesPlayed || 0
-              });
-            }
-          } catch (queryError) {
-            console.error(`LeaderboardScreen: Query error for user ${friend.uid}:`, queryError);
+            leaderboardData.push({
+              uid: friend.uid,
+              username: friend.username || friend.displayName || 'Unknown Player',
+              displayName: friend.displayName || friend.username || 'Unknown Player',
+              runningAverage: runningAverage,
+              gamesCount: sortedGames.length,
+              totalGames: friend.gamesPlayed || 0
+            });
             
-            // Try a simpler query without orderBy to see if that's the issue
-            try {
-              let simpleQuery;
-              if (activeDifficulty === 'easy') {
-                simpleQuery = query(
-                  collection(db, 'leaderboard'),
-                  where('userId', '==', friend.uid),
-                  where('mode', '==', 'solo'),
-                  where('difficulty', '==', 'easy')
-                );
-              } else if (activeDifficulty === 'hard') {
-                simpleQuery = query(
-                  collection(db, 'leaderboard'),
-                  where('userId', '==', friend.uid),
-                  where('mode', '==', 'solo'),
-                  where('difficulty', '==', 'hard')
-                );
-              } else {
-                simpleQuery = query(
-                  collection(db, 'leaderboard'),
-                  where('userId', '==', friend.uid),
-                  where('mode', '==', 'solo'),
-                  where('difficulty', '==', 'regular')
-                );
-              }
-              
-              const simpleSnapshot = await getDocs(simpleQuery);
-              const simpleGames = simpleSnapshot.docs.map(doc => doc.data());
-              console.log('LeaderboardScreen: Simple query found', simpleGames.length, 'games for friend:', friend.uid);
-              
-              if (simpleGames.length > 0) {
-                // Sort manually since orderBy failed
-                const sortedGames = simpleGames.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
-                const totalAttempts = sortedGames.reduce((sum, game) => sum + game.guesses, 0);
-                const runningAverage = totalAttempts / sortedGames.length;
-                
-                leaderboardData.push({
-                  uid: friend.uid,
-                  username: friend.username || friend.displayName || 'Unknown Player',
-                  displayName: friend.displayName || friend.username || 'Unknown Player',
-                  runningAverage: runningAverage,
-                  gamesCount: sortedGames.length,
-                  totalGames: friend.gamesPlayed || 0
-                });
-                
-                console.log('LeaderboardScreen: Added friend to leaderboard (simple query):', {
-                  uid: friend.uid,
-                  username: friend.username,
-                  runningAverage,
-                  gamesCount: sortedGames.length,
-                  totalGames: friend.gamesPlayed || 0
-                });
-              }
-            } catch (simpleQueryError) {
-              console.error(`LeaderboardScreen: Simple query also failed for user ${friend.uid}:`, simpleQueryError);
-            }
-            
-            // Fallback: try to get old entries without difficulty (for backward compatibility)
-            try {
-              const fallbackQuery = query(
-                collection(db, 'leaderboard'),
-                where('userId', '==', friend.uid),
-                where('mode', '==', 'solo')
-              );
-              
-              const fallbackSnapshot = await getDocs(fallbackQuery);
-              const fallbackGames = fallbackSnapshot.docs.map(doc => doc.data());
-              
-              // Filter games by word length to match current difficulty
-              const targetWordLength = activeDifficulty === 'easy' ? 4 : activeDifficulty === 'hard' ? 6 : 5;
-              const filteredGames = fallbackGames.filter(game => 
-                game.wordLength === targetWordLength || 
-                (!game.wordLength && activeDifficulty === 'regular') // Default to regular for old entries
-              );
-              
-              if (filteredGames.length > 0) {
-                const sortedGames = filteredGames.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
-                const totalAttempts = sortedGames.reduce((sum, game) => sum + game.guesses, 0);
-                const runningAverage = totalAttempts / sortedGames.length;
-                
-                leaderboardData.push({
-                  uid: friend.uid,
-                  username: friend.username || friend.displayName || 'Unknown Player',
-                  displayName: friend.displayName || friend.username || 'Unknown Player',
-                  runningAverage: runningAverage,
-                  gamesCount: sortedGames.length,
-                  totalGames: friend.gamesPlayed || 0
-                });
-                
-                console.log('LeaderboardScreen: Added friend to leaderboard (fallback):', {
-                  uid: friend.uid,
-                  username: friend.username,
-                  runningAverage,
-                  gamesCount: sortedGames.length,
-                  totalGames: friend.gamesPlayed || 0
-                });
-              }
-            } catch (fallbackError) {
-              console.error(`LeaderboardScreen: Fallback query failed for user ${friend.uid}:`, fallbackError);
-            }
+            console.log('LeaderboardScreen: Added friend to leaderboard:', {
+              uid: friend.uid,
+              username: friend.username,
+              runningAverage,
+              gamesCount: sortedGames.length,
+              totalGames: friend.gamesPlayed || 0
+            });
           }
         } catch (error) {
           console.error(`Failed to get solo games for user ${friend.uid}:`, error);
@@ -400,26 +292,26 @@ const LeaderboardScreen = () => {
     try {
       const leaderboardData = [];
       
-      // Get PvP games for all friends (including current user)
+      // Get PvP game statistics for all friends (including current user)
       for (const friend of userFriends) {
         try {
-          // Get all PvP games where this user participated
-          const pvpGamesQuery = query(
-            collection(db, 'games'),
+          // Get all PvP game stats where this user participated
+          const pvpStatsQuery = query(
+            collection(db, 'gameStats'),
             where('players', 'array-contains', friend.uid),
-            where('status', '==', 'completed')
+            where('type', '==', 'pvp')
           );
           
-          const pvpGamesSnapshot = await getDocs(pvpGamesQuery);
-          const pvpGames = pvpGamesSnapshot.docs.map(doc => doc.data());
+          const pvpStatsSnapshot = await getDocs(pvpStatsQuery);
+          const pvpStats = pvpStatsSnapshot.docs.map(doc => doc.data());
           
-          if (pvpGames.length > 0) {
+          if (pvpStats.length > 0) {
             // Calculate win percentage
             let wins = 0;
-            let totalGames = pvpGames.length;
+            let totalGames = pvpStats.length;
             
-            for (const game of pvpGames) {
-              if (game.winnerId === friend.uid) {
+            for (const gameStats of pvpStats) {
+              if (gameStats.winnerId === friend.uid) {
                 wins++;
               }
             }
@@ -436,7 +328,7 @@ const LeaderboardScreen = () => {
             });
           }
         } catch (error) {
-          console.error(`Failed to get PvP games for user ${friend.uid}:`, error);
+          console.error(`Failed to get PvP game stats for user ${friend.uid}:`, error);
           // Continue with other users even if one fails
         }
       }
@@ -461,6 +353,8 @@ const LeaderboardScreen = () => {
       }
     } catch (error) {
       console.error('Failed to load PvP leaderboard:', error);
+      // Set empty PvP leaderboard if there's an error
+      setPvpLeaderboard([]);
     }
   };
 

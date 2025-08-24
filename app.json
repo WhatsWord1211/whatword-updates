@@ -2,6 +2,7 @@
       "expo": {
       "name": "WhatWord",
       "slug": "whatword",
+      "scheme": "whatword",
       "owner": "wilderbssmstr",
       "version": "1.0.0",
       "orientation": "portrait",

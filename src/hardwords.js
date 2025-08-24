@@ -1825,6 +1825,7 @@ export const hardWordList = [
   'mirage',
   'mirror',
   'misery',
+  'mishap',
   'misled',
   'missed',
   'misses',

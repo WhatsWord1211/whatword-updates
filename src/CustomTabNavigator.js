@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Text, View, StyleSheet, TouchableOpacity, PanGestureHandler, State, Animated, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 import HomeScreen from './HomeScreen';
@@ -15,6 +15,7 @@ const CustomTabNavigator = () => {
   const [pendingChallenges, setPendingChallenges] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [activePvPGames, setActivePvPGames] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [notificationsSeen, setNotificationsSeen] = useState(false);
   const [dismissedNotifications, setDismissedNotifications] = useState(new Set());
   const [badgeScale] = useState(new Animated.Value(1));
@@ -78,10 +79,28 @@ const CustomTabNavigator = () => {
       }
     });
 
+    // Listen for notifications
+    const notificationsQuery = query(
+      collection(db, 'notifications'),
+      where('to', '==', auth.currentUser.uid),
+      where('read', '==', false)
+    );
+    
+    const notificationsUnsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+      const userNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setNotifications(userNotifications);
+      
+      // Reset notifications seen flag when new notifications arrive
+      if (userNotifications.length > 0) {
+        setNotificationsSeen(false);
+      }
+    });
+
     return () => {
       challengesUnsubscribe();
       requestsUnsubscribe();
       activeGamesUnsubscribe();
+      notificationsUnsubscribe();
     };
   }, []);
 
@@ -115,7 +134,18 @@ const CustomTabNavigator = () => {
     animateDismissal();
     setDismissedNotifications(prev => new Set([...prev, `${type}_${notificationId}`]));
     // Add subtle visual feedback
-    console.log(`Notification dismissed: ${type} ${notificationId}`);
+  };
+
+  // Mark notification as read
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        read: true
+      });
+      // Notification marked as read
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
   };
 
   // Dismiss all notifications
@@ -129,10 +159,10 @@ const CustomTabNavigator = () => {
       if (activePvPGames.length > 0) {
         newSet.add('activeGame_1');
       }
+      notifications.forEach(notification => newSet.add(`notification_${notification.id}`));
       return newSet;
     });
     setNotificationsSeen(true);
-    console.log('All notifications dismissed');
   };
 
   // Show help for notification dismissal
@@ -154,6 +184,7 @@ const CustomTabNavigator = () => {
     // - pendingChallenges: shown in "Pending Challenges" section
     // - pendingRequests: shown in "Friends Management" section  
     // - activePvPGames: shown as "Active PvP Game" notification (count as 1 if exists)
+    // - notifications: general notifications like gameStarted
     // Only show count if notifications haven't been seen yet and haven't been manually dismissed
     const visibleChallenges = pendingChallenges.filter(challenge => 
       !isNotificationDismissed(challenge.id, 'challenge')
@@ -163,9 +194,12 @@ const CustomTabNavigator = () => {
     );
     const visibleActiveGames = activePvPGames.length > 0 && 
       !isNotificationDismissed('1', 'activeGame') ? 1 : 0;
+    const visibleNotifications = notifications.filter(notification => 
+      !isNotificationDismissed(notification.id, 'notification')
+    );
     
     const count = !notificationsSeen ? 
-      visibleChallenges.length + visibleRequests.length + visibleActiveGames : 0;
+      visibleChallenges.length + visibleRequests.length + visibleActiveGames + visibleNotifications.length : 0;
     
     return count;
   };
@@ -236,7 +270,7 @@ const CustomTabNavigator = () => {
           tabBarIcon: ({ color, size }) => (
             <View style={styles.tabIconContainer}>
               <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👥</Text>
-              {(pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0) && !notificationsSeen && (
+              {(pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0 || notifications.length > 0) && !notificationsSeen && (
                 <TouchableOpacity
                   style={styles.notificationBadge}
                   onPress={() => {
@@ -247,6 +281,11 @@ const CustomTabNavigator = () => {
                       dismissNotification(pendingRequests[0].id, 'request');
                     } else if (activePvPGames.length > 0) {
                       dismissNotification('1', 'activeGame');
+                    } else if (notifications.length > 0) {
+                      // Mark the first notification as read and dismiss it
+                      const firstNotification = notifications[0];
+                      markNotificationAsRead(firstNotification.id);
+                      dismissNotification(firstNotification.id, 'notification');
                     }
                   }}
                   onLongPress={dismissAllNotifications}

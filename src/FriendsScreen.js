@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, getDocs, setDoc, addDoc, updateDoc, collection, query, where, onSnapshot, arrayUnion, arrayRemove, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, getDocs, addDoc, updateDoc, collection, query, where, onSnapshot, arrayUnion, arrayRemove, orderBy, limit, runTransaction } from 'firebase/firestore';
 import styles from './styles';
 import { playSound } from './soundsUtil';
 import { showChallengeNotification, showFriendRequestNotification } from './notificationUtil';
+import gameService from './gameService';
 
 const FriendsScreen = () => {
 
@@ -24,15 +25,39 @@ const FriendsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [activePvPGame, setActivePvPGame] = useState(null);
   const [hasShownGameStartPopup, setHasShownGameStartPopup] = useState(false);
-  const friendsUnsubscribeRef = useRef(null);
-  const requestsUnsubscribeRef = useRef(null);
-  const challengesUnsubscribeRef = useRef(null);
-  const activeGamesUnsubscribeRef = useRef(null);
+  const [notifications, setNotifications] = useState([]);
+  
+  // Single listener reference for cleanup
+  const userListenerRef = useRef(null);
+
+  // Mark notification as read
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        read: true
+      });
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  const removeStuckGame = async () => {
+    try {
+      if (activePvPGame) {
+        // Delete the stuck game
+        await deleteDoc(doc(db, 'games', activePvPGame.id));
+        setActivePvPGame(null);
+        setHasShownGameStartPopup(false);
+        Alert.alert('Success', 'Stuck game removed successfully');
+      }
+    } catch (error) {
+      console.error('Failed to remove stuck game:', error);
+      Alert.alert('Error', 'Failed to remove stuck game. Please try again.');
+    }
+  };
 
   useEffect(() => {
-
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      
       if (currentUser) {
         setUser(currentUser);
         loadUserProfile(currentUser);
@@ -56,17 +81,19 @@ const FriendsScreen = () => {
   };
 
   useEffect(() => {
-    if (user) {
-      // Set up friends listener - listen to current user's document directly
-      const meRef = doc(db, 'users', user.uid);
-      
-      const unsubscribeFriends = onSnapshot(meRef, async (snapshot) => {
-        if (snapshot.exists()) {
-          const userData = snapshot.data();
-          const friendIds = userData?.friends || [];
-          
-          if (friendIds.length > 0) {
-            // Fetch friend profiles
+    if (!user) return;
+
+    // Single, coordinated listener for all user-related data
+    const userRef = doc(db, 'users', user.uid);
+    
+    const unsubscribe = onSnapshot(userRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const userData = snapshot.data();
+        
+        // Handle friends list updates
+        const friendIds = userData.friends || [];
+        if (friendIds.length > 0) {
+          try {
             const friendDocs = await Promise.all(
               friendIds.map(friendId => getDoc(doc(db, 'users', friendId)))
             );
@@ -74,237 +101,56 @@ const FriendsScreen = () => {
               .filter(doc => doc.exists())
               .map(doc => ({ uid: doc.id, ...doc.data() }));
             setFriends(friendsList);
-          } else {
+          } catch (error) {
+            console.error('Failed to load friends:', error);
             setFriends([]);
           }
         } else {
           setFriends([]);
         }
-      });
 
-      // Set up pending requests listener
-      const requestsQuery = query(
-        collection(db, 'friendRequests'),
-        where('to', '==', user.uid),
-        where('status', '==', 'pending')
-      );
-      
-      const unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
-        const requests = snapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() }));
-        
-        // Check for new friend requests (show notifications)
-        const previousRequestIds = pendingRequests.map(r => r.id);
-        const newRequests = requests.filter(r => !previousRequestIds.includes(r.id));
-        
-        // Show notifications for new friend requests
-        newRequests.forEach(request => {
-          showFriendRequestNotification(request.fromUsername || request.from);
-        });
-        
-        setPendingRequests(requests);
-      });
+        // Handle pending requests from user document
+        const pendingRequests = userData.pendingRequests || [];
+        setPendingRequests(pendingRequests);
 
-      // Set up pending challenges listener
-      const challengesQuery = query(
-        collection(db, 'challenges'),
-        where('to', '==', user.uid),
-        where('status', '==', 'pending')
-      );
-      
-      const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
-        const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // Check for new challenges (show notifications)
-        const previousChallengeIds = pendingChallenges.map(c => c.id);
-        const newChallenges = challenges.filter(c => !previousChallengeIds.includes(c.id));
-        
-        // Show notifications for new challenges
-        newChallenges.forEach(challenge => {
-          showChallengeNotification(challenge.fromUsername, challenge.difficulty);
-        });
-        
-        setPendingChallenges(challenges);
-      });
-
-      // Set up sent challenges listener (for Player 1 to see when their challenge is accepted)
-      const sentChallengesQuery = query(
-        collection(db, 'challenges'),
-        where('from', '==', user.uid),
-        where('status', 'in', ['pending', 'accepted'])
-      );
-      
-      const unsubscribeSentChallenges = onSnapshot(sentChallengesQuery, (snapshot) => {
-        const sentChallenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // Check if any sent challenges were just accepted
-        sentChallenges.forEach(challenge => {
-          if (challenge.status === 'accepted' && challenge.gameId) {
-            // Check if this is a recent challenge acceptance (within last 5 minutes)
-            const challengeAcceptedAt = challenge.acceptedAt || challenge.timestamp;
-            const isRecentAcceptance = challengeAcceptedAt && 
-              (new Date().getTime() - new Date(challengeAcceptedAt.toDate?.() || challengeAcceptedAt).getTime()) < 300000; // 5 minutes
-            
-            if (isRecentAcceptance) {
-              // Challenge was recently accepted and game created - show notification
-              Alert.alert(
-                '🎮 Challenge Accepted!',
-                `${challenge.toUsername} has accepted your challenge! A PvP game has been created.`,
-                [
-                  {
-                    text: 'Play Now',
-                    onPress: () => {
-                      playSound('chime').catch(() => {});
-                      navigation.navigate('PvPGame', { gameId: challenge.gameId });
-                    }
-                  },
-                  {
-                    text: 'Later',
-                    style: 'cancel'
-                  }
-                ]
-              );
-            } else {
-              console.log('🚫 Preventing old challenge accepted notification:', challenge.id);
-            }
-          }
-        });
-      });
-
-      friendsUnsubscribeRef.current = unsubscribeFriends;
-      requestsUnsubscribeRef.current = unsubscribeRequests;
-      challengesUnsubscribeRef.current = unsubscribeChallenges;
-
-      // Set up active PvP games listener
-      const activeGamesQuery = query(
-        collection(db, 'games'),
-        where('players', 'array-contains', user.uid),
-        where('status', 'in', ['ready', 'active'])
-      );
-      
-      // Reset popup state when setting up new listener
-      setHasShownGameStartPopup(false);
-      
-      const unsubscribeActiveGames = onSnapshot(activeGamesQuery, (snapshot) => {
-        const activeGames = [];
-        snapshot.forEach((doc) => {
-          const gameData = doc.data();
-          
-          // Check both possible field names and only include truly active games
-          const isPvPGame = gameData.type === 'pvp' || gameData.gameMode === 'pvp';
-          const isActiveStatus = ['ready', 'active'].includes(gameData.status);
-          
-          if (isPvPGame && isActiveStatus) {
-            activeGames.push({ id: doc.id, ...gameData });
-          }
-        });
-        
-        // Check if this is a new game starting (notification for Player 1)
-        // Only show popup if we haven't shown it yet and this is a truly new game
-        if (activeGames.length > 0 && !hasShownGameStartPopup) {
-          const newGame = activeGames[0];
-          
-          // Check if this is actually a new game (created recently)
-          const gameCreatedAt = newGame.createdAt;
-          const isRecentGame = gameCreatedAt && 
-            (new Date().getTime() - new Date(gameCreatedAt).getTime()) < 60000; // Within last minute
-          
-          // Additional check: ensure game is in a valid state
-          const isValidGame = newGame.status === 'ready' || 
-            (newGame.status === 'active' && newGame.playerWord && newGame.opponentWord);
-          
-          if (isRecentGame && isValidGame) {
-            // Show notification that the game has started
-            Alert.alert(
-              '🎮 PvP Game Started!',
-              `Your challenge to ${newGame.player2?.username || 'your opponent'} has been accepted! The game is ready to begin.`,
-              [
-                {
-                  text: 'Play Now',
-                  onPress: () => {
-                    playSound('chime').catch(() => {});
-                    setHasShownGameStartPopup(true); // Mark as shown
-                    navigation.navigate('PvPGame', { gameId: newGame.id });
-                  }
-                },
-                {
-                  text: 'Later',
-                  style: 'cancel',
-                  onPress: () => {
-                    setHasShownGameStartPopup(true); // Mark as shown even if dismissed
-                  }
-                }
-              ]
-            );
-          } else {
-            // This is an old stuck game or invalid game, mark popup as shown to prevent it from appearing
-            console.log('🚫 Preventing notification for old/invalid game:', newGame.id, newGame.status);
-            setHasShownGameStartPopup(true);
-          }
-        }
-        
-        setActivePvPGame(activeGames.length > 0 ? activeGames[0] : null);
-        
-        // Auto-detect and fix stuck games where both players have solved
+        // Handle active games from user document
+        const activeGames = userData.activeGames || [];
         if (activeGames.length > 0) {
-          const game = activeGames[0];
-          if (game.player1?.solved && game.player2?.solved && game.status === 'active') {
-            console.log('🔧 Auto-detected stuck completed game:', game.id);
-            // Don't auto-fix here, just log it for now to avoid interrupting user experience
-            // User can use the "Remove Stuck Game" button to fix it
+          // Get the most recent active game
+          const gameId = activeGames[activeGames.length - 1];
+          try {
+            const gameDoc = await getDoc(doc(db, 'games', gameId));
+            if (gameDoc.exists()) {
+              const gameData = gameDoc.data();
+              // Validate game is actually active and valid
+              if (gameData.status === 'active' || gameData.status === 'ready') {
+                setActivePvPGame({ id: gameId, ...gameData });
+              } else {
+                setActivePvPGame(null);
+              }
+            }
+          } catch (error) {
+            console.error('Failed to load active game:', error);
+            setActivePvPGame(null);
           }
+        } else {
+          setActivePvPGame(null);
         }
-      });
-      
-      activeGamesUnsubscribeRef.current = unsubscribeActiveGames;
+      } else {
+        setFriends([]);
+        setPendingRequests([]);
+        setActivePvPGame(null);
+      }
+    });
 
-      return () => {
-        if (friendsUnsubscribeRef.current) {
-          friendsUnsubscribeRef.current();
-        }
-        if (requestsUnsubscribeRef.current) {
-          requestsUnsubscribeRef.current();
-        }
-        if (challengesUnsubscribeRef.current) {
-          challengesUnsubscribeRef.current();
-        }
-        if (activeGamesUnsubscribeRef.current) {
-          activeGamesUnsubscribeRef.current();
-        }
-        if (unsubscribeSentChallenges) {
-          unsubscribeSentChallenges();
-        }
-      };
-    }
+    userListenerRef.current = unsubscribe;
+
+    return () => {
+      if (userListenerRef.current) {
+        userListenerRef.current();
+      }
+    };
   }, [user]);
-
-  // Debug function to check for stuck games
-  const checkForStuckGames = async () => {
-    try {
-      console.log('🔍 Checking for stuck games...');
-      const gamesQuery = query(
-        collection(db, 'games'),
-        where('players', 'array-contains', user.uid)
-      );
-      
-      const snapshot = await getDocs(gamesQuery);
-      console.log('🔍 Total games found:', snapshot.docs.length);
-      
-      snapshot.forEach((doc) => {
-        const gameData = doc.data();
-        console.log('🔍 Game:', { 
-          id: doc.id, 
-          status: gameData.status, 
-          type: gameData.type, 
-          gameMode: gameData.gameMode,
-          createdAt: gameData.createdAt,
-          completedAt: gameData.completedAt,
-          lastUpdated: gameData.lastUpdated
-        });
-      });
-    } catch (error) {
-      console.error('🔍 Error checking for stuck games:', error);
-    }
-  };
 
   // Function to fix stuck games by marking them as completed
   const fixStuckGames = async () => {
@@ -393,7 +239,11 @@ const FriendsScreen = () => {
           if (shouldComplete) {
             console.log('🔧 Fixing stuck game:', doc.id, 'with updates:', updates);
             await updateDoc(doc(db, 'games', doc.id), updates);
-            console.log('🔧 Fixed game:', doc.id);
+            
+            // Now delete the completed game and preserve statistics
+            await deleteCompletedGameAndPreserveStats(doc.id, { ...gameData, ...updates });
+            
+            console.log('🔧 Fixed and deleted game:', doc.id);
           }
         }
       }
@@ -406,101 +256,6 @@ const FriendsScreen = () => {
     } catch (error) {
       console.error('🔧 Error fixing stuck games:', error);
       Alert.alert('Error', 'Failed to fix stuck games: ' + error.message);
-    }
-  };
-
-  // Function to clean up old notifications and challenges
-  const cleanupOldNotifications = async () => {
-    try {
-      console.log('🧹 Cleaning up old notifications...');
-      
-      // Clean up old challenges that are no longer valid
-      const oldChallengesQuery = query(
-        collection(db, 'challenges'),
-        where('to', '==', user.uid),
-        where('status', '==', 'pending')
-      );
-      
-      const challengesSnapshot = await getDocs(oldChallengesQuery);
-      let cleanedCount = 0;
-      
-      for (const doc of challengesSnapshot.docs) {
-        const challengeData = doc.data();
-        
-        // Check if challenge is older than 7 days
-        const challengeAge = new Date().getTime() - new Date(challengeData.timestamp?.toDate?.() || challengeData.timestamp).getTime();
-        const isOld = challengeAge > (7 * 24 * 60 * 60 * 1000); // 7 days
-        
-        if (isOld) {
-          await updateDoc(doc(db, 'challenges', doc.id), {
-            status: 'expired',
-            expiredAt: new Date().toISOString()
-          });
-          cleanedCount++;
-        }
-      }
-      
-      console.log('🧹 Cleaned up', cleanedCount, 'old challenges');
-      Alert.alert('Cleanup Complete', `Cleaned up ${cleanedCount} old notifications!`);
-    } catch (error) {
-      console.error('🧹 Error cleaning up notifications:', error);
-      Alert.alert('Error', 'Failed to cleanup notifications: ' + error.message);
-    }
-  };
-
-  // Function to force remove stuck active game
-  const forceRemoveStuckGame = async () => {
-    try {
-      if (activePvPGame) {
-        console.log('🗑️ Force removing stuck game:', activePvPGame.id);
-        
-        // Check if this game should actually be completed instead of abandoned
-        if (activePvPGame.player1?.solved && activePvPGame.player2?.solved) {
-          console.log('🗑️ Game is actually completed, marking as such instead of abandoned');
-          
-          // Determine winner by attempts
-          const player1Attempts = activePvPGame.player1.attempts || 0;
-          const player2Attempts = activePvPGame.player2.attempts || 0;
-          
-          let updates = {
-            status: 'completed',
-            completedAt: new Date().toISOString(),
-            lastUpdated: new Date().toISOString()
-          };
-          
-          if (player1Attempts < player2Attempts) {
-            updates.winnerId = activePvPGame.player1.uid;
-          } else if (player2Attempts < player1Attempts) {
-            updates.winnerId = activePvPGame.player2.uid;
-          } else {
-            updates.tie = true;
-            updates.winnerId = null;
-          }
-          
-          await updateDoc(doc(db, 'games', activePvPGame.id), updates);
-          console.log('🗑️ Successfully marked game as completed');
-          Alert.alert('Success', 'Game has been properly marked as completed!');
-        } else {
-          // Mark the game as abandoned
-          await updateDoc(doc(db, 'games', activePvPGame.id), {
-            status: 'abandoned',
-            abandonedAt: new Date().toISOString(),
-            lastUpdated: new Date().toISOString(),
-            abandonedBy: user.uid
-          });
-          
-          console.log('🗑️ Successfully marked game as abandoned');
-          Alert.alert('Success', 'Stuck game has been marked as abandoned!');
-        }
-        
-        setActivePvPGame(null);
-        
-        // The screen will automatically refresh through the existing onSnapshot listeners
-        // No need to manually call a function
-      }
-    } catch (error) {
-      console.error('🗑️ Error removing stuck game:', error);
-      Alert.alert('Error', 'Failed to remove stuck game: ' + error.message);
     }
   };
 
@@ -571,8 +326,6 @@ const FriendsScreen = () => {
         timestamp: new Date(),
       };
 
-
-
       await addDoc(collection(db, 'friendRequests'), requestData);
       
       Alert.alert('Success', `Friend request sent to ${toUser.username || toUser.displayName}!`);
@@ -587,21 +340,26 @@ const FriendsScreen = () => {
 
   const acceptFriendRequest = async (request) => {
     try {
-      // Update request status
-      await updateDoc(doc(db, 'friendRequests', request.id), {
-        status: 'accepted',
-        acceptedAt: new Date()
-      });
+      // Use transaction to ensure both users are updated atomically
+      await runTransaction(db, async (transaction) => {
+        // Update request status
+        const requestRef = doc(db, 'friendRequests', request.id);
+        transaction.update(requestRef, {
+          status: 'accepted',
+          acceptedAt: new Date()
+        });
 
-      // Update current user's friends list
-      await updateDoc(doc(db, 'users', user.uid), {
-        friends: arrayUnion(request.from)
-      });
-
-      // Also update the other user's friends list for mutual friendship
-      // This will work with the updated Firestore rules
-      await updateDoc(doc(db, 'users', request.from), {
-        friends: arrayUnion(user.uid)
+        // Update both users' friends arrays atomically
+        const userRef = doc(db, 'users', user.uid);
+        const friendRef = doc(db, 'users', request.from);
+        
+        transaction.update(userRef, {
+          friends: arrayUnion(request.from)
+        });
+        
+        transaction.update(friendRef, {
+          friends: arrayUnion(user.uid)
+        });
       });
 
       Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
@@ -628,10 +386,18 @@ const FriendsScreen = () => {
 
   const removeFriend = async (friend) => {
     try {
-      // Only remove from current user's friends list
-      // The other user will need to remove this user from their own list
-      await updateDoc(doc(db, 'users', user.uid), {
-        friends: arrayRemove(friend.uid)
+      // Use transaction to ensure both users are updated atomically
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', user.uid);
+        const friendRef = doc(db, 'users', friend.uid);
+        
+        transaction.update(userRef, {
+          friends: arrayRemove(friend.uid)
+        });
+        
+        transaction.update(friendRef, {
+          friends: arrayRemove(user.uid)
+        });
       });
 
       Alert.alert('Friend Removed', `${friend.username || friend.displayName} has been removed from your friends list.`);
@@ -669,11 +435,7 @@ const FriendsScreen = () => {
     }
   };
 
-
-
   const challengeFriend = async (friend) => {
-
-    
     // Navigate to SetWordScreen to set the mystery word
     navigation.navigate('SetWord', {
       challenge: {
@@ -805,6 +567,47 @@ const FriendsScreen = () => {
       
       <Text style={styles.header}>Friends & Challenges</Text>
       
+              {/* Notifications Display */}
+        {notifications.length > 0 && (
+          <View style={styles.notificationsContainer}>
+            {notifications.map((notification) => (
+              <View key={notification.id} style={styles.notificationItem}>
+                <Text style={styles.notificationText}>{notification.message}</Text>
+                <TouchableOpacity
+                  style={styles.dismissNotificationButton}
+                  onPress={() => {
+                    // Mark as read and remove from display
+                    markNotificationAsRead(notification.id);
+                    setNotifications(prev => prev.filter(n => n.id !== notification.id));
+                  }}
+                >
+                  <Text style={styles.dismissNotificationButtonText}>×</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Stuck Game Cleanup */}
+        {activePvPGame && (
+          <View style={styles.stuckGameContainer}>
+            <Text style={styles.stuckGameText}>
+              Active PvP Game Detected
+            </Text>
+            <Text style={styles.stuckGameSubtext}>
+              {activePvPGame.player1?.word && activePvPGame.player2?.word 
+                ? 'Game is ready to play' 
+                : 'Waiting for both players to set words'}
+            </Text>
+            <TouchableOpacity
+              style={styles.removeStuckGameButton}
+              onPress={removeStuckGame}
+            >
+              <Text style={styles.removeStuckGameButtonText}>Remove Stuck Game</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      
       {/* Active PvP Game Notification */}
       {activePvPGame && (
         <View style={styles.activeGameIndicator}>
@@ -820,13 +623,7 @@ const FriendsScreen = () => {
           >
             <Text style={styles.viewChallengesButtonText}>Continue Game</Text>
           </TouchableOpacity>
-          {/* Debug: Force remove stuck game */}
-          <TouchableOpacity
-            style={[styles.viewChallengesButton, { backgroundColor: '#EF4444', marginTop: 10 }]}
-            onPress={forceRemoveStuckGame}
-          >
-            <Text style={styles.viewChallengesButtonText}>🔧 Fix Completed Game</Text>
-          </TouchableOpacity>
+
         </View>
       )}
       
@@ -857,52 +654,7 @@ const FriendsScreen = () => {
           </Text>
         </TouchableOpacity>
 
-        {/* Debug: Check for stuck games */}
-        <TouchableOpacity
-          style={[styles.navCard, { backgroundColor: '#7C3AED' }]}
-          onPress={checkForStuckGames}
-        >
-          <Text style={styles.navCardTitle}>🔍 Debug: Check Games</Text>
-          <Text style={styles.navCardSubtitle}>
-            Check for stuck or completed games
-          </Text>
-        </TouchableOpacity>
 
-        {/* Fix stuck games */}
-        <TouchableOpacity
-          style={[styles.navCard, { backgroundColor: '#10B981' }]}
-          onPress={fixStuckGames}
-        >
-          <Text style={styles.navCardTitle}>🔧 Fix Stuck Games</Text>
-          <Text style={styles.navCardSubtitle}>
-            Automatically fix stuck active games
-          </Text>
-        </TouchableOpacity>
-
-        {/* Clean up old notifications */}
-        <TouchableOpacity
-          style={[styles.navCard, { backgroundColor: '#F59E0B' }]}
-          onPress={cleanupOldNotifications}
-        >
-          <Text style={styles.navCardTitle}>🧹 Clean Notifications</Text>
-          <Text style={styles.navCardSubtitle}>
-            Remove old expired challenges
-          </Text>
-        </TouchableOpacity>
-
-        {/* Force dismiss popup */}
-        <TouchableOpacity
-          style={[styles.navCard, { backgroundColor: '#F59E0B' }]}
-          onPress={() => {
-            setHasShownGameStartPopup(true);
-            Alert.alert('Popup Dismissed', 'The game start popup has been dismissed.');
-          }}
-        >
-          <Text style={styles.navCardTitle}>🚫 Dismiss Popup</Text>
-          <Text style={styles.navCardSubtitle}>
-            Force dismiss the game start popup
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* Friend Options Modal */}

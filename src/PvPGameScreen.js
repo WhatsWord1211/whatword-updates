@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, StatusBar } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
-import { doc, onSnapshot, updateDoc, arrayUnion, increment } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import { getFeedback, isValidWord } from './gameLogic';
 import styles from './styles';
@@ -22,6 +22,9 @@ const PvPGameScreen = () => {
   const [showWinPopup, setShowWinPopup] = useState(false);
   const [showLosePopup, setShowLosePopup] = useState(false);
   const [showTiePopup, setShowTiePopup] = useState(false);
+  const [showCongratulationsPopup, setShowCongratulationsPopup] = useState(false);
+  const [showGameOverPopup, setShowGameOverPopup] = useState(false);
+  const [gameOverData, setGameOverData] = useState(null);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showMaxGuessesPopup, setShowMaxGuessesPopup] = useState(false);
   const [showQuitConfirmPopup, setShowQuitConfirmPopup] = useState(false);
@@ -47,6 +50,15 @@ const PvPGameScreen = () => {
   
   const getMaxGuesses = () => game?.maxAttempts || 25;
 
+  // Helper functions to get player data
+  const getCurrentPlayerData = (gameData) => {
+    if (gameData.player1?.uid === currentUser?.uid) {
+      return { ...gameData.player1, field: 'player1', uid: gameData.player1.uid };
+    } else {
+      return { ...gameData.player2, field: 'player2', uid: gameData.player2.uid };
+    }
+  };
+
   const updateUserStats = async (userId, isWin) => {
     try {
       const userRef = doc(db, 'users', userId);
@@ -54,9 +66,76 @@ const PvPGameScreen = () => {
         gamesPlayed: increment(1),
         ...(isWin && { gamesWon: increment(1) })
       });
-      console.log('PvPGameScreen: Updated user stats', { userId, isWin });
     } catch (error) {
       console.error('PvPGameScreen: Failed to update user stats', error);
+    }
+  };
+
+  // Determine final game result when both players have finished
+  const determineGameResult = async (gameData, currentUserId) => {
+    try {
+      const currentPlayerData = getMyPlayerData();
+      const opponentPlayerData = getOpponentPlayerData(gameData);
+      
+      let winnerId = null;
+      let tie = false;
+      
+      if (currentPlayerData.solved && opponentPlayerData.solved) {
+        // Both solved - determine winner by attempts
+        if (currentPlayerData.attempts < opponentPlayerData.attempts) {
+          winnerId = currentUserId;
+        } else if (opponentPlayerData.attempts < currentPlayerData.attempts) {
+          winnerId = opponentPlayerData.uid;
+        } else {
+          tie = true;
+        }
+      } else if (currentPlayerData.solved && !opponentPlayerData.solved) {
+        // Only current player solved
+        winnerId = currentUserId;
+      } else if (!currentPlayerData.solved && opponentPlayerData.solved) {
+        // Only opponent solved
+        winnerId = opponentPlayerData.uid;
+      } else {
+        // Neither solved - tie
+        tie = true;
+      }
+      
+      // Update game status
+      await updateDoc(doc(db, 'games', gameId), {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        winnerId: winnerId,
+        tie: tie
+      });
+      
+      // Update stats for both players
+      await updateUserStats(currentUserId, winnerId === currentUserId);
+      await updateUserStats(opponentPlayerData.uid, winnerId === opponentPlayerData.uid);
+      
+      // Delete completed game and preserve statistics
+      await deleteCompletedGame(gameId, { 
+        ...gameData, 
+        status: 'completed', 
+        completedAt: new Date().toISOString(), 
+        winnerId: winnerId, 
+        tie: tie 
+      });
+      
+      // Show game over popup with result
+      setGameOverData({ winnerId, tie, currentUserId });
+      setShowGameOverPopup(true);
+      
+      // Play appropriate sound
+      if (tie) {
+        await playSound('tie').catch(() => {});
+      } else if (winnerId === currentUserId) {
+        await playSound('victory').catch(() => {});
+      } else {
+        await playSound('lose').catch(() => {});
+      }
+      
+    } catch (error) {
+      console.error('PvPGameScreen: Failed to determine game result:', error);
     }
   };
 
@@ -86,6 +165,17 @@ const PvPGameScreen = () => {
     return unsubscribe;
   }, []);
 
+  // Immersive mode effect
+  useEffect(() => {
+    // Hide status bar for immersive gaming experience
+    StatusBar.setHidden(true);
+    
+    // Return function to restore status bar when leaving screen
+    return () => {
+      StatusBar.setHidden(false);
+    };
+  }, []);
+
   useEffect(() => {
     if (!gameId || !currentUser) return;
 
@@ -95,15 +185,71 @@ const PvPGameScreen = () => {
       if (doc.exists()) {
         const gameData = { id: doc.id, ...doc.data() };
         
-        // Validate game state
-        if (gameData.status === 'completed' || gameData.status === 'abandoned') {
-          Alert.alert('Game Ended', 'This game has already ended. Please return to the Friends screen.');
-          navigation.navigate('Friends');
+        // Game update received - keeping minimal logging for debugging
+        
+        // Validate game state - don't navigate away if we're showing game over popup
+        if ((gameData.status === 'completed' || gameData.status === 'abandoned') && !showGameOverPopup) {
+          // Only navigate away if we're not in the process of showing the game over popup
+          if (gameData.status === 'completed') {
+            // Game was completed by the other player, show game over popup
+            const currentPlayerData = getMyPlayerData();
+            const opponentPlayerData = getOpponentPlayerData(gameData);
+            
+            if (currentPlayerData && opponentPlayerData) {
+              // Determine result for this player
+              const isWinner = gameData.winnerId === currentUser.uid;
+              const isTie = gameData.tie;
+              
+              setGameOverData({ 
+                winnerId: gameData.winnerId, 
+                tie: isTie, 
+                currentUserId: currentUser.uid 
+              });
+              setShowGameOverPopup(true);
+              
+              // Play appropriate sound
+              if (isTie) {
+                playSound('tie').catch(() => {});
+              } else if (isWinner) {
+                playSound('victory').catch(() => {});
+              } else {
+                playSound('lose').catch(() => {});
+              }
+            }
+          } else {
+            Alert.alert('Game Ended', 'This game has been abandoned. Please return to the Friends screen.');
+            navigation.navigate('Friends');
+          }
           return;
         }
         
-        if (!gameData.playerWord || !gameData.opponentWord) {
-          console.log('Game not ready:', gameData);
+        // Check if game is ready with new structure (player1/player2) or old structure (playerWord/opponentWord)
+        const isGameReady = (gameData.player1?.word && gameData.player2?.word) || 
+                           (gameData.playerWord && gameData.opponentWord);
+        
+        // Debug: Log game data structure to understand what we're working with
+        console.log('PvPGameScreen: Game data structure:', {
+          gameId: gameData.id,
+          status: gameData.status,
+          players: gameData.players,
+          player1: gameData.player1,
+          player2: gameData.player2,
+          playerWord: gameData.playerWord,
+          opponentWord: gameData.opponentWord,
+          currentUser: currentUser?.uid
+        });
+        
+        // Check for timeouts
+        const timeoutType = gameService.checkGameTimeouts(gameData);
+        console.log('PvPGameScreen: Timeout check result:', timeoutType);
+        
+        if (timeoutType !== 'active') {
+          console.log('PvPGameScreen: Game timeout detected:', timeoutType);
+          // Handle timeout automatically
+          gameService.handleGameTimeout(gameData.id, timeoutType).catch(error => {
+            console.error('Failed to handle timeout:', error);
+          });
+          return;
         }
         
         setGame(gameData);
@@ -154,28 +300,93 @@ const PvPGameScreen = () => {
 
   const getMyPlayerData = () => {
     if (!game || !currentUser) return null;
+    
+    console.log('getMyPlayerData: Current game structure:', {
+      hasPlayer1: !!game.player1,
+      hasPlayer2: !!game.player2,
+      hasPlayerWord: !!game.playerWord,
+      hasOpponentWord: !!game.opponentWord,
+      currentUser: currentUser.uid,
+      creatorId: game.creatorId
+    });
+    
+    // Handle new game structure (player1/player2)
+    if (game.player1 && game.player2) {
+      const isPlayer1 = game.player1.uid === currentUser.uid;
+      const myPlayer = isPlayer1 ? game.player1 : game.player2;
+      const result = {
+        uid: currentUser.uid,
+        attempts: myPlayer.attempts || 0,
+        solved: myPlayer.solved || false,
+        word: myPlayer.word,
+        field: isPlayer1 ? 'player1' : 'player2'
+      };
+      console.log('getMyPlayerData: New structure result:', result);
+      return result;
+    }
+    
+    // Handle old game structure (playerWord/opponentWord)
     const isCreator = game.creatorId === currentUser.uid;
-    return {
+    const result = {
       uid: currentUser.uid,
       attempts: isCreator ? (game.playerGuesses?.length || 0) : (game.opponentGuesses?.length || 0),
       solved: isCreator ? game.playerSolved : game.opponentSolved,
-      word: isCreator ? game.playerWord : game.opponentWord
+      word: isCreator ? game.playerWord : game.opponentWord,
+      field: isCreator ? 'player1' : 'player2' // Fallback for old structure
     };
+    console.log('getMyPlayerData: Old structure result:', result);
+    return result;
   };
 
   const getOpponentPlayerData = (gameData) => {
     if (!gameData || !currentUser) return null;
+    
+    console.log('getOpponentPlayerData: Game data structure:', {
+      hasPlayer1: !!gameData.player1,
+      hasPlayer2: !!gameData.player2,
+      hasPlayerWord: !!gameData.playerWord,
+      hasOpponentWord: !!gameData.opponentWord,
+      currentUser: currentUser.uid,
+      creatorId: gameData.creatorId,
+      playerIds: gameData.playerIds
+    });
+    
+    // Handle new game structure (player1/player2)
+    if (gameData.player1 && gameData.player2) {
+      const isPlayer1 = gameData.player1.uid === currentUser.uid;
+      const opponentPlayer = isPlayer1 ? gameData.player2 : gameData.player1;
+      const result = {
+        uid: opponentPlayer.uid,
+        attempts: opponentPlayer.attempts || 0,
+        solved: opponentPlayer.solved || false,
+        word: opponentPlayer.word
+      };
+      console.log('getOpponentPlayerData: New structure result:', result);
+      return result;
+    }
+    
+    // Handle old game structure (playerWord/opponentWord)
     const isCreator = gameData.creatorId === currentUser.uid;
-    return {
+    const result = {
       uid: isCreator ? gameData.playerIds.find(id => id !== currentUser.uid) : gameData.creatorId,
       attempts: isCreator ? (gameData.opponentGuesses?.length || 0) : (gameData.playerGuesses?.length || 0),
       solved: isCreator ? gameData.opponentSolved : gameData.playerSolved,
       word: isCreator ? gameData.opponentWord : gameData.playerWord
     };
+    console.log('getOpponentPlayerData: Old structure result:', result);
+    return result;
   };
 
   const getOpponentWord = () => {
     if (!game || !currentUser) return null;
+    
+    // Handle new game structure (player1/player2)
+    if (game.player1 && game.player2) {
+      const isPlayer1 = game.player1.uid === currentUser.uid;
+      return isPlayer1 ? game.player2.word : game.player1.word;
+    }
+    
+    // Handle old game structure (playerWord/opponentWord)
     const isCreator = game.creatorId === currentUser.uid;
     return isCreator ? game.opponentWord : game.playerWord;
   };
@@ -201,6 +412,9 @@ const PvPGameScreen = () => {
   };
 
   const toggleLetter = (index) => {
+    // Play toggle sound
+    playSound('toggleLetter').catch(() => {});
+    
     if (alphabet[index] === 'unknown') {
       setAlphabet(prev => {
         const newAlphabet = [...prev];
@@ -229,7 +443,12 @@ const PvPGameScreen = () => {
       }
 
       // Validate game state before proceeding
-      if (!game.playerWord || !game.opponentWord) {
+      
+      // Check if game is ready with new structure (player1/player2) or old structure (playerWord/opponentWord)
+      const isGameReady = (game.player1?.word && game.player2?.word) || 
+                         (game.playerWord && game.opponentWord);
+      
+      if (!isGameReady) {
         Alert.alert('Game Not Ready', 'This game is not properly set up. Please wait for both players to set their words.');
         return;
       }
@@ -262,7 +481,7 @@ const PvPGameScreen = () => {
       const isCorrect = inputWord.toLowerCase() === opponentWord.toLowerCase();
       const feedbackData = getFeedback(inputWord.toUpperCase(), opponentWord.toUpperCase());
       
-      console.log('🔍 Generated feedback data:', feedbackData);
+      // Feedback data generated for guess
       
       // Update game with new guess
       const updateData = {
@@ -286,7 +505,31 @@ const PvPGameScreen = () => {
            updateData['opponentSolved'] = true;
          }
        }
+       
+       // Update player's solved status for new structure (player1/player2)
+       if (game.player1 && game.player2) {
+         const isPlayer1 = game.player1.uid === currentUser.uid;
+         if (isCorrect) {
+           if (isPlayer1) {
+             updateData['player1.solved'] = true;
+           } else {
+             updateData['player2.solved'] = true;
+           }
+         }
+         
+         // Also update attempts count and last activity
+         if (isPlayer1) {
+           updateData['player1.attempts'] = increment(1);
+           updateData['player1.lastGuess'] = new Date().toISOString();
+         } else {
+           updateData['player2.attempts'] = increment(1);
+           updateData['player2.lastGuess'] = new Date().toISOString();
+         }
+       }
 
+      // Add lastActivity update
+      updateData.lastActivity = new Date().toISOString();
+      
       try {
         await updateDoc(gameRef, updateData);
         
@@ -315,96 +558,53 @@ const PvPGameScreen = () => {
       }
       
              if (isCorrect) {
-         // Player solved the word - show congratulations
-         setShowWinPopup(true);
-         
-                   // Check if game is over (both solved or both reached max attempts)
-          const opponentPlayerData = getOpponentPlayerData(game);
-          if (opponentPlayerData.solved || opponentPlayerData.attempts >= getMaxGuesses()) {
-           // Game is over - determine final result
-           if (opponentPlayerData.solved) {
-             // Both solved - determine winner by attempts
-             const myAttempts = guesses.length + 1;
-             const opponentAttempts = opponentPlayerData.attempts;
-             
-             if (myAttempts < opponentAttempts) {
-               // Current player won
+               // Player solved the word - show congratulations popup
+               setShowCongratulationsPopup(true);
+               await playSound('congratulations').catch(() => {});
+               
+                              // Mark current player as solved
+               const currentPlayerData = getMyPlayerData();
                await updateDoc(gameRef, {
-                 status: 'completed',
-                 completedAt: new Date().toISOString(),
-                 winnerId: currentUser.uid,
-                 tie: false
+                 [`${currentPlayerData.field}.solved`]: true,
+                 [`${currentPlayerData.field}.attempts`]: guesses.length + 1,
+                 [`${currentPlayerData.field}.solveTime`]: new Date().toISOString()
                });
-               // Update stats for both players
-               await updateUserStats(currentUser.uid, true);
-               await updateUserStats(opponentPlayerData.uid, false);
-             } else if (myAttempts > opponentAttempts) {
-               // Current player lost
+               
+               // Get fresh game data to check opponent status
+               const freshGameDoc = await getDoc(gameRef);
+               const freshGameData = freshGameDoc.data();
+               
+               // Check if both players have finished (both solved or both reached max attempts)
+               const opponentPlayerData = getOpponentPlayerData(freshGameData);
+               
+               if (opponentPlayerData?.solved || opponentPlayerData?.attempts >= getMaxGuesses()) {
+                 // Game is over - determine final result
+                 await determineGameResult(freshGameData, currentUser.uid);
+               }
+               // If game not over, player waits for opponent to finish
+               // If game not over, player waits for opponent to finish
+             } else if (guesses.length + 1 >= getMaxGuesses()) {
+               // Reached max attempts without solving
+               const currentPlayerData = getMyPlayerData();
                await updateDoc(gameRef, {
-                 status: 'completed',
-                 completedAt: new Date().toISOString(),
-                 winnerId: opponentPlayerData.uid,
-                 tie: false
+                 [`${currentPlayerData.field}.attempts`]: guesses.length + 1
                });
-               // Update stats for both players
-               await updateUserStats(currentUser.uid, false);
-               await updateUserStats(opponentPlayerData.uid, true);
-             } else {
-               // Tie
-               await updateDoc(gameRef, {
-                 status: 'completed',
-                 completedAt: new Date().toISOString(),
-                 winnerId: null,
-                 tie: true
-               });
-               // Update stats for both players (tie counts as played but not won)
-               await updateUserStats(currentUser.uid, false);
-               await updateUserStats(opponentPlayerData.uid, false);
+               
+               // Get fresh game data to check opponent status
+               const freshGameDoc = await getDoc(gameRef);
+               const freshGameData = freshGameDoc.data();
+               
+               // Check if both players have finished
+               const opponentPlayerData = getOpponentPlayerData(freshGameData);
+               
+               if (opponentPlayerData?.solved || opponentPlayerData?.attempts >= getMaxGuesses()) {
+                 // Game is over - determine final result
+                 await determineGameResult(freshGameData, currentUser.uid);
+               } else {
+                 // Current player reached max attempts, waiting for opponent
+                 setShowMaxGuessesPopup(true);
+               }
              }
-           } else {
-             // Only current player solved, opponent reached max attempts
-             await updateDoc(gameRef, {
-               status: 'completed',
-               completedAt: new Date().toISOString(),
-               winnerId: currentUser.uid,
-               tie: false
-             });
-             // Update stats for both players
-             await updateUserStats(currentUser.uid, true);
-             await updateUserStats(opponentPlayerData.uid, false);
-           }
-         }
-         // If game not over, player waits for opponent to finish
-               } else if (guesses.length + 1 >= getMaxGuesses()) {
-          // Reached max attempts without solving
-          const opponentPlayerData = getOpponentPlayerData(game);
-          if (opponentPlayerData.solved) {
-            // Opponent solved, current player reached max attempts
-            await updateDoc(gameRef, {
-              status: 'completed',
-              completedAt: new Date().toISOString(),
-              winnerId: opponentPlayerData.uid,
-              tie: false
-            });
-            // Update stats for both players
-            await updateUserStats(currentUser.uid, false);
-            await updateUserStats(opponentPlayerData.uid, true);
-          } else if (opponentPlayerData.attempts >= getMaxGuesses()) {
-           // Both reached max attempts without solving
-           await updateDoc(gameRef, {
-             status: 'completed',
-             completedAt: new Date().toISOString(),
-             tie: true,
-             winnerId: null
-           });
-           // Update stats for both players (tie counts as played but not won)
-           await updateUserStats(currentUser.uid, false);
-           await updateUserStats(opponentPlayerData.uid, false);
-         } else {
-           // Current player reached max attempts, waiting for opponent
-           setShowMaxGuessesPopup(true);
-         }
-       }
       
     } catch (error) {
       console.error('Failed to submit guess:', error);
@@ -414,6 +614,46 @@ const PvPGameScreen = () => {
     }
   };
 
+  // Function to delete completed game and preserve only statistics
+  const deleteCompletedGame = async (gameId, gameData) => {
+    try {
+      // Extract only the statistics needed for leaderboard
+      const gameStats = {
+        gameId: gameId,
+        players: gameData.players,
+        completedAt: gameData.completedAt,
+        winnerId: gameData.winnerId,
+        tie: gameData.tie,
+        type: 'pvp',
+        // Preserve player performance data for leaderboard calculations
+        playerStats: {
+          [gameData.players[0]]: {
+            attempts: gameData.player1?.attempts || gameData.playerGuesses?.length || 0,
+            solved: gameData.player1?.solved || false,
+            solveTime: gameData.player1?.solveTime
+          },
+          [gameData.players[1]]: {
+            attempts: gameData.player2?.attempts || gameData.opponentGuesses?.length || 0,
+            solved: gameData.player2?.solved || false,
+            solveTime: gameData.player2?.solveTime
+          }
+        }
+      };
+      
+      // Save statistics to a separate collection for leaderboard purposes
+      const statsRef = doc(db, 'gameStats', gameId);
+      await updateDoc(statsRef, gameStats);
+      
+      // Delete the actual game document
+      await deleteDoc(doc(db, 'games', gameId));
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to delete completed game:', error);
+      // Don't throw error - just log it to avoid breaking the game flow
+      return false;
+    }
+  };
 
 
   const renderGameStatus = () => {
@@ -473,11 +713,28 @@ const PvPGameScreen = () => {
     );
   }
 
+  // Get opponent info for display
+  const opponentData = getOpponentPlayerData(game);
+  const opponentUsername = opponentData?.uid ? 
+    (game.players?.find(p => p.uid === opponentData.uid)?.username || 'Opponent') : 
+    'Opponent';
+
   return (
-    <SafeAreaView style={styles.screenContainer}>
-      <Text style={styles.soloheader}>Guess Their Word</Text>
+    <SafeAreaView style={styles.immersiveGameContainer}>
+      <Text style={styles.soloheader}>Guess {opponentUsername}'s Word</Text>
       
-      <View style={[styles.inputDisplay, { marginBottom: inputToKeyboardPadding }]}>
+      {/* Debug Info - Remove this after fixing the issue */}
+      {__DEV__ && (
+        <View style={styles.debugContainer}>
+          <Text style={styles.debugText}>Game ID: {game.id}</Text>
+          <Text style={styles.debugText}>Status: {game.status}</Text>
+          <Text style={styles.debugText}>Players: {game.players?.join(', ') || 'None'}</Text>
+          <Text style={styles.debugText}>My Word: {getMyPlayerData()?.word || 'Not set'}</Text>
+          <Text style={styles.debugText}>Opponent Word: {getOpponentPlayerData(game)?.word || 'Not set'}</Text>
+        </View>
+      )}
+      
+      <View style={styles.inputDisplay}>
         {[...Array(game.wordLength)].map((_, idx) => (
           <Text
             key={`input-${idx}`}
@@ -488,10 +745,10 @@ const PvPGameScreen = () => {
         ))}
       </View>
       
-      <View style={[styles.alphabetContainer, { marginBottom: keyboardToButtonsPadding }]}>
-        <View style={[styles.alphabetGrid, { maxWidth: maxKeyboardWidth }]}>
+      <View style={styles.alphabetContainer}>
+        <View style={styles.alphabetGrid}>
           {qwertyKeys.map((row, rowIndex) => (
-            <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignSelf: 'center', marginBottom: 5 }}>
+            <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 0 }}>
               {row.map((letter) => {
                 const index = letter.charCodeAt(0) - 65;
                 return (
@@ -552,7 +809,7 @@ const PvPGameScreen = () => {
       <ScrollView 
         ref={scrollViewRef} 
         style={styles.scroll} 
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 0, minHeight: 300 }}
       >
         <Text style={styles.sectionTitle}>Your Guesses</Text>
         {guesses.map((g, idx) => (
@@ -647,14 +904,67 @@ const PvPGameScreen = () => {
         </View>
       </Modal>
       
-             {/* Congratulations Popup */}
-       <Modal visible={showWinPopup} transparent animationType="fade">
-         <View style={styles.modalOverlay}>
-           <View style={[styles.winPopup, styles.modalShadow]}>
-             <Text style={styles.winTitle}>Congratulations!</Text>
-             <Text style={styles.winMessage}>
-               You solved the word in {guesses.length} guesses!
-             </Text>
+             {/* Congratulations Popup - Individual Word Solved */}
+      <Modal visible={showCongratulationsPopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow]}>
+            <Text style={styles.winTitle}>Congratulations!</Text>
+            <Text style={styles.winMessage}>
+              You solved the word in {guesses.length} guesses!
+            </Text>
+            <Text style={styles.waitingMessage}>
+              Waiting for your opponent to finish...
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => {
+                setShowCongratulationsPopup(false);
+                playSound('chime').catch(() => {});
+              }}
+            >
+              <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Game Over Popup - Final Result */}
+      <Modal visible={showGameOverPopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow]}>
+            <Text style={styles.winTitle}>
+              {gameOverData?.tie ? "It's a Tie!" : 
+               gameOverData?.winnerId === currentUser?.uid ? "You Won!" : "You Lost!"}
+            </Text>
+            <Text style={styles.winMessage}>
+              {gameOverData?.tie ? 
+                "Both players solved their words in the same number of attempts!" :
+                gameOverData?.winnerId === currentUser?.uid ?
+                "Congratulations! You solved your opponent's word faster!" :
+                "Your opponent solved your word faster. Better luck next time!"}
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => {
+                setShowGameOverPopup(false);
+                navigation.navigate('Home');
+                playSound('chime').catch(() => {});
+              }}
+            >
+              <Text style={styles.buttonText}>Main Menu</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Old Win Popup - Keeping for compatibility but not used in new flow */}
+      <Modal visible={showWinPopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow]}>
+            <Text style={styles.winTitle}>Congratulations!</Text>
+            <Text style={styles.winMessage}>
+              You solved the word in {guesses.length} guesses!
+            </Text>
             <TouchableOpacity
               style={styles.winButtonContainer}
               onPress={() => {
@@ -721,7 +1031,7 @@ const PvPGameScreen = () => {
             <Text style={styles.modalText}>
               Are you sure you want to quit this game? This will count as a forfeit and your opponent will win.
             </Text>
-            <View style={styles.modalActions}>
+            <View style={styles.modalActionsVertical}>
               <TouchableOpacity
                 style={[styles.button, styles.deleteButton]}
                 onPress={handleQuitGame}

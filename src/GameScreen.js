@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, StatusBar } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,7 +9,7 @@ import { isValidWord, getFeedback, selectRandomWord } from './gameLogic';
 import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
 import { Audio } from 'expo-av';
-import PlayerProfileService from './playerProfileService';
+import playerProfileService from './playerProfileService';
 
 // Placeholder function for showing an ad
 const showAd = async () => {
@@ -27,6 +27,8 @@ const GameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { showDifficulty, gameMode, wordLength, soloWord, gameId: initialGameId, playerId, isCreator, guesses: savedGuesses, inputWord: savedInputWord, alphabet: savedAlphabet, targetWord: savedTargetWord, gameState: savedGameState, hintCount: savedHintCount } = route.params || {};
+
+
 
   const [difficulty, setDifficulty] = useState(null);
   const [inputWord, setInputWord] = useState(savedInputWord || '');
@@ -50,6 +52,19 @@ const GameScreen = () => {
       gameState: savedGameState,
       wordLength 
     });
+  }, []);
+
+  // Immersive mode effect (Expo managed workflow)
+  useEffect(() => {
+    // Hide status bar for immersive gaming experience
+    StatusBar.setHidden(true);
+    StatusBar.setBarStyle('light-content');
+    
+    // Return function to restore status bar when leaving screen
+    return () => {
+      StatusBar.setHidden(false);
+      StatusBar.setBarStyle('dark-content');
+    };
   }, []);
   const [alphabet, setAlphabet] = useState(savedAlphabet || Array(26).fill('unknown'));
   const [hintCount, setHintCount] = useState(savedHintCount || 0);
@@ -664,7 +679,6 @@ const GameScreen = () => {
                   console.log('GameScreen: Successfully saved to leaderboard collection');
                   
                   // Update user profile with game stats
-                  const playerProfileService = new PlayerProfileService();
                   await playerProfileService.updateGameStats(auth.currentUser.uid, {
                     won: true,
                     score: newScore,
@@ -713,7 +727,6 @@ const GameScreen = () => {
           // Update user profile with game stats for lost game
           if (auth.currentUser?.uid) {
             try {
-              const playerProfileService = new PlayerProfileService();
               await playerProfileService.updateGameStats(auth.currentUser.uid, {
                 won: false,
                 score: MAX_GUESSES,
@@ -840,7 +853,7 @@ const GameScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView style={styles.immersiveGameContainer}>
       {isLoading && (
         <View style={styles.loadingOverlay}>
           <Text style={styles.loadingText}>Loading...</Text>
@@ -894,7 +907,7 @@ const GameScreen = () => {
           <Text style={styles.soloheader}>
             {gameMode === 'solo' ? 'Guess The Word' : gameState === 'setWord' ? 'Set Your Word' : 'Guess Their Word'}
           </Text>
-          <View style={[styles.inputDisplay, { marginBottom: inputToKeyboardPadding }]}>
+          <View style={styles.inputDisplay}>
             {[...Array(wordLength || 5)].map((_, idx) => (
               <Text
                 key={`input-${idx}`}
@@ -904,10 +917,10 @@ const GameScreen = () => {
               </Text>
             ))}
           </View>
-          <View style={[styles.alphabetContainer, { marginBottom: keyboardToButtonsPadding }]}>
-            <View style={[styles.alphabetGrid, { maxWidth: maxKeyboardWidth }]}>
+          <View style={styles.alphabetContainer}>
+            <View style={styles.alphabetGrid}>
               {qwertyKeys.map((row, rowIndex) => (
-                <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignSelf: 'center', marginBottom: 5 }}>
+                <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 0 }}>
                   {row.map((letter) => {
                     const index = letter.charCodeAt(0) - 65;
                     return (
@@ -934,7 +947,7 @@ const GameScreen = () => {
               ))}
               {gameMode === 'solo' && gameState === 'playing' && (
                 <TouchableOpacity 
-                  style={[styles.hintLinkContainer, { marginTop: 10 }]} 
+                  style={styles.hintLinkContainer} 
                   onPress={handleHint ? handleHint : () => console.warn('GameScreen: handleHint is undefined')}
                 >
                   <Text style={styles.hintLink}>Hint</Text>
@@ -971,43 +984,45 @@ const GameScreen = () => {
           <ScrollView 
             ref={scrollViewRef} 
             style={styles.scroll} 
-            contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 0, minHeight: 300 }}
           >
             <Text style={styles.sectionTitle}>Your Guesses</Text>
-            {guesses.map((g, idx) => (
-              <View key={`guess-${idx}`} style={styles.guessRow}>
-                <View style={styles.guessWord}>
-                  {g.isHint ? (
-                    <Text style={[styles.guessLetter, { fontSize: 24 }]}>HINT</Text>
-                  ) : (
-                    g.word.split('').map((letter, i) => (
-                      <Text
-                        key={`letter-${idx}-${i}`}
-                        style={[styles.guessLetter, { fontSize: 24 }]}
-                      >
-                        {letter}
-                      </Text>
-                    ))
+            <View style={styles.guessGrid}>
+              {guesses.map((g, idx) => (
+                <View key={`guess-${idx}`} style={styles.guessRow}>
+                  <View style={styles.guessWord}>
+                    {g.isHint ? (
+                      <Text style={[styles.guessLetter, { fontSize: 24 }]}>HINT</Text>
+                    ) : (
+                      g.word.split('').map((letter, i) => (
+                        <Text
+                          key={`letter-${idx}-${i}`}
+                          style={[styles.guessLetter, { fontSize: 24 }]}
+                        >
+                          {letter}
+                        </Text>
+                      ))
+                    )}
+                  </View>
+                  {!g.isHint && (
+                    <View style={styles.feedbackContainer}>
+                      {[...Array(guaranteeCircles(g.circles))].map((_, i) => (
+                        <View
+                          key={`circle-${idx}-${i}`}
+                          style={styles.feedbackCircle}
+                        />
+                      ))}
+                      {[...Array(guaranteeCircles(g.dots))].map((_, i) => (
+                        <View
+                          key={`dot-${idx}-${i}`}
+                          style={styles.feedbackDot}
+                        />
+                      ))}
+                    </View>
                   )}
                 </View>
-                {!g.isHint && (
-                  <View style={styles.feedbackContainer}>
-                    {[...Array(guaranteeCircles(g.circles))].map((_, i) => (
-                      <View
-                        key={`circle-${idx}-${i}`}
-                        style={styles.feedbackCircle}
-                      />
-                    ))}
-                    {[...Array(guaranteeCircles(g.dots))].map((_, i) => (
-                      <View
-                        key={`dot-${idx}-${i}`}
-                        style={styles.feedbackDot}
-                      />
-                    ))}
-                  </View>
-                )}
-              </View>
-            ))}
+              ))}
+            </View>
           </ScrollView>
           <TouchableOpacity style={styles.fabTop} onPress={() => setShowMenuPopup(true)}>
             <Text style={styles.fabText}>☰</Text>
