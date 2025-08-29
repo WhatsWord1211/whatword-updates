@@ -12,6 +12,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
+import notificationService from './notificationService';
 
 class GameService {
   constructor() {
@@ -36,7 +37,7 @@ class GameService {
         players: [challengeData.fromUid, challengeData.toUid],
         wordLength: challengeData.wordLength,
         type: 'pvp',
-        status: 'ready', // ready, active, completed
+        status: 'ready', // ready, active, waiting_for_opponent, completed
         createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString(),
         
@@ -224,6 +225,61 @@ class GameService {
               updates.winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
             }
           }
+          
+          // Send game completion notifications to both players
+          try {
+            const currentUserId = this.getCurrentUser().uid;
+            const opponentId = gameData.players.find(id => id !== currentUserId);
+            
+            // Get opponent's username for the notification
+            const opponentDoc = await getDoc(doc(db, 'users', opponentId));
+            const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
+            
+            // Send notification to current player
+            if (updates.winnerId === currentUserId) {
+              await notificationService.sendGameCompletionNotification(
+                currentUserId, 
+                gameId, 
+                `Congratulations! You won against ${opponentUsername}!`
+              );
+            } else if (updates.tie) {
+              await notificationService.sendGameCompletionNotification(
+                currentUserId, 
+                gameId, 
+                `It's a tie! Both players reached the same number of attempts.`
+              );
+            } else {
+              await notificationService.sendGameCompletionNotification(
+                currentUserId, 
+                gameId, 
+                `Game over! ${opponentUsername} won the game.`
+              );
+            }
+            
+            // Send notification to opponent
+            if (updates.winnerId === opponentId) {
+              await notificationService.sendGameCompletionNotification(
+                opponentId, 
+                gameId, 
+                `Congratulations! You won against ${this.getCurrentUser().displayName || 'Opponent'}!`
+              );
+            } else if (updates.tie) {
+              await notificationService.sendGameCompletionNotification(
+                opponentId, 
+                gameId, 
+                `It's a tie! Both players reached the same number of attempts.`
+              );
+            } else {
+              await notificationService.sendGameCompletionNotification(
+                opponentId, 
+                gameId, 
+                `Game over! ${this.getCurrentUser().displayName || 'Opponent'} won the game.`
+              );
+            }
+          } catch (notificationError) {
+            console.error('GameService: Failed to send game completion notifications:', notificationError);
+            // Don't fail the game completion if notifications fail
+          }
         }
       } else {
         // Switch turns if guess is incorrect
@@ -242,6 +298,32 @@ class GameService {
             updates.completedAt = new Date().toISOString();
             updates.tie = true;
             updates.winnerId = null;
+            
+            // Send game completion notifications for tie game
+            try {
+              const currentUserId = this.getCurrentUser().uid;
+              const opponentId = gameData.players.find(id => id !== currentUserId);
+              
+              // Get opponent's username for the notification
+              const opponentDoc = await getDoc(doc(db, 'users', opponentId));
+              const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
+              
+              // Send notification to both players about the tie
+              await notificationService.sendGameCompletionNotification(
+                currentUserId, 
+                gameId, 
+                `It's a tie! Both players reached the maximum attempts without solving.`
+              );
+              
+              await notificationService.sendGameCompletionNotification(
+                opponentId, 
+                gameId, 
+                `It's a tie! Both players reached the maximum attempts without solving.`
+              );
+            } catch (notificationError) {
+              console.error('GameService: Failed to send tie game notifications:', notificationError);
+              // Don't fail the game completion if notifications fail
+            }
           }
         }
       }
@@ -460,6 +542,44 @@ class GameService {
     return 'active'; // Game is still active
   }
 
+  // Check and update game status based on player solve state
+  async checkAndUpdateGameStatus(gameId) {
+    try {
+      const gameDoc = await getDoc(doc(db, 'games', gameId));
+      if (!gameDoc.exists()) return null;
+      
+      const gameData = gameDoc.data();
+      
+      // Check if game should be in waiting_for_opponent status
+      if (gameData.status === 'active' && gameData.player1 && gameData.player2) {
+        const player1Solved = gameData.player1.solved || false;
+        const player2Solved = gameData.player2.solved || false;
+        
+        // If one player solved but the other hasn't, update status
+        if (player1Solved && !player2Solved) {
+          await updateDoc(doc(db, 'games', gameId), {
+            status: 'waiting_for_opponent',
+            waitingForPlayer: gameData.player2.uid,
+            lastUpdated: new Date().toISOString()
+          });
+          return 'waiting_for_opponent';
+        } else if (player2Solved && !player1Solved) {
+          await updateDoc(doc(db, 'games', gameId), {
+            status: 'waiting_for_opponent',
+            waitingForPlayer: gameData.player1.uid,
+            lastUpdated: new Date().toISOString()
+          });
+          return 'waiting_for_opponent';
+        }
+      }
+      
+      return gameData.status;
+    } catch (error) {
+      console.error('GameService: Failed to check/update game status:', error);
+      return null;
+    }
+  }
+
   // Forfeit game
   async forfeitGame(gameId) {
     try {
@@ -489,6 +609,33 @@ class GameService {
       
       await updateDoc(doc(db, 'games', gameId), updates);
       console.log('GameService: Game forfeited successfully', { gameId, forfeitedBy: this.getCurrentUser().uid });
+      
+      // Send game completion notifications for forfeited game
+      try {
+        const currentUserId = this.getCurrentUser().uid;
+        const opponentId = gameData.players.find(id => id !== currentUserId);
+        
+        // Get opponent's username for the notification
+        const opponentDoc = await getDoc(doc(db, 'users', opponentId));
+        const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
+        
+        // Send notification to current player (forfeiter)
+        await notificationService.sendGameCompletionNotification(
+          currentUserId, 
+          gameId, 
+          `You forfeited the game. ${opponentUsername} wins by default.`
+        );
+        
+        // Send notification to opponent (winner)
+        await notificationService.sendGameCompletionNotification(
+          opponentId, 
+          gameId, 
+          `Your opponent forfeited the game. You win by default!`
+        );
+      } catch (notificationError) {
+        console.error('GameService: Failed to send forfeit notifications:', notificationError);
+        // Don't fail the forfeit if notifications fail
+      }
       
       // Delete completed game and preserve statistics
       await this.deleteCompletedGame(gameId, { ...gameData, ...updates });
@@ -544,6 +691,65 @@ class GameService {
       
       await updateDoc(doc(db, 'games', gameId), updates);
       
+      // Send game completion notifications for timeout
+      try {
+        const player1Id = gameData.players[0];
+        const player2Id = gameData.players[1];
+        
+        // Get usernames for notifications
+        const player1Doc = await getDoc(doc(db, 'users', player1Id));
+        const player2Doc = await getDoc(doc(db, 'users', player2Id));
+        const player1Username = player1Doc.exists() ? player1Doc.data().username || 'Player 1' : 'Player 1';
+        const player2Username = player2Doc.exists() ? player2Doc.data().username || 'Player 2' : 'Player 2';
+        
+        switch (timeoutType) {
+          case 'player1_forfeited':
+            // Player 1 inactive - Player 2 wins
+            await notificationService.sendGameCompletionNotification(
+              player1Id, 
+              gameId, 
+              `Game timed out due to inactivity. ${player2Username} wins by default.`
+            );
+            await notificationService.sendGameCompletionNotification(
+              player2Id, 
+              gameId, 
+              `Your opponent timed out due to inactivity. You win by default!`
+            );
+            break;
+            
+          case 'player2_forfeited':
+            // Player 2 inactive - Player 1 wins
+            await notificationService.sendGameCompletionNotification(
+              player2Id, 
+              gameId, 
+              `Game timed out due to inactivity. ${player1Username} wins by default.`
+            );
+            await notificationService.sendGameCompletionNotification(
+              player1Id, 
+              gameId, 
+              `Your opponent timed out due to inactivity. You win by default!`
+            );
+            break;
+            
+          case 'both_forfeited':
+            // Both inactive - tie
+            await notificationService.sendGameCompletionNotification(
+              player1Id, 
+              gameId, 
+              `Game timed out due to inactivity from both players. It's a tie.`
+            );
+            await notificationService.sendGameCompletionNotification(
+              player2Id, 
+              gameId, 
+              `Game timed out due to inactivity from both players. It's a tie.`
+            );
+            break;
+        }
+      } catch (notificationError) {
+        console.error('GameService: Failed to send timeout notifications:', notificationError);
+        // Don't fail the timeout handling if notifications fail
+      }
+      
       // Delete completed game and preserve statistics
       await this.deleteCompletedGame(gameId, { ...gameData, ...updates });
       
@@ -567,6 +773,7 @@ class GameService {
         winnerId: gameData.winnerId,
         tie: gameData.tie,
         type: 'pvp',
+        wordLength: gameData.wordLength, // Add wordLength for difficulty filtering
         forfeitedBy: gameData.forfeitedBy,
         // Preserve player performance data for leaderboard calculations
         playerStats: {

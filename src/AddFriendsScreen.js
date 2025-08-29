@@ -179,15 +179,7 @@ const AddFriendsScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fabTop} 
-        onPress={() => navigation.navigate('Home')}
-      >
-        <Text style={styles.fabText}>🏠</Text>
-      </TouchableOpacity>
-      
-      <Text style={styles.header}>Friends Management</Text>
+      <Text style={styles.header}>Friends & Challenges</Text>
       
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
@@ -284,7 +276,7 @@ const AddFriendsScreen = () => {
         style={styles.textButton}
         onPress={() => navigation.goBack()}
       >
-        <Text style={styles.textButtonText}>Back to Friends</Text>
+        <Text style={styles.textButtonText}>Back to Home</Text>
       </TouchableOpacity>
     </View>
   );

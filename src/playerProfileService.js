@@ -1,4 +1,4 @@
-import { doc, getDoc, updateDoc, increment, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, arrayUnion, arrayRemove, query, collection, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 
 class PlayerProfileService {
@@ -52,12 +52,17 @@ class PlayerProfileService {
         updates.averageScore = Math.round(newTotal / newGames);
       }
 
-      await updateDoc(doc(db, 'users', uid), updates);
-      
-      // Check for achievements
-      await this.checkAchievements(uid, updates);
-      
-      return true;
+              await updateDoc(doc(db, 'users', uid), updates);
+        
+        // Update rolling averages for difficulty-specific ranking
+        if (gameResult.difficulty) {
+          await this.updateDifficultyRollingAverages(uid, gameResult.difficulty, gameResult.score);
+        }
+        
+        // Check for achievements
+        await this.checkAchievements(uid, updates);
+        
+        return true;
     } catch (error) {
       console.error('PlayerProfileService: Failed to update game stats:', error);
       throw error;
@@ -303,6 +308,157 @@ class PlayerProfileService {
     } catch (error) {
       console.error('PlayerProfileService: Failed to get player stats:', error);
       throw error;
+    }
+  }
+
+  // Calculate and update rolling averages for the last 15 games per difficulty level
+  async updateDifficultyRollingAverages(uid, difficulty, newScore) {
+    try {
+      console.log(`PlayerProfileService: Updating rolling averages for ${difficulty} difficulty, score: ${newScore}`);
+      
+      // Use a simpler query that doesn't require a composite index
+      // Get all games for this user and difficulty, then filter and sort in memory
+      const leaderboardQuery = query(
+        collection(db, 'leaderboard'),
+        where('userId', '==', uid),
+        where('mode', '==', 'solo')
+        // Removed difficulty filter and orderBy to avoid index requirements
+      );
+      
+      const leaderboardSnapshot = await getDocs(leaderboardQuery);
+      const allGames = leaderboardSnapshot.docs.map(doc => doc.data());
+      
+      // Filter by difficulty and sort by timestamp in memory
+      const difficultyGames = allGames
+        .filter(game => game.difficulty === difficulty)
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, 15); // Take last 15 games
+      
+      // Add the current game score
+      difficultyGames.unshift({
+        guesses: newScore,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Keep only the last 15 games
+      const last15Games = difficultyGames.slice(0, 15);
+      
+      // Calculate rolling average
+      const totalAttempts = last15Games.reduce((sum, game) => sum + game.guesses, 0);
+      const rollingAverage = totalAttempts / last15Games.length;
+      
+      console.log(`PlayerProfileService: ${difficulty} difficulty - ${last15Games.length} games, total attempts: ${totalAttempts}, rolling average: ${rollingAverage.toFixed(2)}`);
+      
+      // Update the user profile with the new rolling average
+      const difficultyField = `${difficulty}AverageScore`;
+      await updateDoc(doc(db, 'users', uid), {
+        [difficultyField]: rollingAverage,
+        [`${difficulty}GamesCount`]: last15Games.length,
+        lastUpdated: new Date().toISOString()
+      });
+      
+      console.log(`PlayerProfileService: Successfully updated ${difficultyField} to ${rollingAverage.toFixed(2)}`);
+      
+      return rollingAverage;
+    } catch (error) {
+      console.error(`PlayerProfileService: Failed to update ${difficulty} rolling averages:`, error);
+      
+      // If the query fails due to index issues, try a fallback approach
+      if (error.message && error.message.includes('requires an index')) {
+        console.log(`PlayerProfileService: Index required, using fallback approach for ${difficulty} difficulty`);
+        try {
+          // Fallback: Just update the user profile with a basic average
+          // This won't be a rolling average but will prevent the error
+          const difficultyField = `${difficulty}AverageScore`;
+          await updateDoc(doc(db, 'users', uid), {
+            [difficultyField]: newScore, // Use current score as fallback
+            [`${difficulty}GamesCount`]: 1, // Mark as 1 game
+            lastUpdated: new Date().toISOString()
+          });
+          console.log(`PlayerProfileService: Fallback update successful for ${difficultyField}`);
+          return newScore;
+        } catch (fallbackError) {
+          console.error(`PlayerProfileService: Fallback also failed for ${difficulty} difficulty:`, fallbackError);
+        }
+      }
+      
+      throw error;
+      return 0;
+    }
+  }
+
+  // Calculate and update PvP rolling averages for the last 15 games per difficulty level
+  async updatePvpDifficultyRollingAverages(uid, difficulty, isWin) {
+    try {
+      console.log(`PlayerProfileService: Updating PvP rolling averages for ${difficulty} difficulty, win: ${isWin}`);
+      
+      // Use a simpler query that doesn't require a composite index
+      const gameStatsQuery = query(
+        collection(db, 'gameStats'),
+        where('players', 'array-contains', uid),
+        where('type', '==', 'pvp')
+        // Removed difficulty filter and orderBy to avoid index requirements
+      );
+      
+      const gameStatsSnapshot = await getDocs(gameStatsQuery);
+      const allGames = gameStatsSnapshot.docs.map(doc => doc.data());
+      
+      // Filter by difficulty and sort by timestamp in memory
+      const difficultyGames = allGames
+        .filter(game => game.difficulty === difficulty)
+        .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+        .slice(0, 15); // Take last 15 games
+      
+      // Add the current game result
+      difficultyGames.unshift({
+        isWin: isWin,
+        completedAt: new Date().toISOString()
+      });
+      
+      // Keep only the last 15 games
+      const last15Games = difficultyGames.slice(0, 15);
+      
+      // Calculate rolling win percentage
+      const wins = last15Games.filter(game => game.isWin).length;
+      const winPercentage = (wins / last15Games.length) * 100;
+      
+      console.log(`PlayerProfileService: PvP ${difficulty} difficulty - ${last15Games.length} games, wins: ${wins}, win percentage: ${winPercentage.toFixed(2)}%`);
+      
+      // Update the user profile with the new rolling win percentage
+      const difficultyField = `${difficulty}PvpWinPercentage`;
+      await updateDoc(doc(db, 'users', uid), {
+        [difficultyField]: winPercentage,
+        [`${difficulty}PvpGamesCount`]: last15Games.length,
+        lastUpdated: new Date().toISOString()
+      });
+      
+      console.log(`PlayerProfileService: Successfully updated ${difficultyField} to ${winPercentage.toFixed(2)}%`);
+      
+      return winPercentage;
+    } catch (error) {
+      console.error(`PlayerProfileService: Failed to update PvP ${difficulty} rolling averages:`, error);
+      
+      // If the query fails due to index issues, try a fallback approach
+      if (error.message && error.message.includes('requires an index')) {
+        console.log(`PlayerProfileService: Index required, using fallback approach for PvP ${difficulty} difficulty`);
+        try {
+          // Fallback: Just update the user profile with a basic win percentage
+          const difficultyField = `${difficulty}PvpWinPercentage`;
+          const winPercentage = isWin ? 100 : 0;
+          await updateDoc(doc(db, 'users', uid), {
+            [difficultyField]: winPercentage,
+            [`${difficulty}PvpGamesCount`]: 1,
+            lastUpdated: new Date().toISOString()
+          });
+          console.log(`PlayerProfileService: Fallback update successful for PvP ${difficultyField}`);
+          return winPercentage;
+        } catch (fallbackError) {
+          console.error(`PlayerProfileService: Fallback also failed for PvP ${difficulty} difficulty:`, fallbackError);
+        }
+      }
+      
+      throw error;
+      return 0;
     }
   }
 }

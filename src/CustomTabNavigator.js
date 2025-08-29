@@ -4,10 +4,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { db, auth } from './firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import HomeScreen from './HomeScreen';
-import FriendsScreen from './FriendsScreen';
+import AddFriendsScreen from './AddFriendsScreen';
 import LeaderboardScreen from './LeaderboardScreen';
+import ProfileScreen from './ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -19,6 +21,61 @@ const CustomTabNavigator = () => {
   const [notificationsSeen, setNotificationsSeen] = useState(false);
   const [dismissedNotifications, setDismissedNotifications] = useState(new Set());
   const [badgeScale] = useState(new Animated.Value(1));
+
+  // Load dismissed notifications and notifications seen state from AsyncStorage on component mount
+  useEffect(() => {
+    loadPersistedData();
+  }, []);
+
+  // Load dismissed notifications and notifications seen state from AsyncStorage
+  const loadPersistedData = async () => {
+    try {
+      // Load dismissed notifications
+      const storedDismissed = await AsyncStorage.getItem('dismissedNotifications');
+      if (storedDismissed) {
+        const dismissedArray = JSON.parse(storedDismissed);
+        setDismissedNotifications(new Set(dismissedArray));
+      }
+
+      // Load notifications seen state
+      const storedSeen = await AsyncStorage.getItem('notificationsSeen');
+      if (storedSeen) {
+        setNotificationsSeen(JSON.parse(storedSeen));
+      }
+    } catch (error) {
+      console.error('Failed to load persisted data:', error);
+    }
+  };
+
+  // Save dismissed notifications to AsyncStorage
+  const saveDismissedNotifications = async (dismissedSet) => {
+    try {
+      const dismissedArray = Array.from(dismissedSet);
+      await AsyncStorage.setItem('dismissedNotifications', JSON.stringify(dismissedArray));
+    } catch (error) {
+      console.error('Failed to save dismissed notifications:', error);
+    }
+  };
+
+  // Save notifications seen state to AsyncStorage
+  const saveNotificationsSeen = async (seen) => {
+    try {
+      await AsyncStorage.setItem('notificationsSeen', JSON.stringify(seen));
+    } catch (error) {
+      console.error('Failed to save notifications seen state:', error);
+    }
+  };
+
+  // Clear dismissed notifications when there are no actual notifications
+  const clearDismissedNotificationsIfNoNew = () => {
+    const hasActualNotifications = (pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0 || notifications.length > 0);
+    if (!hasActualNotifications) {
+      setDismissedNotifications(new Set());
+      saveDismissedNotifications(new Set());
+      setNotificationsSeen(true);
+      saveNotificationsSeen(true);
+    }
+  };
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -36,7 +93,11 @@ const CustomTabNavigator = () => {
       // Reset notifications seen flag when new challenges arrive
       if (challenges.length > 0) {
         setNotificationsSeen(false);
+        saveNotificationsSeen(false);
       }
+      
+      // Clear dismissed notifications if there are no actual notifications
+      clearDismissedNotificationsIfNoNew();
     });
 
     // Listen for pending friend requests
@@ -52,14 +113,18 @@ const CustomTabNavigator = () => {
       // Reset notifications seen flag when new requests arrive
       if (requests.length > 0) {
         setNotificationsSeen(false);
+        saveNotificationsSeen(false);
       }
+      
+      // Clear dismissed notifications if there are no actual notifications
+      clearDismissedNotificationsIfNoNew();
     });
 
     // Listen for active PvP games
     const activeGamesQuery = query(
       collection(db, 'games'),
       where('players', 'array-contains', auth.currentUser.uid),
-      where('status', 'in', ['ready', 'active'])
+              where('status', 'in', ['ready', 'active', 'waiting_for_opponent'])
     );
     
     const activeGamesUnsubscribe = onSnapshot(activeGamesQuery, (snapshot) => {
@@ -76,7 +141,11 @@ const CustomTabNavigator = () => {
       // Reset notifications seen flag when new active games arrive
       if (activeGames.length > 0) {
         setNotificationsSeen(false);
+        saveNotificationsSeen(false);
       }
+      
+      // Clear dismissed notifications if there are no actual notifications
+      clearDismissedNotificationsIfNoNew();
     });
 
     // Listen for notifications
@@ -93,7 +162,11 @@ const CustomTabNavigator = () => {
       // Reset notifications seen flag when new notifications arrive
       if (userNotifications.length > 0) {
         setNotificationsSeen(false);
+        saveNotificationsSeen(false);
       }
+      
+      // Clear dismissed notifications if there are no actual notifications
+      clearDismissedNotificationsIfNoNew();
     });
 
     return () => {
@@ -104,11 +177,15 @@ const CustomTabNavigator = () => {
     };
   }, []);
 
-  // Mark notifications as seen when Friends tab is focused
+  // Mark notifications as seen when Friends tab is focused (only if there are actual notifications)
   useFocusEffect(
     React.useCallback(() => {
-      setNotificationsSeen(true);
-    }, [])
+      const hasNotifications = (pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0 || notifications.length > 0);
+      if (hasNotifications && !notificationsSeen) {
+        setNotificationsSeen(true);
+        saveNotificationsSeen(true);
+      }
+    }, [pendingChallenges.length, pendingRequests.length, activePvPGames.length, notifications.length, notificationsSeen])
   );
 
   // Animate notification badge dismissal
@@ -132,7 +209,11 @@ const CustomTabNavigator = () => {
   // Dismiss specific notification by ID
   const dismissNotification = (notificationId, type) => {
     animateDismissal();
-    setDismissedNotifications(prev => new Set([...prev, `${type}_${notificationId}`]));
+    setDismissedNotifications(prev => {
+      const newSet = new Set([...prev, `${type}_${notificationId}`]);
+      saveDismissedNotifications(newSet); // Save to AsyncStorage
+      return newSet;
+    });
     // Add subtle visual feedback
   };
 
@@ -141,6 +222,12 @@ const CustomTabNavigator = () => {
     try {
       await updateDoc(doc(db, 'notifications', notificationId), {
         read: true
+      });
+      // Also add to dismissed notifications to prevent showing again
+      setDismissedNotifications(prev => {
+        const newSet = new Set([...prev, `notification_${notificationId}`]);
+        saveDismissedNotifications(newSet); // Save to AsyncStorage
+        return newSet;
       });
       // Notification marked as read
     } catch (error) {
@@ -160,9 +247,11 @@ const CustomTabNavigator = () => {
         newSet.add('activeGame_1');
       }
       notifications.forEach(notification => newSet.add(`notification_${notification.id}`));
+      saveDismissedNotifications(newSet); // Save to AsyncStorage
       return newSet;
     });
     setNotificationsSeen(true);
+    saveNotificationsSeen(true);
   };
 
   // Show help for notification dismissal
@@ -264,7 +353,7 @@ const CustomTabNavigator = () => {
       />
       <Tab.Screen 
         name="Friends" 
-        component={FriendsScreen}
+        component={AddFriendsScreen}
         options={{
           title: "Friends",
           tabBarIcon: ({ color, size }) => (
@@ -306,12 +395,7 @@ const CustomTabNavigator = () => {
                   <Text style={styles.helpText}>💡</Text>
                 </TouchableOpacity>
               )}
-              {/* Small hint text for notification interaction */}
-              {getNotificationCount() > 0 && (
-                <View style={styles.hintContainer}>
-                  <Text style={styles.hintText}>Tap to dismiss</Text>
-                </View>
-              )}
+
             </View>
           ),
         }}
@@ -323,6 +407,16 @@ const CustomTabNavigator = () => {
           title: "Leaderboard",
           tabBarIcon: ({ color, size }) => (
             <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏆</Text>
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color, size }) => (
+            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👤</Text>
           ),
         }}
       />

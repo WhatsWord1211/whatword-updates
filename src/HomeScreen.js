@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView, Image } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView, Image, StatusBar } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, setDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
@@ -11,9 +11,9 @@ import authService from './authService';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
-  const [savedGames, setSavedGames] = useState([]);
+
   const [navigationReady, setNavigationReady] = useState(false);
-  const [showResumeModal, setShowResumeModal] = useState(false);
+
   const [showInvalidPopup, setShowInvalidPopup] = useState(false);
   const [isFirstLaunch, setIsFirstLaunch] = useState(false);
   const [user, setUser] = useState(null);
@@ -22,10 +22,41 @@ const HomeScreen = () => {
   const [displayName, setDisplayName] = useState('Player');
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [pendingChallenges, setPendingChallenges] = useState([]);
+  const [userProfile, setUserProfile] = useState(null);
+  const [notifications, setNotifications] = useState([]);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
+  const notificationsUnsubscribeRef = useRef(null);
 
   // Load user profile and set up listeners
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        read: true
+      });
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  // Refresh user profile to get updated averages and ranks
+  const refreshUserProfile = async (currentUser) => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setUserProfile(userData);
+        console.log('HomeScreen: Refreshed user profile with updated averages:', {
+          easy: userData.easyAverageScore,
+          regular: userData.regularAverageScore,
+          hard: userData.hardAverageScore
+        });
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to refresh user profile:', error);
+    }
+  };
+
   const loadUserProfile = async (currentUser) => {
     try {
       console.log('HomeScreen: Loading profile for user:', currentUser.uid);
@@ -54,6 +85,9 @@ const HomeScreen = () => {
         
         console.log('HomeScreen: Final displayName set to:', displayNameToUse);
         setDisplayName(displayNameToUse);
+        
+        // Store user profile data for rank calculation
+        setUserProfile(userData);
         
         // Set up listeners for all authenticated users
         setTimeout(() => {
@@ -94,6 +128,31 @@ const HomeScreen = () => {
             if (challengesUnsubscribeRef.current) {
               challengesUnsubscribeRef.current();
             }
+            
+            // Set up notifications listener
+            const notificationsQuery = query(
+              collection(db, 'notifications'),
+              where('to', '==', currentUser.uid),
+              where('read', '==', false)
+            );
+            const unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
+              const newNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              setNotifications(newNotifications);
+              
+              // Show alert for new notifications
+              newNotifications.forEach(notification => {
+                if (notification.type === 'gameStarted') {
+                  Alert.alert('🎮 Game Started!', notification.message, [
+                    { text: 'OK', onPress: () => markNotificationAsRead(notification.id) }
+                  ]);
+                }
+              });
+            });
+            
+            if (notificationsUnsubscribeRef.current) {
+              notificationsUnsubscribeRef.current();
+            }
+            notificationsUnsubscribeRef.current = unsubscribeNotifications;
             challengesUnsubscribeRef.current = unsubscribeChallenges;
           } catch (error) {
             console.error('HomeScreen: Failed to set up listeners:', error);
@@ -111,12 +170,24 @@ const HomeScreen = () => {
           email: currentUser.email,
           createdAt: new Date(),
           lastLogin: new Date(),
-          gamesPlayed: 0,
-          gamesWon: 0,
-          bestScore: 0,
+          // Solo mode stats by difficulty
+          easyGamesPlayed: 0,
+          easyAverageScore: 0,
+          regularGamesPlayed: 0,
+          regularAverageScore: 0,
+          hardGamesPlayed: 0,
+          hardAverageScore: 0,
           totalScore: 0,
+          // PvP mode stats
+          pvpGamesPlayed: 0,
+          pvpGamesWon: 0,
+          pvpWinRate: 0,
+          previousRank: 'Unranked',
           friends: [],
-          isAnonymous: false
+          isAnonymous: false,
+          // Premium status
+          isPremium: false,
+          hardModeUnlocked: false
         });
         setDisplayName(username);
       }
@@ -150,7 +221,7 @@ const HomeScreen = () => {
               loadUserProfile(currentUser),
               loadSounds(),
               checkFirstLaunch(),
-              loadSavedGames(),
+              
               clearStuckGameState() // Clear any stuck game state
             ]).catch(console.error);
           }
@@ -169,7 +240,7 @@ const HomeScreen = () => {
                 loadUserProfile(currentUser),
                 loadSounds(),
                 checkFirstLaunch(),
-                loadSavedGames(),
+
                 clearStuckGameState() // Clear any stuck game state
               ]).catch(console.error);
             } else {
@@ -193,15 +264,27 @@ const HomeScreen = () => {
 
     return () => {
       mounted = false;
-      if (invitesUnsubscribeRef.current) {
-        invitesUnsubscribeRef.current();
-      }
-      if (challengesUnsubscribeRef.current) {
-        challengesUnsubscribeRef.current();
-      }
+              if (invitesUnsubscribeRef.current) {
+          invitesUnsubscribeRef.current();
+        }
+        if (challengesUnsubscribeRef.current) {
+          challengesUnsubscribeRef.current();
+        }
+        if (notificationsUnsubscribeRef.current) {
+          notificationsUnsubscribeRef.current();
+        }
 
     };
   }, []);
+
+  // Refresh user profile when screen comes into focus to get updated averages and ranks
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user && !isAuthenticating) {
+        refreshUserProfile(user);
+      }
+    }, [user, isAuthenticating])
+  );
 
   const checkFirstLaunch = async () => {
     try {
@@ -218,7 +301,7 @@ const HomeScreen = () => {
   const clearStuckGameState = async () => {
     try {
       // Clear any potentially stuck game state from AsyncStorage
-      const keysToRemove = ['savedGames', 'currentGame', 'gameState'];
+      const keysToRemove = ['currentGame', 'gameState'];
       
       for (const key of keysToRemove) {
         try {
@@ -235,60 +318,18 @@ const HomeScreen = () => {
     }
   };
 
-  const loadSavedGames = async () => {
-    try {
-      const savedGamesData = await AsyncStorage.getItem('savedGames');
-      if (savedGamesData) {
-        const games = JSON.parse(savedGamesData);
-        
-        // Filter out invalid or stuck games
-        const validGames = games.filter(game => {
-          // Remove games that are older than 24 hours
-          const gameAge = Date.now() - new Date(game.timestamp).getTime();
-          const isRecent = gameAge < 24 * 60 * 60 * 1000; // 24 hours
-          
-          // Remove games that are in invalid states
-          const isValidState = game.gameState && game.gameState !== 'error';
-          
-          return isRecent && isValidState;
-        });
-        
-        // If we filtered out games, update AsyncStorage
-        if (validGames.length !== games.length) {
-          console.log(`HomeScreen: Filtered out ${games.length - validGames.length} invalid/stuck games`);
-          await AsyncStorage.setItem('savedGames', JSON.stringify(validGames));
-        }
-        
-        setSavedGames(validGames);
-      }
-    } catch (error) {
-      console.error('HomeScreen: Failed to load saved games:', error);
-      // If there's an error loading games, clear them to prevent issues
-      try {
-        await AsyncStorage.removeItem('savedGames');
-        console.log('HomeScreen: Cleared corrupted saved games');
-      } catch (clearError) {
-        console.error('HomeScreen: Failed to clear corrupted games:', clearError);
-      }
-    }
-  };
+
 
   const handleSignOut = async () => {
     try {
       await authService.signOut();
       setUser(null);
       setDisplayName('Player');
-      setSavedGames([]);
+
       setGameInvites([]);
       setPendingChallenges([]);
       
-      // Clear all saved games from AsyncStorage to prevent stuck games
-      try {
-        await AsyncStorage.removeItem('savedGames');
-        console.log('HomeScreen: Cleared saved games from AsyncStorage');
-      } catch (error) {
-        console.error('HomeScreen: Failed to clear saved games:', error);
-      }
+
     } catch (error) {
       console.error('HomeScreen: Sign out failed:', error);
     }
@@ -304,6 +345,29 @@ const HomeScreen = () => {
     } catch (error) {
       console.error('HomeScreen: Failed to refresh profile:', error);
     }
+  };
+
+  // Function to get player rank
+  const getPlayerRank = () => {
+    if (!userProfile) return 'Unranked';
+    
+    const easyAvg = userProfile.easyAverageScore || 0;
+    const regularAvg = userProfile.regularAverageScore || 0;
+    const hardAvg = userProfile.hardAverageScore || 0;
+    
+    // Check if player has played any games
+    if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
+      return 'Unranked';
+    }
+    
+    if (hardAvg > 0 && hardAvg <= 8) return 'Word Master';
+    if (regularAvg > 0 && regularAvg <= 8) return 'Word Expert';
+    if (regularAvg > 0 && regularAvg <= 12) return 'Word Pro';
+    if (easyAvg > 0 && easyAvg <= 8) return 'Word Enthusiast';
+    if (easyAvg > 0 && easyAvg <= 15) return 'Word Learner';
+    if (easyAvg > 0 && easyAvg <= 20) return 'Rookie';
+    
+    return 'Unranked';
   };
 
   const handleButtonPress = (screen, params) => {
@@ -326,43 +390,7 @@ const HomeScreen = () => {
     }
   };
 
-  const renderGameItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.savedGameButton}
-      onPress={() => {
-        if (item.gameMode === 'solo') {
-          navigation.navigate('Game', {
-            gameMode: 'solo',
-            wordLength: item.wordLength,
-            soloWord: item.targetWord,
-            guesses: item.guesses,
-            inputWord: item.inputWord,
-            alphabet: item.alphabet,
-            targetWord: item.targetWord,
-            gameState: item.gameState,
-            hintCount: item.hintCount
-          });
-        } else if (item.gameMode === 'pvp') {
-          // For PvP games, navigate to the game directly
-          navigation.navigate('Game', {
-            gameMode: 'pvp',
-            gameId: item.gameId,
-            playerId: user.uid,
-            showDifficulty: false,
-            gameState: 'playing',
-            isCreator: item.isCreator,
-            wordLength: item.wordLength
-          });
-        }
-      }}
-    >
-      <Text style={styles.buttonText}>
-        {item.gameMode === 'solo'
-          ? `Solo (${item.wordLength} letters, Last Played: ${new Date(item.timestamp).toLocaleDateString()})`
-          : `PvP Game (${item.wordLength} letters, Last Played: ${new Date(item.timestamp).toLocaleDateString()})`}
-      </Text>
-    </TouchableOpacity>
-  );
+
 
   const renderInvite = ({ item }) => (
     <View style={styles.friendItem}>
@@ -377,13 +405,26 @@ const HomeScreen = () => {
   );
 
   return (
-    <View style={styles.screenContainer}>
-      {/* Fixed Header Image - Outside ScrollView */}
-      <Image
-        source={require('../assets/images/WhatWord-header.png')}
-        style={[styles.imageHeader, { marginTop: 5, marginBottom: 10 }]}
-        resizeMode="contain"
-      />
+    <View style={{ flex: 1, backgroundColor: '#1F2937' }}>
+      {/* FAB - Outside any container for absolute positioning */}
+      <TouchableOpacity
+        style={[styles.fabTopFixed, { top: -55 }]}
+        onPress={() => {
+          console.log('🔧 DEV MODE: FAB button tapped!');
+          setShowMenuModal(true);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.fabText}>☰</Text>
+      </TouchableOpacity>
+      
+      <View style={styles.screenContainer}>
+        {/* Fixed Header Image - Outside ScrollView */}
+        <Image
+          source={require('../assets/images/WhatWord-header.png')}
+          style={[styles.imageHeader, { marginTop: 5, marginBottom: 5 }]}
+          resizeMode="contain"
+        />
       
       {/* Scrollable Content */}
       <ScrollView
@@ -391,7 +432,22 @@ const HomeScreen = () => {
         contentContainerStyle={{ paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.header, { marginBottom: 10 }]}>Welcome, {displayName}</Text>
+        <Text style={[styles.header, { marginBottom: 40 }]}>Welcome, {displayName}</Text>
+        
+        {/* Player Rank Display */}
+        <View style={styles.rankDisplay}>
+          <Text style={styles.rankLabel}>Rank:</Text>
+          <Text style={styles.rankValue}>{getPlayerRank()}</Text>
+        </View>
+        
+        {/* Notifications Indicator */}
+        {notifications.length > 0 && (
+          <View style={styles.notificationsIndicator}>
+            <Text style={styles.notificationsText}>
+              🔔 You have {notifications.length} new notification{notifications.length > 1 ? 's' : ''}!
+            </Text>
+          </View>
+        )}
         
         {/* Pending Challenges Indicator */}
         {pendingChallenges.length > 0 && (
@@ -417,23 +473,8 @@ const HomeScreen = () => {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            console.log('HomeScreen: Play A Friend button pressed');
-            // Play sound in background, don't wait for it
-            playSound('chime').catch(() => {});
-            // Navigate immediately with error handling
-            try {
-              navigation.navigate('CreateChallenge');
-            } catch (error) {
-              console.error('HomeScreen: Navigation failed:', error);
-              // Retry navigation after a short delay
-              setTimeout(() => {
-                try {
-                  navigation.navigate('CreateChallenge');
-                } catch (retryError) {
-                  console.error('HomeScreen: Navigation retry failed:', retryError);
-                }
-              }, 100);
-            }
+            playSound('chime');
+            navigation.navigate('CreateChallenge');
           }}
         >
           <Text style={styles.buttonText}>Play A Friend</Text>
@@ -449,9 +490,8 @@ const HomeScreen = () => {
 
         
         <TouchableOpacity
-          style={[styles.button, savedGames.length === 0 && styles.disabledButton]}
-          onPress={() => handleButtonPress('Game', { gameMode: 'resume' })}
-          disabled={savedGames.length === 0}
+          style={styles.button}
+          onPress={() => handleButtonPress('ResumeGames')}
         >
           <Text style={styles.buttonText}>Resume</Text>
         </TouchableOpacity>
@@ -463,16 +503,7 @@ const HomeScreen = () => {
           <Text style={styles.buttonText}>How To Play</Text>
         </TouchableOpacity>
         
-        {/* Profile Button */}
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            playSound('chime');
-            navigation.navigate('Profile');
-          }}
-        >
-          <Text style={styles.buttonText}>Profile</Text>
-        </TouchableOpacity>
+
 
         {/* Game Invites */}
         {gameInvites.length > 0 && (
@@ -487,24 +518,11 @@ const HomeScreen = () => {
           </>
         )}
 
-        {/* Debug: Show Pending Challenges Count */}
-        <Text style={styles.debugText}>
-          Debug: {pendingChallenges.length} pending challenges
-        </Text>
+
 
 
       </ScrollView>
-      
-      <TouchableOpacity
-        style={styles.fabTop}
-        onPress={() => {
-          console.log('🔧 DEV MODE: FAB button tapped!');
-          setShowMenuModal(true);
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.fabText}>☰</Text>
-      </TouchableOpacity>
+      </View>
       
       <Modal visible={showMenuModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -541,22 +559,7 @@ const HomeScreen = () => {
         </View>
       </Modal>
 
-      <Modal visible={showResumeModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, styles.modalShadow]}>
-            <Text style={styles.header}>Resume Game</Text>
-            <FlatList
-              data={savedGames}
-              renderItem={renderGameItem}
-              keyExtractor={(item) => item.gameId || `solo_${item.timestamp}`}
-              style={{ maxHeight: 300 }}
-            />
-            <TouchableOpacity style={styles.button} onPress={() => setShowResumeModal(false)}>
-              <Text style={styles.buttonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+
       
       <Modal visible={showInvalidPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>

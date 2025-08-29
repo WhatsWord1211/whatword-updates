@@ -62,14 +62,6 @@ export default StyleSheet.create({
     padding: 15,
     paddingHorizontal: 16,
   },
-  // Immersive game container for maximum screen usage
-  immersiveGameContainer: {
-    flex: 1,
-    backgroundColor: '#1F2937',
-    alignItems: 'center',
-    padding: 8,
-    paddingHorizontal: 12,
-  },
   difficultyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -106,8 +98,8 @@ export default StyleSheet.create({
     fontWeight: '600',
     paddingTop: 1,
     paddingBottom: 5,
-    marginBottom: 10,
-    marginTop: 10,
+    marginBottom: 15,
+    marginTop: 25, // Increased top margin to avoid FAB overlap
     textAlign: 'center',
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
@@ -132,11 +124,7 @@ export default StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
   },
-  disabledButton: {
-    backgroundColor: '#6B7280',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
+
   guestNotice: {
     backgroundColor: '#374151',
     padding: 16,
@@ -175,12 +163,7 @@ export default StyleSheet.create({
     borderColor: '#3B82F6',
   },
 
-  debugText: {
-    color: '#E5E7EB',
-    fontSize: 12,
-    fontFamily: 'Roboto-Regular',
-    marginBottom: 4,
-  },
+
 
   benefitsNotice: {
     backgroundColor: '#263238',
@@ -311,40 +294,20 @@ export default StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    marginVertical: 3,
+    marginVertical: 2,
     textAlign: 'center',
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
+    alignSelf: 'center',
+    width: '100%',
   },
-  savedGameButton: {
-    backgroundColor: '#F59E0B',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginVertical: 8,
-    marginHorizontal: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  savedGameText: {
-    color: '#1F2937',
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'Roboto-Regular',
-  },
+
   scroll: {
     width: '100%',
-    paddingBottom: 0,
-    flex: 1,
-    minHeight: 300,
   },
   inputDisplay: {
     flexDirection: 'row',
-    marginBottom: 18,
+    marginBottom: 15,
   },
   inputLetter: {
     width: 44,
@@ -377,9 +340,8 @@ export default StyleSheet.create({
     width: '100%',
     maxWidth: '100%',
     alignSelf: 'center',
-    paddingBottom: 0,
-    paddingHorizontal: 0,
-    marginBottom: 0,
+    paddingBottom: 1,
+    paddingHorizontal: 1,
   },
   letter: {
     width: 26,
@@ -409,7 +371,15 @@ export default StyleSheet.create({
     justifyContent: 'center',
     width: '100%',
     marginBottom: 15,
-    marginTop: -15,
+    marginTop: -20,
+  },
+  // Style for PvP word setting screen (no negative margin)
+  inputControlsPvP: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+    marginBottom: 15,
+    marginTop: 20,
   },
   backspaceButtonContainer: {
     backgroundColor: '#7C3AED',
@@ -417,7 +387,6 @@ export default StyleSheet.create({
     paddingHorizontal: 26,
     borderRadius: 8,
     marginHorizontal: 6,
-    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -430,7 +399,6 @@ export default StyleSheet.create({
     paddingHorizontal: 26,
     borderRadius: 8,
     marginHorizontal: 20,
-    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -446,7 +414,7 @@ export default StyleSheet.create({
   feedbackGuide: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 5,
   },
   feedbackItem: {
     flexDirection: 'row',
@@ -476,7 +444,7 @@ export default StyleSheet.create({
   },
   guessGrid: {
     marginHorizontal: 20,
-    marginVertical: 2,
+    marginVertical: 5,
   },
   guessRow: {
     flexDirection: 'row',
@@ -488,7 +456,7 @@ export default StyleSheet.create({
   guessWord: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 30,
+    minHeight: 40,
     width: 120, // Reduced width for tighter letter spacing
   },
   guessLetter: {
@@ -498,19 +466,41 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Regular',
     textAlign: 'center',
     width: 24, // Reduced width for tighter letter spacing
-    height: 30,
-    lineHeight: 30,
+    height: 40,
+    lineHeight: 40,
     flex: 1, // This ensures each letter takes equal space
   },
   feedbackContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 30,
+    minHeight: 40,
   },
   fabTop: {
     position: 'absolute',
-    top: 10,
-    right: 10,
+    top: 80, // Moved down slightly to avoid covering header
+    right: 20,
+    backgroundColor: '#F59E0B',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+    zIndex: 1000,
+    // Ensure consistent positioning across all screens
+    left: undefined,
+    bottom: undefined,
+  },
+  
+  // Alternative FAB positioning for screens with heavy top margins
+  fabTopFixed: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
     backgroundColor: '#F59E0B',
     width: 44,
     height: 44,
@@ -947,18 +937,112 @@ export default StyleSheet.create({
     elevation: 2,
   },
   hintLinkContainer: {
-    marginTop: 0,
-    marginBottom: 0,
-    padding: 0,
+    marginTop: 1,
+    padding: 1,
   },
   hintLink: {
     color: '#F59E0B',
     fontSize: 18,
     fontWeight: '600',
-    paddingTop: 0,
-    paddingBottom: 0,
+    paddingTop: 1,
+    paddingBottom: 10,
     textAlign: 'center',
     fontFamily: 'Roboto-Regular',
+  },
+  
+  // Rank-up popup styles
+  rankUpPopup: {
+    backgroundColor: '#1F2937',
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    width: '90%',
+    borderWidth: 3,
+    borderColor: '#F59E0B',
+  },
+  rankUpTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 8,
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    textAlign: 'center',
+  },
+  rankUpSubtitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+  },
+  rankUpMessage: {
+    fontSize: 16,
+    marginBottom: 24,
+    textAlign: 'center',
+    color: '#D1D5DB',
+    fontFamily: 'Roboto-Regular',
+    lineHeight: 24,
+  },
+  rankUpButton: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  rankUpButtonText: {
+    color: '#1F2937',
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: 'Roboto-Bold',
+  },
+  
+  // Rank display styles for HomeScreen
+  rankDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#374151',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  // Notifications indicator styles for HomeScreen
+  notificationsIndicator: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+  },
+  notificationsText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+  },
+  rankLabel: {
+    color: '#D1D5DB',
+    fontSize: 14,
+    fontWeight: '500',
+    fontFamily: 'Roboto-Regular',
+    marginRight: 8,
+  },
+  rankValue: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: 'Roboto-Bold',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1158,6 +1242,63 @@ export default StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // Resume screen styles
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Bold',
+    textAlign: 'center',
+    flex: 1,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    marginBottom: 25,
+    lineHeight: 22,
+  },
+  addFriendsButton: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  addFriendsButtonText: {
+    color: '#1F2937',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#4B5563',
+    backgroundColor: '#1F2937',
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    padding: 30,
+    justifyContent: 'center',
+    flex: 1,
+  },
+  sectionContainer: {
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
   editButton: {
     backgroundColor: '#F59E0B',
     paddingVertical: 8,
@@ -1169,28 +1310,67 @@ export default StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  // Welcome Section Styles
-  welcomeContainer: {
+  // Rank Display Styles
+  rankDisplayContainer: {
     width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    gap: 15,
+  },
+  rankBadge: {
+    flex: 1,
     backgroundColor: '#374151',
     padding: 20,
     borderRadius: 12,
-    marginBottom: 20,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#4B5563',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  welcomeTitle: {
-    fontSize: 24,
+  levelBadge: {
+    flex: 1,
+    backgroundColor: '#374151',
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  rankTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#F59E0B',
     marginBottom: 8,
     textAlign: 'center',
     fontFamily: 'Roboto-Bold',
   },
-  welcomeSubtitle: {
-    fontSize: 16,
-    color: '#E5E7EB',
+  rankSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    fontFamily: 'Roboto-Regular',
+  },
+  levelTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 8,
+    textAlign: 'center',
+    fontFamily: 'Roboto-Bold',
+  },
+  levelSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
     textAlign: 'center',
     fontFamily: 'Roboto-Regular',
   },
@@ -1581,8 +1761,7 @@ export default StyleSheet.create({
   wordContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 20,
-    marginBottom: 40,
+    marginVertical: 20,
     gap: 8,
   },
   letterBox: {
@@ -1677,21 +1856,7 @@ export default StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Roboto-Bold',
   },
-  debugContainer: {
-    backgroundColor: '#1F2937',
-    padding: 10,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-  debugText: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    fontFamily: 'Roboto-Regular',
-    marginBottom: 2,
-  },
+
 
   // Leaderboard styles
   leaderboardItem: {
@@ -1785,6 +1950,104 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Bold',
     marginBottom: 15,
     textAlign: 'center',
+  },
+  
+  // Leaderboard Summary Box styles
+  leaderboardSummaryBox: {
+    backgroundColor: '#374151',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    width: '100%',
+  },
+  summaryBoxHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  summaryBoxTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Bold',
+  },
+  seeMoreButton: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  seeMoreButtonText: {
+    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+  },
+  summaryContent: {
+    alignItems: 'center',
+  },
+  summaryRank: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 8,
+  },
+  summaryStats: {
+    fontSize: 16,
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  difficultyBreakdown: {
+    width: '100%',
+  },
+  difficultyStat: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  
+  // Expanded Leaderboard styles
+  expandedSection: {
+    width: '100%',
+  },
+  expandedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  expandedTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Bold',
+  },
+  backButton: {
+    backgroundColor: '#6B7280',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  backButtonText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
   },
   section: {
     marginBottom: 20,
@@ -1971,6 +2234,83 @@ export default StyleSheet.create({
     paddingHorizontal: 20,
     gap: 15,
   },
+  
+  // CreateChallengeScreen pending challenges styles
+  sectionContainer: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#E5E7EB',
+    marginBottom: 8,
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginBottom: 16,
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+  },
+  challengeItem: {
+    backgroundColor: '#374151',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+  },
+  lastChallengeItem: {
+    marginBottom: 0,
+  },
+  challengeInfo: {
+    marginBottom: 12,
+  },
+  challengerUsername: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#E5E7EB',
+    marginBottom: 4,
+    fontFamily: 'Roboto-Regular',
+  },
+  challengeDetails: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    marginBottom: 4,
+    fontFamily: 'Roboto-Regular',
+  },
+  challengeTime: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+  },
+  challengeActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  acceptButton: {
+    backgroundColor: '#10B981',
+    borderColor: '#059669',
+  },
+  declineButton: {
+    backgroundColor: '#EF4444',
+    borderColor: '#DC2626',
+  },
+  acceptButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Regular',
+  },
+  declineButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Regular',
+  },
   navCard: {
     backgroundColor: '#374151',
     padding: 20,
@@ -2041,13 +2381,7 @@ export default StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: 'Roboto-Bold',
   },
-  debugText: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    fontFamily: 'Roboto-Regular',
-    marginTop: 20,
-    textAlign: 'center',
-  },
+
   // PvP Game Styles
   gameStatusContainer: {
     backgroundColor: '#374151',
@@ -2468,5 +2802,184 @@ export default StyleSheet.create({
   activeDifficultyTabText: {
     color: '#1F2937',
     fontWeight: '700',
+  },
+
+  // Resume Games Screen
+  sectionContainer: {
+    marginBottom: 20,
+    width: '100%',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 12,
+    paddingHorizontal: 16,
+  },
+
+  // Hard Mode Unlock Styles
+  hardModeUnlockContainer: {
+    backgroundColor: '#1F2937',
+    padding: 20,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  unlockedContainer: {
+    alignItems: 'center',
+    padding: 15,
+  },
+  unlockedTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#10B981',
+    marginBottom: 8,
+    textAlign: 'center',
+    fontFamily: 'Roboto-Bold',
+  },
+  unlockedSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    fontFamily: 'Roboto-Regular',
+  },
+  lockedContainer: {
+    padding: 15,
+  },
+  lockedTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#EF4444',
+    marginBottom: 8,
+    textAlign: 'center',
+    fontFamily: 'Roboto-Bold',
+  },
+  lockedSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontFamily: 'Roboto-Regular',
+  },
+  unlockOptions: {
+    gap: 15,
+  },
+  unlockOption: {
+    backgroundColor: '#374151',
+    padding: 15,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+  },
+  unlockOptionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 5,
+    fontFamily: 'Roboto-Bold',
+  },
+  unlockOptionSubtitle: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 10,
+    fontFamily: 'Roboto-Regular',
+  },
+  progressContainer: {
+    backgroundColor: '#1F2937',
+    padding: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#E5E7EB',
+    textAlign: 'center',
+    fontFamily: 'Roboto-Regular',
+  },
+  premiumButton: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  premiumButtonText: {
+    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'Roboto-Bold',
+  },
+
+  // Locked button styles for GameScreen
+  lockedButton: {
+    backgroundColor: '#6B7280',
+    opacity: 0.8, // Increased opacity since button is now clickable
+  },
+  lockedButtonText: {
+    color: '#9CA3AF',
+  },
+
+  // Lock status message styles for SetWordGameScreen
+  lockStatusContainer: {
+    backgroundColor: '#1F2937',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 15,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    alignItems: 'center',
+  },
+  lockStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 5,
+    fontFamily: 'Roboto-Medium',
+  },
+  lockStatusSubtext: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    fontFamily: 'Roboto-Regular',
+  },
+
+  // Friend hard mode status styles for CreateChallengeScreen
+  friendHardModeStatus: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginTop: 2,
+  },
+
+  // ProfileScreen difficulty section styling
+  difficultySection: {
+    marginBottom: 20,
+    padding: 12,
+    backgroundColor: '#4B5563',
+    borderRadius: 8,
+  },
+  difficultyStatsContainer: {
+    marginBottom: 20,
+    padding: 12,
+    backgroundColor: '#4B5563',
+    borderRadius: 8,
+  },
+  difficultyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#E5E7EB',
+    marginBottom: 12,
+    textAlign: 'center',
+    fontFamily: 'Roboto-Regular',
   },
 });

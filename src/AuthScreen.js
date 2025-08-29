@@ -176,7 +176,7 @@ const AuthScreen = () => {
           console.log('🔧 DEV MODE: Profile created successfully');
         }
         
-        Alert.alert("Success!", "Signed in successfully");
+
         console.log('🔧 DEV MODE: Sign in completed, user should be redirected automatically');
         console.log('🔧 DEV MODE: Current auth user:', auth.currentUser);
         
@@ -199,12 +199,24 @@ const AuthScreen = () => {
           email: email,
           createdAt: new Date(),
           lastLogin: new Date(),
-          gamesPlayed: 0,
-          gamesWon: 0,
-          bestScore: 0,
+          // Solo mode stats by difficulty
+          easyGamesPlayed: 0,
+          easyAverageScore: 0,
+          regularGamesPlayed: 0,
+          regularAverageScore: 0,
+          hardGamesPlayed: 0,
+          hardAverageScore: 0,
           totalScore: 0,
+          // PvP mode stats
+          pvpGamesPlayed: 0,
+          pvpGamesWon: 0,
+          pvpWinRate: 0,
+          previousRank: 'Unranked',
           friends: [],
-          isAnonymous: false
+          isAnonymous: false,
+          // Premium status
+          isPremium: false,
+          hardModeUnlocked: false
         });
         console.log('🔧 DEV MODE: Profile created successfully');
         

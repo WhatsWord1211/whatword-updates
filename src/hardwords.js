@@ -736,6 +736,7 @@ export const hardWordList = [
   'cuckoo',
   'cuddle',
   'cuddly',
+  'cupped',
   'curate',
   'curfew',
   'curing',

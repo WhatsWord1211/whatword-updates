@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
-import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
+import { addDoc, updateDoc, doc, collection, arrayUnion } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import { isValidWord } from './gameLogic';
 import styles from './styles';
@@ -18,6 +18,8 @@ const SetWordGameScreen = () => {
   const [difficulty, setDifficulty] = useState(null);
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
+  const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
+  const [opponentHardModeUnlocked, setOpponentHardModeUnlocked] = useState(true); // Default to true to avoid flicker
 
 
 
@@ -35,6 +37,96 @@ const SetWordGameScreen = () => {
       setShowDifficultySelection(false);
     }
   }, [isAccepting, challenge]);
+
+  // Check hard mode unlock status when component mounts
+  useEffect(() => {
+    const checkUnlockStatus = async () => {
+      if (showDifficultySelection) {
+        const isUnlocked = await checkHardModeUnlocked();
+        setHardModeUnlocked(isUnlocked);
+        
+        // For PvP challenges, also check opponent's unlock status
+        if (!isAccepting && challenge?.to) {
+          const opponentUnlocked = await checkUserHardModeUnlocked(challenge.to);
+          setOpponentHardModeUnlocked(opponentUnlocked);
+        } else {
+          setOpponentHardModeUnlocked(true); // Solo mode or accepting challenge
+        }
+      }
+    };
+    
+    checkUnlockStatus();
+  }, [showDifficultySelection, isAccepting, challenge]);
+
+  // Check if hard mode is unlocked for current user
+  const checkHardModeUnlocked = async () => {
+    try {
+      if (!auth.currentUser) return false;
+      
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (!userDoc.exists()) return false;
+      
+      const userData = userDoc.data();
+      
+      // Check if user is premium
+      if (userData.isPremium) return true;
+      
+      // Check if user has reached Word Expert rank
+      const easyAvg = userData.easyAverageScore || 0;
+      const regularAvg = userData.regularAverageScore || 0;
+      const hardAvg = userData.hardAverageScore || 0;
+      
+      // Check if player has played any games
+      if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
+        return false;
+      }
+      
+      // Check if user has reached Word Expert rank (Regular mode average ≤ 8)
+      if (regularAvg > 0 && regularAvg <= 8) {
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Failed to check hard mode unlock status:', error);
+      return false;
+    }
+  };
+
+  // Check if hard mode is unlocked for a specific user
+  const checkUserHardModeUnlocked = async (userId) => {
+    try {
+      if (!userId) return false;
+      
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) return false;
+      
+      const userData = userDoc.data();
+      
+      // Check if user is premium
+      if (userData.isPremium) return true;
+      
+      // Check if user has reached Word Expert rank
+      const easyAvg = userData.easyAverageScore || 0;
+      const regularAvg = userData.regularAverageScore || 0;
+      const hardAvg = userData.hardAverageScore || 0;
+      
+      // Check if player has played any games
+      if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
+        return false;
+      }
+      
+      // Check if user has reached Word Expert rank (Regular mode average ≤ 8)
+      if (regularAvg > 0 && regularAvg <= 8) {
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Failed to check hard mode unlock status for user:', userId, error);
+      return false;
+    }
+  };
 
   const handleSubmit = async () => {
     console.log('🔍 handleSubmit called with:', { word, difficulty, isAccepting, challenge });
@@ -124,6 +216,23 @@ const SetWordGameScreen = () => {
          });
          console.log('🔍 Challenge updated successfully');
          
+         // Update both players' activeGames arrays
+         try {
+           // Update Player 1's activeGames array
+           await updateDoc(doc(db, 'users', challenge.from), {
+             activeGames: arrayUnion(gameRef.id)
+           });
+           
+           // Update Player 2's activeGames array  
+           await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+             activeGames: arrayUnion(gameRef.id)
+           });
+           
+           console.log('🔍 Both players\' activeGames arrays updated successfully');
+         } catch (updateError) {
+           console.error('🔍 Failed to update players\' activeGames arrays:', updateError);
+         }
+         
          // Send notification to Player 1 that the game has started
          try {
            const notificationData = {
@@ -197,7 +306,36 @@ const SetWordGameScreen = () => {
     }
   };
 
-  const selectDifficulty = (selectedDifficulty) => {
+  const selectDifficulty = async (selectedDifficulty) => {
+    // Check if hard mode is locked
+    if (selectedDifficulty === 'hard') {
+      const isUnlocked = await checkHardModeUnlocked();
+      if (!isUnlocked) {
+        Alert.alert(
+          'Hard Mode Locked 🔒',
+          'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n💎 Getting premium access',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
+          ]
+        );
+        return;
+      }
+
+      // For PvP challenges, also check if the opponent has hard mode unlocked
+      if (!isAccepting && challenge?.to) {
+        const opponentUnlocked = await checkUserHardModeUnlocked(challenge.to);
+        if (!opponentUnlocked) {
+          Alert.alert(
+            'Opponent Cannot Play Hard Mode 🔒',
+            'The player you want to challenge does not have Hard Mode unlocked.\n\nThey need to either:\n🏆 Reach Word Expert rank\n💎 Get premium access\n\nPlease choose Easy or Regular difficulty instead.',
+            [{ text: 'OK', style: 'default' }]
+          );
+          return;
+        }
+      }
+    }
+
     setDifficulty(selectedDifficulty);
     setShowDifficultySelection(false);
   };
@@ -223,13 +361,7 @@ const SetWordGameScreen = () => {
   if (showDifficultySelection) {
     return (
       <View style={styles.screenContainer}>
-        {/* FAB */}
-        <TouchableOpacity 
-          style={styles.fabTop} 
-          onPress={() => setShowMenuPopup(true)}
-        >
-          <Text style={styles.fabText}>☰</Text>
-        </TouchableOpacity>
+
         
         <View style={styles.difficultyContainer}>
           <Text style={styles.header}>Choose Difficulty</Text>
@@ -255,25 +387,71 @@ const SetWordGameScreen = () => {
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={styles.button}
-            onPress={() => selectDifficulty('hard')}
+            style={[
+              styles.button, 
+              (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButton
+            ]}
+            onPress={() => {
+              if (hardModeUnlocked && opponentHardModeUnlocked) {
+                selectDifficulty('hard');
+              } else if (!hardModeUnlocked) {
+                // Show unlock popup for locked hard mode
+                Alert.alert(
+                  'Hard Mode Locked 🔒',
+                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play Regular mode games (5 letters)\n• Achieve an average of 8 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
+                  ]
+                );
+              } else if (!opponentHardModeUnlocked) {
+                // Show popup explaining opponent doesn't have access
+                Alert.alert(
+                  'Opponent Cannot Play Hard Mode 🔒',
+                  'The player you want to challenge does not have Hard Mode unlocked yet.\n\nThey need to either:\n\n🏆 Reach Word Expert Rank\n• Play Regular mode games (5 letters)\n• Achieve an average of 8 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n\nPlease choose Easy or Regular difficulty instead, or wait for them to unlock Hard Mode.',
+                  [{ text: 'OK', style: 'default' }]
+                );
+              }
+            }}
           >
-            <Text style={styles.buttonText}>Hard (6 letters)</Text>
+            <Text style={[
+              styles.buttonText,
+              (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButtonText
+            ]}>
+              {!hardModeUnlocked 
+                ? '🔒 Hard (6 letters) - Locked 💡' 
+                : !opponentHardModeUnlocked 
+                  ? '🔒 Hard (6 letters) - Opponent Locked 💡'
+                  : 'Hard (6 letters)'
+              }
+            </Text>
           </TouchableOpacity>
+
+          {/* Hard Mode Lock Status Message */}
+          {(!hardModeUnlocked || !opponentHardModeUnlocked) && (
+            <View style={styles.lockStatusContainer}>
+              <Text style={styles.lockStatusText}>
+                {!hardModeUnlocked 
+                  ? '🔒 You need to unlock Hard Mode first'
+                  : '🔒 Your opponent cannot play Hard Mode yet'
+                }
+              </Text>
+              <Text style={styles.lockStatusSubtext}>
+                {!hardModeUnlocked 
+                  ? 'Reach Word Expert rank or get premium access'
+                  : 'They need to reach Word Expert rank or get premium access'
+                }
+              </Text>
+            </View>
+          )}
         </View>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.immersiveGameContainer}>
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fabTop} 
-        onPress={() => setShowMenuPopup(true)}
-      >
-        <Text style={styles.fabText}>☰</Text>
-      </TouchableOpacity>
+    <SafeAreaView style={styles.screenContainer}>
+
       
 
         {/* Header */}
@@ -281,12 +459,7 @@ const SetWordGameScreen = () => {
           {isAccepting ? 'Set Your Mystery Word' : 'Set Your Mystery Word'}
         </Text>
         
-        <Text style={styles.subtitle}>
-          {isAccepting 
-            ? `Enter a ${difficulty} word (${difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6} letters) for ${challenge.fromUsername} to guess:`
-            : `Enter a ${difficulty} word (${difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6} letters) for ${challenge.toUsername} to guess:`
-          }
-        </Text>
+
 
         {/* Word Display */}
         <View style={styles.wordContainer}>
@@ -300,7 +473,7 @@ const SetWordGameScreen = () => {
         </View>
 
                  {/* Action Buttons - Same as GameScreen */}
-         <View style={styles.inputControls}>
+         <View style={styles.inputControlsPvP}>
            <TouchableOpacity
              style={[styles.backspaceButtonContainer, word.length === 0 && styles.disabledButton]}
              onPress={removeLetter}

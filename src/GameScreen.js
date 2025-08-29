@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, auth } from './firebase'; // Added auth import
-import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { isValidWord, getFeedback, selectRandomWord } from './gameLogic';
 import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
@@ -54,18 +54,6 @@ const GameScreen = () => {
     });
   }, []);
 
-  // Immersive mode effect (Expo managed workflow)
-  useEffect(() => {
-    // Hide status bar for immersive gaming experience
-    StatusBar.setHidden(true);
-    StatusBar.setBarStyle('light-content');
-    
-    // Return function to restore status bar when leaving screen
-    return () => {
-      StatusBar.setHidden(false);
-      StatusBar.setBarStyle('dark-content');
-    };
-  }, []);
   const [alphabet, setAlphabet] = useState(savedAlphabet || Array(26).fill('unknown'));
   const [hintCount, setHintCount] = useState(savedHintCount || 0);
   const [usedHintLetters, setUsedHintLetters] = useState([]);
@@ -90,8 +78,21 @@ const GameScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [soundsLoaded, setSoundsLoaded] = useState(false);
   const [gameId, setGameId] = useState(initialGameId || `solo_${Date.now()}`);
+  const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const scrollViewRef = useRef(null);
   const soundsInitialized = useRef(false);
+
+  // Check hard mode unlock status when component mounts
+  useEffect(() => {
+    const checkUnlockStatus = async () => {
+      if (gameState === 'selectDifficulty') {
+        const isUnlocked = await checkHardModeUnlocked();
+        setHardModeUnlocked(isUnlocked);
+      }
+    };
+    
+    checkUnlockStatus();
+  }, [gameState]);
 
   // Adjustable padding variables
   const inputToKeyboardPadding = 20;
@@ -109,6 +110,41 @@ const GameScreen = () => {
   ];
 
   const MAX_GUESSES = 25;
+
+  // Check if hard mode is unlocked
+  const checkHardModeUnlocked = async () => {
+    try {
+      if (!auth.currentUser) return false;
+      
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (!userDoc.exists()) return false;
+      
+      const userData = userDoc.data();
+      
+      // Check if user is premium
+      if (userData.isPremium) return true;
+      
+      // Check if user has reached Word Expert rank
+      const easyAvg = userData.easyAverageScore || 0;
+      const regularAvg = userData.regularAverageScore || 0;
+      const hardAvg = userData.hardAverageScore || 0;
+      
+      // Check if player has played any games
+      if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
+        return false;
+      }
+      
+      // Check if user has reached Word Expert rank (Regular mode average ≤ 8)
+      if (regularAvg > 0 && regularAvg <= 8) {
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Failed to check hard mode unlock status:', error);
+      return false;
+    }
+  };
 
   const handleHint = useCallback(async () => {
     console.log('GameScreen: handleHint called', { hintCount });
@@ -203,7 +239,15 @@ const GameScreen = () => {
     }
   }, [gameMode, savedTargetWord, soloWord, gameId]);
 
-
+  // Initialize difficulty for solo games
+  useEffect(() => {
+    if (gameMode === 'solo' && !difficulty) {
+      // Set default difficulty for solo games if none is set
+      const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
+      console.log('GameScreen: Setting default difficulty for solo game', { wordLength, defaultDifficulty });
+      setDifficulty(defaultDifficulty);
+    }
+  }, [gameMode, difficulty, wordLength]);
 
   // Firebase subscription effect
   useEffect(() => {
@@ -521,6 +565,19 @@ const GameScreen = () => {
     saveGameState();
   }, [guesses, inputWord, targetWord, gameState, hintCount, gameMode, gameId, isCreator, opponentGuessCountOnSolve, usedHintLetters]);
 
+  // Auto-scroll to bottom when guesses change
+  useEffect(() => {
+    if (guesses.length > 0 && scrollViewRef.current) {
+      // Small delay to ensure content is rendered
+      const timer = setTimeout(() => {
+        if (scrollViewRef.current) {
+          scrollViewRef.current.scrollToEnd({ animated: true });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [guesses]);
+
   const handleLetterInput = (letter) => {
     if (inputWord.length < (wordLength || 5) && gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
       setInputWord(inputWord + letter.toUpperCase());
@@ -638,18 +695,31 @@ const GameScreen = () => {
             setShowWinPopup(true);
             await playSound('victory').catch(() => {});
             const newScore = guesses.length + 1;
+            
+            // Ensure difficulty is set for solo games
+            if (!difficulty) {
+              const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
+              console.log('GameScreen: Setting default difficulty for solo game completion', { wordLength, defaultDifficulty });
+              setDifficulty(defaultDifficulty);
+            }
+            
             try {
               // Always save to local storage for all users
-              const leaderboard = await AsyncStorage.getItem('leaderboard') || '[]';
-              const leaderboardData = JSON.parse(leaderboard);
-              leaderboardData.push({ 
-                mode: gameMode, 
-                guesses: newScore, 
-                timestamp: new Date().toISOString(), 
-                userId: auth.currentUser?.uid || 'Anonymous' 
-              });
-              if (leaderboardData.length > 15) leaderboardData.shift();
-              await AsyncStorage.setItem('leaderboard', JSON.stringify(leaderboardData));
+              try {
+                const leaderboard = await AsyncStorage.getItem('leaderboard') || '[]';
+                const leaderboardData = JSON.parse(leaderboard);
+                leaderboardData.push({ 
+                  mode: gameMode, 
+                  guesses: newScore, 
+                  timestamp: new Date().toISOString(), 
+                  userId: auth.currentUser?.uid || 'Anonymous' 
+                });
+                if (leaderboardData.length > 15) leaderboardData.shift();
+                await AsyncStorage.setItem('leaderboard', JSON.stringify(leaderboardData));
+              } catch (asyncStorageError) {
+                console.error('GameScreen: AsyncStorage error, continuing without local save:', asyncStorageError);
+                // Continue with Firebase save even if local save fails
+              }
               
               // Only save to Firebase for authenticated users (not guests)
               if (auth.currentUser?.uid) {
@@ -659,14 +729,17 @@ const GameScreen = () => {
                   return;
                 }
                 
-                const leaderboardData = {
-                  mode: gameMode,
-                  difficulty: difficulty || 'regular', // Save difficulty level
-                  wordLength: wordLength || 5, // Save word length
-                  guesses: newScore,
-                  timestamp: new Date().toISOString(), 
-                  userId: auth.currentUser.uid,
-                };
+                                  // Ensure difficulty is set for solo games
+                  const gameDifficulty = difficulty || (wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular');
+                  
+                  const leaderboardData = {
+                    mode: gameMode,
+                    difficulty: gameDifficulty, // Save difficulty level
+                    wordLength: wordLength || 5, // Save word length
+                    guesses: newScore,
+                    timestamp: new Date().toISOString(), 
+                    userId: auth.currentUser.uid,
+                  };
                 console.log('GameScreen: Saving to leaderboard:', leaderboardData);
                 console.log('GameScreen: Current user UID:', auth.currentUser.uid);
                 console.log('GameScreen: Auth state:', auth.currentUser);
@@ -682,7 +755,8 @@ const GameScreen = () => {
                   await playerProfileService.updateGameStats(auth.currentUser.uid, {
                     won: true,
                     score: newScore,
-                    bestScore: 0 // Will be updated by the service if it's better
+                    bestScore: 0, // Will be updated by the service if it's better
+                    difficulty: gameDifficulty // Pass difficulty for rolling average calculation
                   });
                   console.log('GameScreen: Successfully updated user profile');
                 } catch (firebaseError) {
@@ -717,6 +791,12 @@ const GameScreen = () => {
               }
             } catch (error) {
               console.error('GameScreen: Failed to update leaderboard', error);
+              // Show user-friendly error message
+              Alert.alert(
+                'Score Update Failed', 
+                'Your game was completed, but there was an issue saving your score. Your progress has been saved locally.',
+                [{ text: 'OK' }]
+              );
             }
           }
         } else if (gameMode === 'solo' && guesses.length + 1 >= MAX_GUESSES) {
@@ -724,26 +804,39 @@ const GameScreen = () => {
           setShowLosePopup(true);
           await playSound('lose').catch(() => {});
           
+          // Ensure difficulty is set for solo games
+          if (!difficulty) {
+            const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
+            console.log('GameScreen: Setting default difficulty for solo game loss', { wordLength, defaultDifficulty });
+            setDifficulty(defaultDifficulty);
+          }
+          
           // Update user profile with game stats for lost game
           if (auth.currentUser?.uid) {
             try {
+              // Ensure difficulty is set for solo games
+              const gameDifficulty = difficulty || (wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular');
+              
               await playerProfileService.updateGameStats(auth.currentUser.uid, {
                 won: false,
                 score: MAX_GUESSES,
-                bestScore: 0
+                bestScore: 0,
+                difficulty: gameDifficulty // Pass difficulty for rolling average calculation
               });
             } catch (error) {
               console.error('GameScreen: Failed to update user profile for lost game', error);
+              // Show user-friendly error message
+              Alert.alert(
+                'Score Update Failed', 
+                'Your game was completed, but there was an issue saving your score.',
+                [{ text: 'OK' }]
+              );
             }
           }
         } else if (gameMode === 'pvp' && guesses.length + 1 >= MAX_GUESSES) {
           setGameState('maxGuesses');
           setShowMaxGuessesPopup(true);
           await playSound('maxGuesses').catch(() => {});
-        }
-
-        if (scrollViewRef.current) {
-          scrollViewRef.current.scrollToEnd({ animated: true });
         }
       }
     } catch (error) {
@@ -805,6 +898,22 @@ const GameScreen = () => {
   };
 
   const handleDifficultySelect = async (diff) => {
+    // Check if hard mode is locked
+    if (diff === 'hard') {
+      const isUnlocked = await checkHardModeUnlocked();
+      if (!isUnlocked) {
+        Alert.alert(
+          'Hard Mode Locked 🔒',
+          'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n💎 Getting premium access',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
+          ]
+        );
+        return;
+      }
+    }
+
     const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
     console.log('GameScreen: Difficulty selected', { difficulty: diff, wordLength: length });
     await playSound('chime').catch(() => {});
@@ -816,12 +925,19 @@ const GameScreen = () => {
       setIsLoading(true);
       try {
         const word = await selectRandomWord(length);
+        if (!word) {
+          throw new Error('Failed to select random word');
+        }
         const upperWord = word.toUpperCase();
-        console.log('GameScreen: Setting targetWord for solo', { gameId, targetWord: upperWord });
+        console.log('GameScreen: Setting targetWord for solo', { gameId, targetWord: upperWord, difficulty: diff });
         setTargetWord(upperWord);
         navigation.setParams({ wordLength: length, showDifficulty: false });
       } catch (error) {
         console.error('GameScreen: Failed to select random word', error);
+        // Fallback: use a default word to prevent game from crashing
+        const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
+        setTargetWord(fallbackWord);
+        Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
       } finally {
         setIsLoading(false);
       }
@@ -853,7 +969,7 @@ const GameScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.immersiveGameContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       {isLoading && (
         <View style={styles.loadingOverlay}>
           <Text style={styles.loadingText}>Loading...</Text>
@@ -880,11 +996,45 @@ const GameScreen = () => {
             <Text style={styles.buttonText}>Regular (5 Letters)</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.button}
-            onPress={() => handleDifficultySelect('hard')}
+            style={[
+              styles.button, 
+              !hardModeUnlocked && styles.lockedButton
+            ]}
+            onPress={() => {
+              if (hardModeUnlocked) {
+                handleDifficultySelect('hard');
+              } else {
+                // Show unlock popup for locked hard mode
+                Alert.alert(
+                  'Hard Mode Locked 🔒',
+                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play Regular mode games (5 letters)\n• Achieve an average of 8 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
+                  ]
+                );
+              }
+            }}
           >
-            <Text style={styles.buttonText}>Hard (6 Letters)</Text>
+            <Text style={[
+              styles.buttonText,
+              !hardModeUnlocked && styles.lockedButtonText
+            ]}>
+              {hardModeUnlocked ? 'Hard (6 Letters)' : '🔒 Hard (6 Letters) - Locked 💡'}
+            </Text>
           </TouchableOpacity>
+
+          {/* Hard Mode Lock Status Message */}
+          {!hardModeUnlocked && (
+            <View style={styles.lockStatusContainer}>
+              <Text style={styles.lockStatusText}>
+                🔒 You need to unlock Hard Mode first
+              </Text>
+              <Text style={styles.lockStatusSubtext}>
+                Reach Word Expert rank or get premium access
+              </Text>
+            </View>
+          )}
         </View>
       ) : gameState === 'waiting' ? (
         <View style={styles.waitingContainer}>
@@ -920,7 +1070,7 @@ const GameScreen = () => {
           <View style={styles.alphabetContainer}>
             <View style={styles.alphabetGrid}>
               {qwertyKeys.map((row, rowIndex) => (
-                <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 0 }}>
+                <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 5 }}>
                   {row.map((letter) => {
                     const index = letter.charCodeAt(0) - 65;
                     return (
@@ -947,7 +1097,7 @@ const GameScreen = () => {
               ))}
               {gameMode === 'solo' && gameState === 'playing' && (
                 <TouchableOpacity 
-                  style={styles.hintLinkContainer} 
+                  style={[styles.hintLinkContainer, { marginTop: 5, marginBottom: 5 }]} 
                   onPress={handleHint ? handleHint : () => console.warn('GameScreen: handleHint is undefined')}
                 >
                   <Text style={styles.hintLink}>Hint</Text>
@@ -984,7 +1134,7 @@ const GameScreen = () => {
           <ScrollView 
             ref={scrollViewRef} 
             style={styles.scroll} 
-            contentContainerStyle={{ flexGrow: 1, paddingBottom: 0, minHeight: 300 }}
+            contentContainerStyle={{ flexGrow: 1 }}
           >
             <Text style={styles.sectionTitle}>Your Guesses</Text>
             <View style={styles.guessGrid}>

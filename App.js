@@ -19,6 +19,7 @@ import SetWordScreen from './src/SetWordScreen';
 import SetWordGameScreen from './src/SetWordGameScreen';
 import CreateChallengeScreen from './src/CreateChallengeScreen';
 import PvPGameScreen from './src/PvPGameScreen';
+import ResumeGamesScreen from './src/ResumeGamesScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -100,6 +101,7 @@ export default function App() {
             <Stack.Screen name="SetWordGame" component={SetWordGameScreen} />
             <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
             <Stack.Screen name="PvPGame" component={PvPGameScreen} />
+            <Stack.Screen name="ResumeGames" component={ResumeGamesScreen} />
             <Stack.Screen name="AddFriends" component={AddFriendsScreen} />
             <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
             <Stack.Screen name="PendingChallenges" component={PendingChallengesScreen} />

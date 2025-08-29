@@ -17,6 +17,13 @@ const ProfileScreen = () => {
   const [loading, setLoading] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showRankUpPopup, setShowRankUpPopup] = useState(false);
+  const [rankUpData, setRankUpData] = useState({
+    oldRank: '',
+    newRank: '',
+    difficulty: '',
+    averageScore: 0
+  });
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -28,6 +35,29 @@ const ProfileScreen = () => {
 
     return unsubscribe;
   }, []);
+
+  // Monitor profile changes for rank updates
+  useEffect(() => {
+    if (userProfile) {
+      // Check for rank changes when profile updates
+      const currentRank = getRankTitleFromProfile(userProfile);
+      if (currentRank !== 'Unranked') {
+        // Store current rank for comparison
+        const prevRank = userProfile.previousRank || 'Unranked';
+        if (prevRank !== currentRank) {
+          // Update the profile to store the previous rank
+          updateDoc(doc(db, 'users', user?.uid), {
+            previousRank: currentRank
+          }).catch(console.error);
+          
+          // Show rank-up popup if it's an advancement (not from Unranked)
+          if (prevRank !== 'Unranked') {
+            checkRankChange({ ...userProfile, previousRank: prevRank }, userProfile);
+          }
+        }
+      }
+    }
+  }, [userProfile, user]);
 
   const loadUserProfile = async (currentUser) => {
     try {
@@ -49,12 +79,24 @@ const ProfileScreen = () => {
           email: currentUser.email || '',
           createdAt: new Date(),
           lastLogin: new Date(),
-          gamesPlayed: 0,
-          gamesWon: 0,
-          bestScore: 0,
+          // Solo mode stats by difficulty
+          easyGamesPlayed: 0,
+          easyAverageScore: 0,
+          regularGamesPlayed: 0,
+          regularAverageScore: 0,
+          hardGamesPlayed: 0,
+          hardAverageScore: 0,
           totalScore: 0,
+          // PvP mode stats
+          pvpGamesPlayed: 0,
+          pvpGamesWon: 0,
+          pvpWinRate: 0,
+          previousRank: 'Unranked',
           friends: [],
-          isAnonymous: false
+          isAnonymous: false,
+          // Premium status
+          isPremium: false,
+          hardModeUnlocked: false
         };
         
         await updateDoc(doc(db, 'users', currentUser.uid), newProfile);
@@ -134,20 +176,171 @@ const ProfileScreen = () => {
     }
   };
 
-  const calculateWinRate = () => {
-    if (!userProfile || userProfile.gamesPlayed === 0) return 0;
-    return ((userProfile.gamesWon / userProfile.gamesPlayed) * 100).toFixed(1);
-  };
+
 
   const getRankTitle = () => {
-    if (!userProfile) return 'Rookie';
-    const score = userProfile.bestScore || 0;
-    if (score >= 1000) return 'Word Master';
-    if (score >= 750) return 'Word Expert';
-    if (score >= 500) return 'Word Pro';
-    if (score >= 250) return 'Word Enthusiast';
-    if (score >= 100) return 'Word Learner';
-    return 'Rookie';
+    if (!userProfile) return 'Unranked';
+    
+    // Get difficulty-specific averages (these should represent last 15 games)
+    const easyAvg = userProfile.easyAverageScore || 0;
+    const regularAvg = userProfile.regularAverageScore || 0;
+    const hardAvg = userProfile.hardAverageScore || 0;
+    
+    // Check if player has played any games
+    if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
+      return 'Unranked';
+    }
+    
+    // Rank progression based on performance thresholds
+    if (hardAvg > 0 && hardAvg <= 8) return 'Word Master';
+    if (regularAvg > 0 && regularAvg <= 8) return 'Word Expert';
+    if (regularAvg > 0 && regularAvg <= 12) return 'Word Pro';
+    if (easyAvg > 0 && easyAvg <= 8) return 'Word Enthusiast';
+    if (easyAvg > 0 && easyAvg <= 15) return 'Word Learner';
+    if (easyAvg > 0 && easyAvg <= 20) return 'Rookie';
+    
+    // Default fallback
+    return 'Unranked';
+  };
+
+  // Function to check for rank changes and show popup
+  const checkRankChange = (oldProfile, newProfile) => {
+    if (!oldProfile || !newProfile) return;
+    
+    const oldRank = getRankTitleFromProfile(oldProfile);
+    const newRank = getRankTitleFromProfile(newProfile);
+    
+    // Only show popup when advancing from Unranked or to a higher rank
+    if (oldRank !== newRank && oldRank !== 'Rookie' && newRank !== 'Unranked') {
+      // Determine which difficulty led to the rank change
+      let difficulty = '';
+      let averageScore = 0;
+      
+      if (newProfile.hardAverageScore > 0 && newProfile.hardAverageScore <= 8) {
+        difficulty = 'Hard Mode (6 letters)';
+        averageScore = newProfile.hardAverageScore;
+      } else if (newProfile.regularAverageScore > 0 && newProfile.regularAverageScore <= 8) {
+        difficulty = 'Regular Mode (5 letters)';
+        averageScore = newProfile.regularAverageScore;
+      } else if (newProfile.easyAverageScore > 0 && newProfile.easyAverageScore <= 15) {
+        difficulty = 'Easy Mode (4 letters)';
+        averageScore = newProfile.easyAverageScore;
+      }
+      
+      setRankUpData({
+        oldRank,
+        newRank,
+        difficulty,
+        averageScore
+      });
+      setShowRankUpPopup(true);
+      
+      // Play celebration sound
+      playSound('congratulations').catch(() => {});
+    }
+  };
+
+  // Helper function to get rank title from profile data
+  const getRankTitleFromProfile = (profile) => {
+    if (!profile) return 'Unranked';
+    
+    const easyAvg = profile.easyAverageScore || 0;
+    const regularAvg = profile.regularAverageScore || 0;
+    const hardAvg = profile.hardAverageScore || 0;
+    
+    // Check if player has played any games
+    if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
+      return 'Unranked';
+    }
+    
+    if (hardAvg > 0 && hardAvg <= 8) return 'Word Master';
+    if (regularAvg > 0 && regularAvg <= 8) return 'Word Expert';
+    if (regularAvg > 0 && regularAvg <= 12) return 'Word Pro';
+    if (easyAvg > 0 && easyAvg <= 8) return 'Word Enthusiast';
+    if (easyAvg > 0 && easyAvg <= 15) return 'Word Learner';
+    if (easyAvg > 0 && easyAvg <= 20) return 'Rookie';
+    
+    return 'Unranked';
+  };
+
+  // Helper function to get level title based on games played and performance
+  const getLevelTitle = () => {
+    if (!userProfile) return 'Level 1 - Beginner';
+    
+    const totalGames = (userProfile.easyGamesPlayed || 0) + 
+                      (userProfile.regularGamesPlayed || 0) + 
+                      (userProfile.hardGamesPlayed || 0) + 
+                      (userProfile.pvpGamesPlayed || 0);
+    
+    const easyAvg = userProfile.easyAverageScore || 0;
+    const regularAvg = userProfile.regularAverageScore || 0;
+    const hardAvg = userProfile.hardAverageScore || 0;
+    
+    // Level 1: Beginner (0-4 games)
+    if (totalGames <= 4) return 'Level 1 - Beginner';
+    
+    // Level 2: Novice (5-9 games)
+    if (totalGames <= 9) return 'Level 2 - Novice';
+    
+    // Level 3: Apprentice (10-19 games)
+    if (totalGames <= 19) return 'Level 3 - Apprentice';
+    
+    // Level 4: Adept (20-39 games)
+    if (totalGames <= 39) return 'Level 4 - Adept';
+    
+    // Level 5: Skilled (40-69 games)
+    if (totalGames <= 69) return 'Level 5 - Skilled';
+    
+    // Level 6: Veteran (70-99 games)
+    if (totalGames <= 99) return 'Level 6 - Veteran';
+    
+    // Level 7: Elite (100-149 games)
+    if (totalGames <= 149) return 'Level 7 - Elite';
+    
+    // Level 8: Master (150-199 games)
+    if (totalGames <= 199) return 'Level 8 - Master';
+    
+    // Level 9: Grandmaster (200-299 games)
+    if (totalGames <= 299) return 'Level 9 - Grandmaster';
+    
+    // Level 10: Legend (300+ games)
+    return 'Level 10 - Legend';
+  };
+
+  // Check if hard mode is unlocked
+  const isHardModeUnlocked = () => {
+    if (!userProfile) return false;
+    
+    // Check if user is premium
+    if (userProfile.isPremium) return true;
+    
+    // Check if user has reached Word Expert rank
+    const currentRank = getRankTitleFromProfile(userProfile);
+    return currentRank === 'Word Expert' || currentRank === 'Word Master';
+  };
+
+  // Unlock hard mode via premium purchase
+  const unlockHardModePremium = async () => {
+    try {
+      // In a real app, this would integrate with your payment system
+      // For now, we'll simulate a successful purchase
+      await updateDoc(doc(db, 'users', user.uid), {
+        isPremium: true,
+        hardModeUnlocked: true
+      });
+      
+      Alert.alert(
+        'Hard Mode Unlocked! 🎉',
+        'You now have access to Hard Mode (6-letter words) through your premium subscription!',
+        [{ text: 'Awesome!', style: 'default' }]
+      );
+      
+      // Reload profile to reflect changes
+      loadUserProfile(user);
+    } catch (error) {
+      console.error('Failed to unlock hard mode:', error);
+      Alert.alert('Error', 'Failed to unlock hard mode. Please try again.');
+    }
   };
 
   if (loading) {
@@ -160,44 +353,195 @@ const ProfileScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fabTop} 
-        onPress={() => navigation.navigate('Home')}
-      >
-        <Text style={styles.fabText}>☰</Text>
-      </TouchableOpacity>
-      
       <ScrollView style={{ flex: 1, width: '100%' }}>
-        {/* Welcome Header */}
-        <View style={styles.welcomeContainer}>
-          <Text style={styles.welcomeTitle}>Welcome to WhatWord! 🎉</Text>
-          <Text style={styles.welcomeSubtitle}>
-            Rank: {getRankTitle()} • Level {Math.floor((userProfile?.totalScore || 0) / 100) + 1}
-          </Text>
+        {/* Rank Display */}
+        <View style={styles.rankDisplayContainer}>
+          <View style={styles.rankBadge}>
+            <Text style={styles.rankTitle}>🏆 {getRankTitle()}</Text>
+            <Text style={styles.rankSubtitle}>Your Current Rank</Text>
+          </View>
+          <View style={styles.levelBadge}>
+            <Text style={styles.levelTitle}>⭐ {getLevelTitle()}</Text>
+            <Text style={styles.levelSubtitle}>Your Current Level</Text>
+          </View>
         </View>
 
-        {/* Profile Stats */}
+        {/* Hard Mode Unlock Section */}
+        <View style={styles.hardModeUnlockContainer}>
+          <Text style={styles.sectionTitle}>🔒 Hard Mode Access</Text>
+          {isHardModeUnlocked() ? (
+            <View style={styles.unlockedContainer}>
+              <Text style={styles.unlockedTitle}>🎉 Hard Mode Unlocked!</Text>
+              <Text style={styles.unlockedSubtitle}>
+                {userProfile?.isPremium 
+                  ? 'You have premium access to Hard Mode (6-letter words)'
+                  : 'You unlocked Hard Mode by reaching Word Expert rank!'
+                }
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.lockedContainer}>
+              <Text style={styles.lockedTitle}>🔒 Hard Mode Locked</Text>
+              <Text style={styles.lockedSubtitle}>
+                Unlock Hard Mode by either:
+              </Text>
+              <View style={styles.unlockOptions}>
+                <View style={styles.unlockOption}>
+                  <Text style={styles.unlockOptionTitle}>🏆 Reach Word Expert Rank</Text>
+                  <Text style={styles.unlockOptionSubtitle}>
+                    Complete Regular mode games with an average of ≤8 attempts
+                  </Text>
+                  <View style={styles.progressContainer}>
+                    <Text style={styles.progressText}>
+                      Current: {getRankTitleFromProfile(userProfile)}
+                    </Text>
+                    <Text style={styles.progressText}>
+                      Target: Word Expert
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.unlockOption}>
+                  <Text style={styles.unlockOptionTitle}>💎 Premium Unlock</Text>
+                  <Text style={styles.unlockOptionSubtitle}>
+                    Get instant access to Hard Mode and other premium features
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.premiumButton}
+                    onPress={unlockHardModePremium}
+                  >
+                    <Text style={styles.premiumButtonText}>Unlock Now</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Solo Mode Stats */}
         <View style={styles.statsContainer}>
-          <Text style={styles.sectionTitle}>Your Stats</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{userProfile?.gamesPlayed || 0}</Text>
-              <Text style={styles.statLabel}>Games Played</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{userProfile?.gamesWon || 0}</Text>
-              <Text style={styles.statLabel}>Games Won</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{calculateWinRate()}%</Text>
-              <Text style={styles.statLabel}>Win Rate</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{userProfile?.bestScore || 0}</Text>
-              <Text style={styles.statLabel}>Best Score</Text>
+          <Text style={styles.sectionTitle}>🎯 Solo Mode Stats</Text>
+          
+          {/* Easy Mode (4 letters) */}
+          <View style={styles.difficultySection}>
+            <Text style={styles.difficultyTitle}>🟢 Easy 4 letters</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.easyGamesPlayed || 0}</Text>
+                <Text style={styles.statLabel}>Games</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {userProfile?.easyAverageScore ? userProfile.easyAverageScore.toFixed(2) : 'N/A'}
+                </Text>
+                <Text style={styles.statLabel}>Avg Attempts</Text>
+              </View>
             </View>
           </View>
+
+          {/* Regular Mode (5 letters) */}
+          <View style={styles.difficultySection}>
+            <Text style={styles.difficultyTitle}>🟡 Regular 5 letters</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.regularGamesPlayed || 0}</Text>
+                <Text style={styles.statLabel}>Games</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {userProfile?.regularAverageScore ? userProfile.regularAverageScore.toFixed(2) : 'N/A'}
+                </Text>
+                <Text style={styles.statLabel}>Avg Attempts</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Hard Mode (6 letters) */}
+          <View style={styles.difficultySection}>
+            <Text style={styles.difficultyTitle}>🔴 Hard 6 letters</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.hardGamesPlayed || 0}</Text>
+                <Text style={styles.statLabel}>Games</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {userProfile?.hardAverageScore ? userProfile.hardAverageScore.toFixed(2) : 'N/A'}
+                </Text>
+                <Text style={styles.statLabel}>Avg Attempts</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* PvP Mode Stats */}
+        <View style={styles.statsContainer}>
+          <Text style={styles.sectionTitle}>⚔️ PvP Mode Stats</Text>
+          
+          {/* Easy Difficulty PvP Stats */}
+          <View style={styles.difficultyStatsContainer}>
+            <Text style={styles.difficultyTitle}>🟢 Easy 4 Letters</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.easyPvpGamesCount || 0}</Text>
+                <Text style={styles.statLabel}>Games</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.easyPvpWinPercentage ? userProfile.easyPvpWinPercentage.toFixed(1) : 0}%</Text>
+                <Text style={styles.statLabel}>Win Rate</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Regular Difficulty PvP Stats */}
+          <View style={styles.difficultyStatsContainer}>
+            <Text style={styles.difficultyTitle}>🟡 Regular 5 Letters</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.regularPvpGamesCount || 0}</Text>
+                <Text style={styles.statLabel}>Games</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.regularPvpWinPercentage ? userProfile.regularPvpWinPercentage.toFixed(1) : 0}%</Text>
+                <Text style={styles.statLabel}>Win Rate</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Hard Difficulty PvP Stats */}
+          <View style={styles.difficultyStatsContainer}>
+            <Text style={styles.difficultyTitle}>🔴 Hard 6 Letters</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.hardPvpGamesCount || 0}</Text>
+                <Text style={styles.statLabel}>Games</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{userProfile?.hardPvpWinPercentage ? userProfile.hardPvpWinPercentage.toFixed(1) : 0}%</Text>
+                <Text style={styles.statLabel}>Win Rate</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Overall PvP Stats (if available) */}
+          {userProfile?.pvpGamesPlayed > 0 && (
+            <View style={styles.difficultyStatsContainer}>
+              <Text style={styles.difficultyTitle}>Overall PvP</Text>
+              <View style={styles.statsGrid}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{userProfile?.pvpGamesPlayed || 0}</Text>
+                  <Text style={styles.statLabel}>Games</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{userProfile?.pvpGamesWon || 0}</Text>
+                  <Text style={styles.statLabel}>Wins</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{userProfile?.pvpWinRate || 0}%</Text>
+                  <Text style={styles.statLabel}>Win Rate</Text>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Profile Information */}
@@ -305,6 +649,27 @@ const ProfileScreen = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Rank-Up Popup Modal */}
+      <Modal visible={showRankUpPopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.rankUpPopup, styles.modalShadow]}>
+            <Text style={styles.rankUpTitle}>🎉 RANK UP! 🎉</Text>
+            <Text style={styles.rankUpSubtitle}>
+              {rankUpData.oldRank} → {rankUpData.newRank}
+            </Text>
+            <Text style={styles.rankUpMessage}>
+              Congratulations! You've advanced to {rankUpData.newRank} by achieving an average of {rankUpData.averageScore.toFixed(2)} attempts in {rankUpData.difficulty}.
+            </Text>
+            <TouchableOpacity
+              style={styles.rankUpButton}
+              onPress={() => setShowRankUpPopup(false)}
+            >
+              <Text style={styles.rankUpButtonText}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Delete Account Modal */}
       <Modal visible={showDeleteModal} transparent animationType="fade">

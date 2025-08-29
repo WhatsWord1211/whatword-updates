@@ -8,10 +8,9 @@ service cloud.firestore {
       // Allow users to read other users for search functionality
       allow read: if request.auth != null;
       
-      // Allow users to read and write their own friends subcollection
-      match /friends/{friendId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
+      // Allow users to update other users for friend operations
+      // This is more permissive but necessary for friend system to work
+      allow update: if request.auth != null;
     }
     
     // Allow authenticated users to read and write challenges
@@ -21,6 +20,11 @@ service cloud.firestore {
     
     // Allow authenticated users to read and write games
     match /games/{gameId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Allow authenticated users to read and write game statistics
+    match /gameStats/{gameStatId} {
       allow read, write: if request.auth != null;
     }
     
@@ -35,18 +39,11 @@ service cloud.firestore {
     }
     
     // Allow authenticated users to read and write leaderboard data
-    // Users can only write their own scores and read all scores
     match /leaderboard/{scoreId} {
-      // Allow read for all authenticated users (for leaderboard display)
       allow read: if request.auth != null;
-      
-      // Allow write only if the user is writing their own score
-      // The scoreId format is: score_{userId}_{timestamp}
       allow create, update: if request.auth != null && 
         (scoreId.matches('score_.*') && 
          request.resource.data.userId == request.auth.uid);
-      
-      // Allow delete only if the user is deleting their own score
       allow delete: if request.auth != null && 
         (scoreId.matches('score_.*') && 
          resource.data.userId == request.auth.uid);

@@ -31,13 +31,11 @@ export const loadSounds = async () => {
   try {
     for (const [key, soundFile] of Object.entries(soundFiles)) {
       try {
-        console.log(`soundsUtil: Attempting to load sound ${key}`);
         const { sound } = await Audio.Sound.createAsync(soundFile, { shouldPlay: false });
         sounds[key] = sound;
         const status = await sound.getStatusAsync();
         if (status.isLoaded) {
           loaded.push(key);
-          console.log(`soundsUtil: Sound ${key} loaded successfully`);
         } else {
           console.error(`soundsUtil: Sound ${key} loaded but not ready`, status);
           failed.push(key);
@@ -47,7 +45,9 @@ export const loadSounds = async () => {
         failed.push(key);
       }
     }
-    console.log('soundsUtil: All sounds processed', { failed, loaded });
+    if (failed.length > 0) {
+      console.log('soundsUtil: Some sounds failed to load:', { failed, loaded });
+    }
   } finally {
     isLoading = false;
   }
@@ -61,7 +61,7 @@ export const playSound = async (key, options = {}) => {
   try {
     const sound = sounds[key];
     const status = await sound.getStatusAsync();
-    console.log(`soundsUtil: Playing sound ${key}`, { status });
+    // console.log(`soundsUtil: Playing sound ${key}`); // Reduced logging
     if (!status.isLoaded) {
       console.warn(`soundsUtil: Reloading sound ${key}`);
       await sound.loadAsync(soundFiles[key], { shouldPlay: false });
@@ -75,7 +75,7 @@ export const playSound = async (key, options = {}) => {
     if (options.volume !== undefined) {
       await sound.setVolumeAsync(1);
     }
-    console.log(`soundsUtil: Sound ${key} played successfully`);
+    // console.log(`soundsUtil: Sound ${key} played successfully`); // Reduced logging
   } catch (error) {
     console.error(`soundsUtil: Failed to play sound ${key}`, error);
     throw error;

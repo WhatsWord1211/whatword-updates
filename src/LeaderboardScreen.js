@@ -16,6 +16,7 @@ const LeaderboardScreen = () => {
   const [activeTab, setActiveTab] = useState('solo'); // 'solo' or 'pvp'
   const [activeDifficulty, setActiveDifficulty] = useState('regular'); // 'easy', 'regular', or 'hard'
   const [userFriends, setUserFriends] = useState([]);
+  const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -23,6 +24,7 @@ const LeaderboardScreen = () => {
         setUser(currentUser);
         loadUserFriends(currentUser);
         loadLeaderboards(currentUser);
+        checkHardModeUnlock(currentUser);
       }
     });
 
@@ -39,121 +41,63 @@ const LeaderboardScreen = () => {
     }, [user, activeDifficulty])
   );
 
-  // Debug function to check leaderboard collection
-  const debugLeaderboardCollection = async () => {
+  // Check hard mode unlock status
+  const checkHardModeUnlock = async (currentUser) => {
     try {
-      console.log('🔍 Debug: Checking leaderboard collection...');
-      const snapshot = await getDocs(collection(db, 'leaderboard'));
-      console.log('🔍 Debug: Total leaderboard documents:', snapshot.docs.length);
-      
-      snapshot.docs.forEach((doc, index) => {
-        const data = doc.data();
-        console.log(`🔍 Debug: Document ${index + 1}:`, {
-          id: doc.id,
-          userId: data.userId,
-          mode: data.mode,
-          difficulty: data.difficulty || 'unknown',
-          wordLength: data.wordLength || 'unknown',
-          guesses: data.guesses,
-          timestamp: data.timestamp
-        });
-      });
-      
-      // Also check current user's profile
-      if (user) {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          console.log('🔍 Debug: Current user profile:', {
-            uid: user.uid,
-            gamesPlayed: userData.gamesPlayed,
-            gamesWon: userData.gamesWon,
-            bestScore: userData.bestScore
-          });
-        }
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setHardModeUnlocked(userData.hardModeUnlocked || false);
       }
-      
-      Alert.alert('Debug Info', `Found ${snapshot.docs.length} leaderboard entries. Check console for details.`);
     } catch (error) {
-      console.error('🔍 Debug: Error checking leaderboard:', error);
-      Alert.alert('Debug Error', error.message);
+      console.error('LeaderboardScreen: Failed to check hard mode unlock status:', error);
     }
   };
 
-  // Function to migrate old leaderboard entries to include difficulty
-  const migrateOldLeaderboardEntries = async () => {
-    try {
-      console.log('🔄 Migrating old leaderboard entries...');
-      const snapshot = await getDocs(collection(db, 'leaderboard'));
-      let migratedCount = 0;
-      
-      for (const doc of snapshot.docs) {
-        const data = doc.data();
-        
-        // Check if entry needs migration (missing difficulty or wordLength)
-        if (data.mode === 'solo' && (!data.difficulty || !data.wordLength)) {
-          console.log('🔄 Migrating entry:', doc.id);
-          
-          // Determine difficulty based on wordLength or default to regular
-          let difficulty = data.difficulty;
-          let wordLength = data.wordLength;
-          
-          if (!wordLength) {
-            // Old entries without wordLength default to regular (5 letters)
-            wordLength = 5;
-            difficulty = 'regular';
-          } else if (!difficulty) {
-            // Entries with wordLength but no difficulty
-            if (wordLength === 4) {
-              difficulty = 'easy';
-            } else if (wordLength === 6) {
-              difficulty = 'hard';
-            } else {
-              difficulty = 'regular';
-            }
-          }
-          
-          // Update the document with difficulty and wordLength
-          await updateDoc(doc(db, 'leaderboard', doc.id), {
-            difficulty: difficulty,
-            wordLength: wordLength
-          });
-          
-          migratedCount++;
-        }
-      }
-      
-      console.log('🔄 Migration complete. Updated', migratedCount, 'entries.');
-      Alert.alert('Migration Complete', `Successfully migrated ${migratedCount} old leaderboard entries!`);
-      
-      // Reload leaderboards after migration
-      if (user) {
-        await loadLeaderboards(user);
-      }
-    } catch (error) {
-      console.error('🔄 Migration error:', error);
-      Alert.alert('Migration Error', 'Failed to migrate old entries: ' + error.message);
+  // Handle difficulty tab selection
+  const handleDifficultyChange = (difficulty) => {
+    if (difficulty === 'hard' && !hardModeUnlocked) {
+      // Show alert that hard mode is locked
+      Alert.alert(
+        'Hard Mode Locked',
+        'You need to win 10 regular mode games to unlock hard mode!',
+        [{ text: 'OK' }]
+      );
+      return;
     }
+    setActiveDifficulty(difficulty);
   };
+
 
   const loadUserFriends = async (currentUser) => {
     try {
       console.log('LeaderboardScreen: Loading user friends for:', currentUser.uid);
-      // Get user's accepted friends
-      const friendsRef = collection(db, 'users', currentUser.uid, 'friends');
-      const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
-      const friendsSnapshot = await getDocs(friendsQuery);
+      // Get user's friends from the main user document
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        console.log('LeaderboardScreen: User document not found');
+        setUserFriends([]);
+        return;
+      }
+      
+      const userData = userDoc.data();
+      const friendIds = userData.friends || [];
+      
+      console.log('LeaderboardScreen: Found friend IDs:', friendIds);
       
       const friends = [];
-      for (const friendDoc of friendsSnapshot.docs) {
-        const friendData = friendDoc.data();
-        const friendUserDoc = await getDoc(doc(db, 'users', friendDoc.id));
-        if (friendUserDoc.exists()) {
-          friends.push({
-            uid: friendDoc.id,
-            ...friendUserDoc.data()
-          });
-          console.log('LeaderboardScreen: Added friend:', friendDoc.id, friendUserDoc.data().username);
+      for (const friendId of friendIds) {
+        try {
+          const friendUserDoc = await getDoc(doc(db, 'users', friendId));
+          if (friendUserDoc.exists()) {
+            friends.push({
+              uid: friendId,
+              ...friendUserDoc.data()
+            });
+            console.log('LeaderboardScreen: Added friend:', friendId, friendUserDoc.data().username);
+          }
+        } catch (error) {
+          console.error('LeaderboardScreen: Failed to load friend:', friendId, error);
         }
       }
       
@@ -290,11 +234,27 @@ const LeaderboardScreen = () => {
 
   const loadPvpLeaderboard = async (currentUser) => {
     try {
+      console.log('LeaderboardScreen: Loading PvP leaderboard for user:', currentUser.uid, 'difficulty:', activeDifficulty);
+      
+      // Debug: Check if gameStats collection has any documents
+      try {
+        const allStatsQuery = query(collection(db, 'gameStats'));
+        const allStatsSnapshot = await getDocs(allStatsQuery);
+        console.log('LeaderboardScreen: Total gameStats documents:', allStatsSnapshot.size);
+        if (allStatsSnapshot.size > 0) {
+          console.log('LeaderboardScreen: Sample gameStats document:', allStatsSnapshot.docs[0].data());
+        }
+      } catch (error) {
+        console.error('LeaderboardScreen: Failed to check gameStats collection:', error);
+      }
+      
       const leaderboardData = [];
       
       // Get PvP game statistics for all friends (including current user)
       for (const friend of userFriends) {
         try {
+          console.log('LeaderboardScreen: Checking PvP leaderboard for friend:', friend.uid, friend.username, 'difficulty:', activeDifficulty);
+          
           // Get all PvP game stats where this user participated
           const pvpStatsQuery = query(
             collection(db, 'gameStats'),
@@ -305,33 +265,92 @@ const LeaderboardScreen = () => {
           const pvpStatsSnapshot = await getDocs(pvpStatsQuery);
           const pvpStats = pvpStatsSnapshot.docs.map(doc => doc.data());
           
+          console.log('LeaderboardScreen: Found PvP stats for friend:', friend.uid, 'count:', pvpStats.length);
           if (pvpStats.length > 0) {
-            // Calculate win percentage
-            let wins = 0;
-            let totalGames = pvpStats.length;
+            console.log('LeaderboardScreen: Sample PvP stat:', pvpStats[0]);
+          }
+          
+          if (pvpStats.length > 0) {
+            console.log('LeaderboardScreen: Processing PvP stats for friend:', friend.uid, 'total stats:', pvpStats.length);
             
-            for (const gameStats of pvpStats) {
-              if (gameStats.winnerId === friend.uid) {
-                wins++;
+            // Filter by difficulty and get last 15 games
+            const difficultyStats = pvpStats.filter(stat => {
+              // Check for wordLength first (new format)
+              if (stat.wordLength !== undefined) {
+                if (activeDifficulty === 'easy') {
+                  return stat.wordLength === 4;
+                } else if (activeDifficulty === 'hard') {
+                  return stat.wordLength === 6;
+                } else {
+                  return stat.wordLength === 5; // regular
+                }
               }
-            }
-            
-            const winPercentage = (wins / totalGames) * 100;
-            
-            leaderboardData.push({
-              uid: friend.uid,
-              username: friend.username || friend.displayName || 'Unknown Player',
-              displayName: friend.displayName || friend.username || 'Unknown Player',
-              winPercentage: winPercentage,
-              wins: wins,
-              totalGames: totalGames
+              
+              // Fallback to difficulty field for older games
+              if (stat.difficulty !== undefined) {
+                if (activeDifficulty === 'easy') {
+                  return stat.difficulty === 'easy';
+                } else if (activeDifficulty === 'hard') {
+                  return stat.difficulty === 'hard';
+                } else {
+                  return stat.difficulty === 'regular';
+                }
+              }
+              
+              // If neither field exists, log and exclude
+              console.log('LeaderboardScreen: PvP stat missing both wordLength and difficulty:', stat);
+              return false;
             });
+            
+            console.log('LeaderboardScreen: Filtered stats for difficulty', activeDifficulty, 'count:', difficultyStats.length);
+            
+            if (difficultyStats.length > 0) {
+              // Sort by completion time and take last 15 games
+              const sortedStats = difficultyStats
+                .sort((a, b) => new Date(b.completedAt || b.timestamp) - new Date(a.completedAt || a.timestamp))
+                .slice(0, 15);
+              
+              // Calculate win percentage from last 15 games
+              let wins = 0;
+              const totalGames = sortedStats.length;
+              
+              for (const gameStats of sortedStats) {
+                if (gameStats.winnerId === friend.uid) {
+                  wins++;
+                }
+              }
+              
+              const winPercentage = totalGames > 0 ? (wins / totalGames) * 100 : 0;
+              
+              leaderboardData.push({
+                uid: friend.uid,
+                username: friend.username || friend.displayName || 'Unknown Player',
+                displayName: friend.displayName || friend.username || 'Unknown Player',
+                winPercentage: winPercentage,
+                wins: wins,
+                totalGames: totalGames,
+                gamesCount: totalGames
+              });
+              
+              console.log('LeaderboardScreen: Added PvP friend to leaderboard:', {
+                uid: friend.uid,
+                username: friend.username,
+                winPercentage,
+                wins,
+                totalGames,
+                difficulty: activeDifficulty
+              });
+            } else {
+              console.log('LeaderboardScreen: No PvP stats found for difficulty', activeDifficulty, 'for friend:', friend.uid);
+            }
           }
         } catch (error) {
           console.error(`Failed to get PvP game stats for user ${friend.uid}:`, error);
           // Continue with other users even if one fails
         }
       }
+      
+      console.log('LeaderboardScreen: Total PvP leaderboard entries:', leaderboardData.length);
       
       // Sort by win percentage (highest is best)
       leaderboardData.sort((a, b) => b.winPercentage - a.winPercentage);
@@ -342,6 +361,7 @@ const LeaderboardScreen = () => {
         rank: index + 1
       }));
       
+      console.log('LeaderboardScreen: Final PvP ranked data:', rankedData);
       setPvpLeaderboard(rankedData);
 
       // Find current user's rank
@@ -349,6 +369,9 @@ const LeaderboardScreen = () => {
         const userRank = rankedData.find(player => player.uid === currentUser.uid);
         if (userRank) {
           setUserPvpRank(userRank);
+          console.log('LeaderboardScreen: Current user PvP rank:', userRank);
+        } else {
+          console.log('LeaderboardScreen: Current user not found in PvP leaderboard');
         }
       }
     } catch (error) {
@@ -508,21 +531,13 @@ const LeaderboardScreen = () => {
 
   return (
     <View style={styles.screenContainer}>
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fabTop} 
-        onPress={() => navigation.navigate('Home')}
-      >
-        <Text style={styles.fabText}>🏠</Text>
-      </TouchableOpacity>
-      
       <ScrollView 
         style={{ flex: 1, width: '100%' }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <Text style={styles.header}>Leaderboard</Text>
+
         
         {/* Tab Navigation */}
         <View style={styles.tabContainer}>
@@ -544,35 +559,47 @@ const LeaderboardScreen = () => {
           </TouchableOpacity>
         </View>
         
-        {/* Difficulty Tabs (only show for Solo Mode) */}
-        {activeTab === 'solo' && (
-          <View style={styles.difficultyTabContainer}>
-            <TouchableOpacity 
-              style={[styles.difficultyTab, activeDifficulty === 'easy' && styles.activeDifficultyTab]}
-              onPress={() => setActiveDifficulty('easy')}
-            >
-              <Text style={[styles.difficultyTabText, activeDifficulty === 'easy' && styles.activeDifficultyTabText]}>
-                🟢 Easy (4)
+        {/* Difficulty Tabs (show for both Solo and PvP Mode) */}
+        <View style={styles.difficultyTabContainer}>
+          <TouchableOpacity 
+            style={[styles.difficultyTab, activeDifficulty === 'easy' && styles.activeDifficultyTab]}
+            onPress={() => handleDifficultyChange('easy')}
+          >
+            <Text style={[styles.difficultyTabText, activeDifficulty === 'easy' && styles.activeDifficultyTabText]}>
+              🟢 Easy (4)
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.difficultyTab, activeDifficulty === 'regular' && styles.activeDifficultyTab]}
+            onPress={() => handleDifficultyChange('regular')}
+          >
+            <Text style={[styles.difficultyTabText, activeDifficulty === 'regular' && styles.activeDifficultyTabText]}>
+              🟡 Regular (5)
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[
+              styles.difficultyTab, 
+              activeDifficulty === 'hard' && styles.activeDifficultyTab,
+              !hardModeUnlocked && styles.lockedDifficultyTab
+            ]}
+            onPress={() => handleDifficultyChange('hard')}
+            disabled={!hardModeUnlocked}
+          >
+            <Text style={[
+              styles.difficultyTabText, 
+              activeDifficulty === 'hard' && styles.activeDifficultyTabText,
+              !hardModeUnlocked && styles.lockedDifficultyTabText
+            ]}>
+              {!hardModeUnlocked ? '🔒' : '🔴'} Hard (6)
+            </Text>
+            {!hardModeUnlocked && (
+              <Text style={styles.lockedDifficultySubtext}>
+                Win 10 regular games
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.difficultyTab, activeDifficulty === 'regular' && styles.activeDifficultyTab]}
-              onPress={() => setActiveDifficulty('regular')}
-            >
-              <Text style={[styles.difficultyTabText, activeDifficulty === 'regular' && styles.activeDifficultyTabText]}>
-                🟡 Regular (5)
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.difficultyTab, activeDifficulty === 'hard' && styles.activeDifficultyTab]}
-              onPress={() => setActiveDifficulty('hard')}
-            >
-              <Text style={[styles.difficultyTabText, activeDifficulty === 'hard' && styles.activeDifficultyTabText]}>
-                🔴 Hard (6)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+            )}
+          </TouchableOpacity>
+        </View>
         
         {/* Current User's Position */}
         {renderCurrentUserPosition()}
@@ -582,7 +609,7 @@ const LeaderboardScreen = () => {
           <Text style={styles.sectionTitle}>
             {activeTab === 'solo' 
               ? `Top Solo Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
-              : 'Top PvP Players'
+              : `Top PvP Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
             }
           </Text>
           {(activeTab === 'solo' ? soloLeaderboard : pvpLeaderboard).length > 0 ? (
@@ -597,29 +624,15 @@ const LeaderboardScreen = () => {
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
                 {activeTab === 'solo' 
-                  ? 'No solo games played yet. Start playing to see rankings!'
-                  : 'No PvP games completed yet. Challenge friends to see rankings!'
+                  ? `No solo ${activeDifficulty} games played yet. Start playing to see rankings!`
+                  : `No PvP ${activeDifficulty} games completed yet. Challenge friends to see rankings!`
                 }
               </Text>
             </View>
           )}
         </View>
 
-        {/* Debug Buttons */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#7C3AED', flex: 1 }]}
-            onPress={debugLeaderboardCollection}
-          >
-            <Text style={styles.buttonText}>🔍 Debug</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#10B981', flex: 1 }]}
-            onPress={migrateOldLeaderboardEntries}
-          >
-            <Text style={styles.buttonText}>🔄 Migrate</Text>
-          </TouchableOpacity>
-        </View>
+
 
         {/* How to Improve */}
         <View style={styles.tipsContainer}>
@@ -634,10 +647,11 @@ const LeaderboardScreen = () => {
             </>
           ) : (
             <>
-              <Text style={styles.tipText}>• Win more PvP games to increase your win percentage</Text>
+              <Text style={styles.tipText}>• Win more {activeDifficulty === 'easy' ? '4-letter' : activeDifficulty === 'hard' ? '6-letter' : '5-letter'} PvP games to increase your win percentage</Text>
               <Text style={styles.tipText}>• Challenge friends to improve your skills</Text>
               <Text style={styles.tipText}>• Learn from losses to become a better player</Text>
               <Text style={styles.tipText}>• Play consistently to maintain your ranking</Text>
+              <Text style={styles.tipText}>• Focus on the last 15 games for ranking</Text>
             </>
           )}
         </View>
