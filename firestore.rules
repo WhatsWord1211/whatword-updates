@@ -1,52 +1,226 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read and write their own user document
+    // User profiles - owner has full access, others can read for friend system
     match /users/{userId} {
+      // Owner has full access to their profile
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
-      // Allow users to read other users for search functionality
+      // Other users can read user data for friend system and leaderboards
+      // This is necessary for the app to function properly
       allow read: if request.auth != null;
       
-      // Allow users to update other users for friend operations
-      // This is more permissive but necessary for friend system to work
-      allow update: if request.auth != null;
+      // Allow users to update other users' activeGames arrays when they're involved in a game
+      allow update: if request.auth != null && 
+        request.auth.uid != userId &&
+        request.resource.data.keys().hasAll(['activeGames']) &&
+        request.resource.data.activeGames is list;
+      
+      // Allow users to update their own profile data
+      allow update: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Allow authenticated users to read and write challenges
-    match /challenges/{challengeId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Allow authenticated users to read and write games
+    // Games - only participants can access
     match /games/{gameId} {
-      allow read, write: if request.auth != null;
+      // Allow read for existing games (handle both field naming conventions)
+      allow read: if request.auth != null && 
+        (resource.data.type == 'solo' && resource.data.userId == request.auth.uid) ||
+        (resource.data.type == 'pvp' && 
+         ((resource.data.players != null && request.auth.uid in resource.data.players) || 
+          (resource.data.playerIds != null && request.auth.uid in resource.data.playerIds) ||
+          (resource.data.player1 != null && resource.data.player1.uid == request.auth.uid) ||
+          (resource.data.player2 != null && resource.data.player2.uid == request.auth.uid)));
+      
+      // Allow create for new games (handle both field naming conventions)
+      allow create: if request.auth != null && 
+        (request.resource.data.type == 'solo' && request.resource.data.userId == request.auth.uid) ||
+        (request.resource.data.type == 'pvp' && 
+         ((request.resource.data.players != null && request.auth.uid in request.resource.data.players) || 
+          (request.resource.data.playerIds != null && request.auth.uid in request.resource.data.playerIds) ||
+          (request.resource.data.player1 != null && request.resource.data.player1.uid == request.auth.uid) ||
+          (request.resource.data.player2 != null && request.resource.data.player2.uid == request.auth.uid)));
+      
+      // Allow update/delete for existing games (handle both field naming conventions)
+      allow update, delete: if request.auth != null && 
+        (resource.data.type == 'solo' && resource.data.userId == request.auth.uid) ||
+        (resource.data.type == 'pvp' && 
+         ((resource.data.players != null && request.auth.uid in resource.data.players) || 
+          (resource.data.playerIds != null && request.auth.uid in resource.data.playerIds) ||
+          (resource.data.player1 != null && resource.data.player1.uid == request.auth.uid) ||
+          (resource.data.player2 != null && resource.data.player2.uid == request.auth.uid)));
     }
     
-    // Allow authenticated users to read and write game statistics
+    // PvP games - only participants can access
+    match /pvpGames/{gameId} {
+      // Allow read for existing games
+      allow read: if request.auth != null && 
+        request.auth.uid in resource.data.players;
+      
+      // Allow create for new games
+      allow create: if request.auth != null && 
+        request.auth.uid in request.resource.data.players;
+      
+      // Allow update/delete for existing games
+      allow update, delete: if request.auth != null && 
+        request.auth.uid in resource.data.players;
+    }
+    
+    // Challenges - only the sender and recipient can access
+    match /challenges/{challengeId} {
+      // Allow read for existing challenges (handle both field naming conventions)
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.fromUid || 
+         request.auth.uid == resource.data.toUid ||
+         request.auth.uid == resource.data.from || 
+         request.auth.uid == resource.data.to);
+      
+      // Allow create for new challenges (handle both field naming conventions)
+      allow create: if request.auth != null && 
+        (request.auth.uid == request.resource.data.fromUid || 
+         request.auth.uid == request.resource.data.toUid ||
+         request.auth.uid == request.resource.data.from || 
+         request.auth.uid == request.resource.data.to);
+      
+      // Allow update/delete for existing challenges (handle both field naming conventions)
+      allow update, delete: if request.auth != null && 
+        (request.auth.uid == resource.data.fromUid || 
+         request.auth.uid == resource.data.toUid ||
+         request.auth.uid == resource.data.from || 
+         request.auth.uid == resource.data.to);
+    }
+    
+    // Game statistics - users can read for leaderboards, but only modify their own
     match /gameStats/{gameStatId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Allow authenticated users to read and write friend requests
-    match /friendRequests/{requestId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Allow authenticated users to read and write notifications
-    match /notifications/{notificationId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Allow authenticated users to read and write leaderboard data
-    match /leaderboard/{scoreId} {
+      // Anyone can read game stats for leaderboard functionality
       allow read: if request.auth != null;
+      
+      // Users can only create their own stats
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      
+      // Users can only update/delete their own stats
+      allow update, delete: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // Friend requests - only the sender and recipient can access
+    match /friendRequests/{requestId} {
+      // Allow read for existing friend requests (handle both field naming conventions)
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.fromUid || 
+         request.auth.uid == resource.data.toUid ||
+         request.auth.uid == resource.data.from || 
+         request.auth.uid == resource.data.to);
+      
+      // Allow create for new friend requests (handle both field naming conventions)
+      allow create: if request.auth != null && 
+        (request.auth.uid == request.resource.data.fromUid || 
+         request.auth.uid == request.resource.data.toUid ||
+         request.auth.uid == request.resource.data.from || 
+         request.auth.uid == request.resource.data.to);
+      
+      // Allow update/delete for existing friend requests (handle both field naming conventions)
+      allow update, delete: if request.auth != null && 
+        (request.auth.uid == resource.data.fromUid || 
+         request.auth.uid == resource.data.toUid ||
+         request.auth.uid == resource.data.from || 
+         request.auth.uid == resource.data.to);
+    }
+    
+    // Notifications - only the recipient can access
+    match /notifications/{notificationId} {
+      // Allow read for existing notifications (handle both field naming conventions)
+      allow read: if request.auth != null && 
+        (resource.data.to == request.auth.uid || resource.data.toUid == request.auth.uid);
+      
+      // Allow create for new notifications (anyone can create notifications for others)
+      allow create: if request.auth != null;
+      
+      // Allow update/delete for existing notifications (handle both field naming conventions)
+      allow update, delete: if request.auth != null && 
+        (resource.data.to == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+    
+    // Leaderboard - anyone can read, users can only modify their own scores
+    match /leaderboard/{scoreId} {
+      // Anyone can read leaderboard data
+      allow read: if request.auth != null;
+      
+      // Users can only create/update their own scores
       allow create, update: if request.auth != null && 
         (scoreId.matches('score_.*') && 
          request.resource.data.userId == request.auth.uid);
+      
+      // Users can only delete their own scores
       allow delete: if request.auth != null && 
         (scoreId.matches('score_.*') && 
          resource.data.userId == request.auth.uid);
+    }
+    
+    // Game invites - only the sender and recipient can access
+    match /gameInvites/{inviteId} {
+      // Allow read for existing game invites (handle both field naming conventions)
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.fromUid || 
+         request.auth.uid == resource.data.toUid ||
+         request.auth.uid == resource.data.from || 
+         request.auth.uid == resource.data.to);
+      
+      // Allow create for new game invites (handle both field naming conventions)
+      allow create: if request.auth != null && 
+        (request.auth.uid == request.resource.data.fromUid || 
+         request.auth.uid == request.resource.data.toUid ||
+         request.auth.uid == request.resource.data.from || 
+         request.auth.uid == request.resource.data.to);
+      
+      // Allow update/delete for existing game invites (handle both field naming conventions)
+      allow update, delete: if request.auth != null && 
+        (request.auth.uid == resource.data.fromUid || 
+         request.auth.uid == resource.data.toUid ||
+         request.auth.uid == resource.data.from || 
+         request.auth.uid == resource.data.to);
+    }
+    
+    // Word lists - anyone can read (these are public game data)
+    match /words/{wordId} {
+      allow read: if request.auth != null;
+      // No write access needed for word lists
+    }
+    
+    // User achievements - only the owner can access
+    match /achievements/{achievementId} {
+      allow read, write: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // User badges - only the owner can access
+    match /badges/{badgeId} {
+      allow read, write: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // User settings - only the owner can access
+    match /userSettings/{settingId} {
+      allow read, write: if request.auth != null && 
+        settingId == request.auth.uid;
+    }
+    
+    // Privacy settings - only the owner can access
+    match /privacySettings/{settingId} {
+      allow read, write: if request.auth != null && 
+        settingId == request.auth.uid;
+    }
+    
+    // User subcollections - friends
+    match /users/{userId}/friends/{friendId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
+    }
+    
+    // User subcollections - challenges
+    match /users/{userId}/challenges/{challengeId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
     }
   }
 }

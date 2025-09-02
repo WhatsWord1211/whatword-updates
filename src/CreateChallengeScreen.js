@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, collection, query, where, updateDoc } from 'firebase/firestore';
@@ -9,18 +10,17 @@ import styles from './styles';
 const CreateChallengeScreen = () => {
   const navigation = useNavigation();
   const [friends, setFriends] = useState([]);
-  const [pendingChallenges, setPendingChallenges] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
-  const [friendsHardModeStatus, setFriendsHardModeStatus] = useState({});
+
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       if (currentUser) {
         setUser(currentUser);
         loadFriends(currentUser.uid);
-        loadPendingChallenges(currentUser.uid);
       }
     });
 
@@ -48,9 +48,8 @@ const CreateChallengeScreen = () => {
         return;
       }
 
-      // Get friend details and hard mode status
+      // Get friend details
       const friendsData = [];
-      const hardModeStatus = {};
       
       for (const friendId of friendsList) {
         try {
@@ -61,22 +60,13 @@ const CreateChallengeScreen = () => {
               uid: friendId,
               username: friendData.username || friendData.displayName || 'Unknown Player'
             });
-            
-            // Check hard mode unlock status
-            const isPremium = friendData.isPremium || false;
-            const regularAvg = friendData.regularAverageScore || 0;
-            const hasPlayedGames = (friendData.easyGamesPlayed || 0) + (friendData.regularGamesPlayed || 0) + (friendData.hardGamesPlayed || 0) > 0;
-            
-            hardModeStatus[friendId] = isPremium || (hasPlayedGames && regularAvg > 0 && regularAvg <= 8);
           }
         } catch (error) {
           console.error('Failed to load friend data:', error);
-          hardModeStatus[friendId] = false;
         }
       }
 
       setFriends(friendsData);
-      setFriendsHardModeStatus(hardModeStatus);
     } catch (error) {
       console.error('Failed to load friends:', error);
       Alert.alert('Error', 'Failed to load friends list. Please try again.');
@@ -85,40 +75,7 @@ const CreateChallengeScreen = () => {
     }
   };
 
-  const loadPendingChallenges = async (userId) => {
-    try {
-      // Get pending challenges for the current user
-      const challengesQuery = query(
-        collection(db, 'challenges'),
-        where('to', '==', userId),
-        where('status', '==', 'pending')
-      );
-      
-      const snapshot = await getDocs(challengesQuery);
-      const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Get challenger details for each challenge
-      const challengesWithDetails = [];
-      for (const challenge of challenges) {
-        try {
-          const challengerDoc = await getDoc(doc(db, 'users', challenge.from));
-          if (challengerDoc.exists()) {
-            const challengerData = challengerDoc.data();
-            challengesWithDetails.push({
-              ...challenge,
-              challengerUsername: challengerData.username || challengerData.displayName || 'Unknown Player'
-            });
-          }
-        } catch (error) {
-          console.error('Failed to load challenger data:', error);
-        }
-      }
-      
-      setPendingChallenges(challengesWithDetails);
-    } catch (error) {
-      console.error('Failed to load pending challenges:', error);
-    }
-  };
+
 
   const challengeFriend = (friend) => {
     console.log('🔧 DEBUG: challengeFriend called with:', friend);
@@ -143,51 +100,20 @@ const CreateChallengeScreen = () => {
     }
   };
 
-  const acceptChallenge = async (challenge) => {
-    try {
-      playSound('chime');
-      // Navigate to SetWordGameScreen to accept the challenge
-      navigation.navigate('SetWordGame', {
-        challenge: challenge,
-        isAccepting: true
-      });
-    } catch (error) {
-      console.error('Failed to accept challenge:', error);
-      Alert.alert('Error', 'Failed to accept challenge. Please try again.');
-    }
-  };
 
-  const declineChallenge = async (challenge) => {
-    try {
-      // Update challenge status to declined
-      await updateDoc(doc(db, 'challenges', challenge.id), {
-        status: 'declined',
-        declinedAt: new Date()
-      });
-      
-      // Remove from pending challenges
-      setPendingChallenges(prev => prev.filter(c => c.id !== challenge.id));
-      
-      playSound('chime');
-      Alert.alert('Challenge Declined', 'The challenge has been declined.');
-    } catch (error) {
-      console.error('Failed to decline challenge:', error);
-      Alert.alert('Error', 'Failed to decline challenge. Please try again.');
-    }
-  };
 
 
 
   if (loading) {
     return (
-      <View style={styles.screenContainer}>
+      <SafeAreaView style={styles.screenContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       <ScrollView 
         style={{ flex: 1, width: '100%' }}
         contentContainerStyle={{ 
@@ -215,44 +141,7 @@ const CreateChallengeScreen = () => {
         
         <Text style={styles.header}>Start A Game</Text>
         
-        {/* Pending Challenges Section */}
-        {pendingChallenges.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Pending Challenges</Text>
-            <Text style={styles.sectionSubtitle}>
-              You have {pendingChallenges.length} challenge{pendingChallenges.length > 1 ? 's' : ''} to respond to
-            </Text>
-            {pendingChallenges.map((challenge, index) => (
-              <View key={challenge.id} style={[styles.challengeItem, index === pendingChallenges.length - 1 && styles.lastChallengeItem]}>
-                <View style={styles.challengeInfo}>
-                  <Text style={styles.challengerUsername}>
-                    Challenge from {challenge.challengerUsername}
-                  </Text>
-                  <Text style={styles.challengeDetails}>
-                    {challenge.difficulty || 'Regular'} difficulty • {challenge.difficulty === 'easy' ? '4' : challenge.difficulty === 'hard' ? '6' : '5'} letters
-                  </Text>
-                  <Text style={styles.challengeTime}>
-                    {new Date(challenge.createdAt?.toDate() || challenge.createdAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.challengeActions}>
-                  <TouchableOpacity
-                    style={[styles.challengeButton, styles.acceptButton]}
-                    onPress={() => acceptChallenge(challenge)}
-                  >
-                    <Text style={styles.acceptButtonText}>Accept</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.challengeButton, styles.declineButton]}
-                    onPress={() => declineChallenge(challenge)}
-                  >
-                    <Text style={styles.declineButtonText}>Decline</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
+
         
         {friends.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -279,12 +168,6 @@ const CreateChallengeScreen = () => {
                 <View key={friend.uid} style={[styles.friendItem, index === friends.length - 1 && styles.lastFriendItem]}>
                   <View style={styles.friendInfo}>
                     <Text style={styles.friendUsername}>{friend.username}</Text>
-                    <Text style={styles.friendHardModeStatus}>
-                      {friendsHardModeStatus[friend.uid] 
-                        ? '🔓 Hard Mode Available' 
-                        : '🔒 Hard Mode Locked'
-                      }
-                    </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.challengeButton}
@@ -327,7 +210,7 @@ const CreateChallengeScreen = () => {
            </View>
          </View>
        </Modal>
-     </View>
+     </SafeAreaView>
    );
 };
 

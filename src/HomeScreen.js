@@ -1,16 +1,20 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ScrollView, Image, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Image, StatusBar } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
 import authService from './authService';
+import { useTheme } from './ThemeContext';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [navigationReady, setNavigationReady] = useState(false);
 
@@ -22,10 +26,13 @@ const HomeScreen = () => {
   const [displayName, setDisplayName] = useState('Player');
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [pendingChallenges, setPendingChallenges] = useState([]);
+  const [badgeCleared, setBadgeCleared] = useState(false);
+
   const [userProfile, setUserProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
+
   const notificationsUnsubscribeRef = useRef(null);
 
   // Load user profile and set up listeners
@@ -38,6 +45,21 @@ const HomeScreen = () => {
       console.error('Failed to mark notification as read:', error);
     }
   };
+
+  const permanentlyDeleteNotifications = async (notificationIds) => {
+    try {
+      // Delete all notifications permanently
+      const deletePromises = notificationIds.map(notificationId => 
+        deleteDoc(doc(db, 'notifications', notificationId))
+      );
+      await Promise.all(deletePromises);
+      console.log('HomeScreen: Permanently deleted', notificationIds.length, 'notifications');
+    } catch (error) {
+      console.error('Failed to permanently delete notifications:', error);
+    }
+  };
+
+
 
   // Refresh user profile to get updated averages and ranks
   const refreshUserProfile = async (currentUser) => {
@@ -92,61 +114,82 @@ const HomeScreen = () => {
         // Set up listeners for all authenticated users
         setTimeout(() => {
           try {
-            // Set up game invites listener
-            const invitesQuery = query(
-              collection(db, 'gameInvites'),
+            // Set up game invites listener - TEMPORARILY DISABLED TO TEST
+            // const invitesQuery = query(
+            //   collection(db, 'gameInvites'),
+            //   where('toUid', '==', currentUser.uid),
+            //   where('status', '==', 'pending')
+            // );
+            // const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
+            //   const invites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            //   console.log('HomeScreen: Game invites snapshot update', { invites: invites.length });
+            //   setGameInvites(invites);
+            // }, (error) => {
+            //   console.error('HomeScreen: Game invites query error:', error);
+            // });
+            // if (invitesUnsubscribeRef.current) {
+            //   invitesUnsubscribeRef.current();
+            // }
+            // invitesUnsubscribeRef.current = unsubscribeInvites;
+            
+            // Set empty game invites for now
+            setGameInvites([]);
+            
+            // Set up pending challenges listener (challenges received)
+            // Query for challenges where current user is the recipient
+            const challengesQuery = query(
+              collection(db, 'challenges'),
               where('toUid', '==', currentUser.uid),
               where('status', '==', 'pending')
             );
-            const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
-              const invites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              setGameInvites(invites);
-            });
-            if (invitesUnsubscribeRef.current) {
-              invitesUnsubscribeRef.current();
-            }
-            invitesUnsubscribeRef.current = unsubscribeInvites;
-            
-            // Set up pending challenges listener
-            const challengesQuery = query(
-              collection(db, 'challenges'),
-              where('to', '==', currentUser.uid),
-              where('status', '==', 'pending')
-            );
             const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
-              const challenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              setPendingChallenges(challenges);
+              const userChallenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              
+              // Debug logging
+              console.log('HomeScreen: Challenge snapshot update', {
+                userChallenges: userChallenges.length,
+                challengeStatuses: userChallenges.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
+              });
+              
+              setPendingChallenges(userChallenges);
+              
+              // Reset badge cleared state if new challenges come in
+              if (userChallenges.length > 0) {
+                setBadgeCleared(false);
+              }
+            }, (error) => {
+              console.error('HomeScreen: Challenges query error:', error);
             });
+            
+
             
             // Store the unsubscribe functions for cleanup
-            if (invitesUnsubscribeRef.current) {
-              invitesUnsubscribeRef.current();
-            }
-            invitesUnsubscribeRef.current = unsubscribeInvites;
+            // invitesUnsubscribeRef.current = unsubscribeInvites; // Disabled since gameInvites query is disabled
             
-            // Store other unsubscribe functions
             if (challengesUnsubscribeRef.current) {
               challengesUnsubscribeRef.current();
             }
+            challengesUnsubscribeRef.current = unsubscribeChallenges;
+            
+
             
             // Set up notifications listener
             const notificationsQuery = query(
               collection(db, 'notifications'),
-              where('to', '==', currentUser.uid),
+              where('toUid', '==', currentUser.uid),
               where('read', '==', false)
             );
             const unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
               const newNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              console.log('HomeScreen: Notifications snapshot update', { notifications: newNotifications.length });
               setNotifications(newNotifications);
               
-              // Show alert for new notifications
-              newNotifications.forEach(notification => {
-                if (notification.type === 'gameStarted') {
-                  Alert.alert('🎮 Game Started!', notification.message, [
-                    { text: 'OK', onPress: () => markNotificationAsRead(notification.id) }
-                  ]);
-                }
-              });
+              // Reset badge cleared state if new notifications come in
+              if (newNotifications.length > 0) {
+                setBadgeCleared(false);
+              }
+            }, (error) => {
+              console.error('HomeScreen: Notifications query error:', error);
             });
             
             if (notificationsUnsubscribeRef.current) {
@@ -264,12 +307,13 @@ const HomeScreen = () => {
 
     return () => {
       mounted = false;
-              if (invitesUnsubscribeRef.current) {
-          invitesUnsubscribeRef.current();
-        }
+        // if (invitesUnsubscribeRef.current) {
+        //   invitesUnsubscribeRef.current();
+        // }
         if (challengesUnsubscribeRef.current) {
           challengesUnsubscribeRef.current();
         }
+
         if (notificationsUnsubscribeRef.current) {
           notificationsUnsubscribeRef.current();
         }
@@ -328,6 +372,7 @@ const HomeScreen = () => {
 
       setGameInvites([]);
       setPendingChallenges([]);
+      setBadgeCleared(false);
       
 
     } catch (error) {
@@ -372,10 +417,16 @@ const HomeScreen = () => {
 
   const handleButtonPress = (screen, params) => {
     try {
+      console.log('HomeScreen: Attempting navigation to', screen, 'with params:', params);
+      
+      // Simple navigation with error handling
       navigation.navigate(screen, params);
       playSound('chime');
+      console.log('HomeScreen: Navigation successful to', screen);
     } catch (error) {
       console.error('HomeScreen: Navigation failed', error);
+      // Don't show alert for navigation errors, just log them
+      // This prevents blocking the UI for minor navigation issues
     }
   };
 
@@ -405,12 +456,11 @@ const HomeScreen = () => {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#1F2937' }}>
-      {/* FAB - Outside any container for absolute positioning */}
+    <>
+      {/* FAB - Positioned outside SafeAreaView to avoid any container constraints */}
       <TouchableOpacity
-        style={[styles.fabTopFixed, { top: -55 }]}
+        style={styles.fabTopHomeScreen}
         onPress={() => {
-          console.log('🔧 DEV MODE: FAB button tapped!');
           setShowMenuModal(true);
         }}
         activeOpacity={0.7}
@@ -418,54 +468,32 @@ const HomeScreen = () => {
         <Text style={styles.fabText}>☰</Text>
       </TouchableOpacity>
       
-      <View style={styles.screenContainer}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={[styles.screenContainer, { backgroundColor: colors.background }]}>
         {/* Fixed Header Image - Outside ScrollView */}
-        <Image
-          source={require('../assets/images/WhatWord-header.png')}
-          style={[styles.imageHeader, { marginTop: 5, marginBottom: 5 }]}
-          resizeMode="contain"
-        />
+        <View style={{ alignItems: 'center', width: '100%' }}>
+          <Image
+            source={require('../assets/images/WhatWord-header.png')}
+            style={[styles.imageHeader, { marginTop: 5, marginBottom: 5 }]}
+            resizeMode="contain"
+          />
+        </View>
       
-      {/* Scrollable Content */}
-      <ScrollView
-        style={{ flex: 1, width: '100%' }}
-        contentContainerStyle={{ paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
-        showsVerticalScrollIndicator={false}
+      {/* Content */}
+      <View
+        style={{ flex: 1, width: '100%', paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
       >
-        <Text style={[styles.header, { marginBottom: 40 }]}>Welcome, {displayName}</Text>
+        <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
         
         {/* Player Rank Display */}
-        <View style={styles.rankDisplay}>
-          <Text style={styles.rankLabel}>Rank:</Text>
-          <Text style={styles.rankValue}>{getPlayerRank()}</Text>
+        <View style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+          <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Rank:</Text>
+          <Text style={[styles.rankValue, { color: colors.primary }]}>{getPlayerRank()}</Text>
         </View>
         
-        {/* Notifications Indicator */}
-        {notifications.length > 0 && (
-          <View style={styles.notificationsIndicator}>
-            <Text style={styles.notificationsText}>
-              🔔 You have {notifications.length} new notification{notifications.length > 1 ? 's' : ''}!
-            </Text>
-          </View>
-        )}
+
         
-        {/* Pending Challenges Indicator */}
-        {pendingChallenges.length > 0 && (
-          <View style={styles.pendingChallengesIndicator}>
-            <Text style={styles.pendingChallengesText}>
-              🎯 You have {pendingChallenges.length} pending challenge{pendingChallenges.length > 1 ? 's' : ''}!
-            </Text>
-            <TouchableOpacity
-              style={styles.viewChallengesButton}
-              onPress={() => {
-                playSound('chime');
-                navigation.navigate('PendingChallenges');
-              }}
-            >
-              <Text style={styles.viewChallengesButtonText}>View Challenges</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+
 
 
         
@@ -489,12 +517,41 @@ const HomeScreen = () => {
         
 
         
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => handleButtonPress('ResumeGames')}
-        >
-          <Text style={styles.buttonText}>Resume</Text>
-        </TouchableOpacity>
+        <View style={{ position: 'relative', width: '100%' }}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              // Permanently delete notifications when user acknowledges them by going to Resume screen
+              if (notifications.length > 0) {
+                const notificationIds = notifications.map(notification => notification.id);
+                permanentlyDeleteNotifications(notificationIds);
+              }
+              
+              // Clear the badge when user acknowledges by clicking Resume
+              setBadgeCleared(true);
+              
+              // Debug: Log what's causing the badge to show
+              console.log('HomeScreen: Resume button clicked - Badge sources:', {
+                pendingChallenges: pendingChallenges.length,
+                notifications: notifications.length,
+                total: pendingChallenges.length + notifications.length,
+                badgeCleared: true
+              });
+              
+              handleButtonPress('ResumeGames');
+            }}
+          >
+            <Text style={styles.buttonText}>Resume</Text>
+          </TouchableOpacity>
+          {/* Notification Badge */}
+          {!badgeCleared && (pendingChallenges.length > 0 || notifications.length > 0) && (
+            <View style={[styles.notificationBadge, { backgroundColor: '#FF4444' }]}>
+              <Text style={styles.notificationBadgeText}>
+                {pendingChallenges.length + notifications.length}
+              </Text>
+            </View>
+          )}
+        </View>
         
         <TouchableOpacity
           style={styles.button}
@@ -508,7 +565,7 @@ const HomeScreen = () => {
         {/* Game Invites */}
         {gameInvites.length > 0 && (
           <>
-            <Text style={styles.header}>Game Invites</Text>
+            <Text style={[styles.header, { color: colors.textPrimary }]}>Game Invites</Text>
             <FlatList
               data={gameInvites}
               renderItem={renderInvite}
@@ -521,13 +578,13 @@ const HomeScreen = () => {
 
 
 
-      </ScrollView>
+      </View>
       </View>
       
       <Modal visible={showMenuModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, styles.modalShadow]}>
-            <Text style={styles.header}>Menu</Text>
+          <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.header, { color: colors.textPrimary }]}>Menu</Text>
             <TouchableOpacity
               style={styles.button}
               onPress={handleSignOut}
@@ -558,8 +615,6 @@ const HomeScreen = () => {
           </View>
         </View>
       </Modal>
-
-
       
       <Modal visible={showInvalidPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -576,12 +631,13 @@ const HomeScreen = () => {
         </View>
       </Modal>
       
-      {isAuthenticating && !user && (
-        <View style={styles.loadingOverlay}>
-          <Text style={styles.loadingText}>Authenticating...</Text>
-        </View>
+        {isAuthenticating && !user && (
+          <View style={styles.loadingOverlay}>
+            <Text style={styles.loadingText}>Authenticating...</Text>
+          </View>
         )}
-    </View>
+      </SafeAreaView>
+    </>
   );
 };
 

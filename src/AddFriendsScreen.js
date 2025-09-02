@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, where, orderBy, limit, getDocs, addDoc, onSnapshot, updateDoc, doc, arrayUnion, deleteDoc } from 'firebase/firestore';
@@ -19,7 +20,7 @@ const AddFriendsScreen = () => {
     if (activeTab === 'requests') {
       const requestsQuery = query(
         collection(db, 'friendRequests'),
-        where('to', '==', auth.currentUser.uid),
+        where('toUid', '==', auth.currentUser.uid),
         where('status', '==', 'pending')
       );
 
@@ -178,7 +179,7 @@ const AddFriendsScreen = () => {
   );
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       <Text style={styles.header}>Friends & Challenges</Text>
       
       {/* Tab Navigation */}
@@ -278,7 +279,7 @@ const AddFriendsScreen = () => {
       >
         <Text style={styles.textButtonText}>Back to Home</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 };
 

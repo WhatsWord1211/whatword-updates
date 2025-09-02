@@ -1387,7 +1387,7 @@ class NotificationService {
     try {
       const notificationsQuery = query(
         collection(db, 'notifications'),
-        where('toUserId', '==', userId),
+        where('toUid', '==', userId),
         orderBy('timestamp', 'desc')
       );
 
@@ -1424,7 +1424,7 @@ class NotificationService {
     try {
       const notificationsQuery = query(
         collection(db, 'notifications'),
-        where('toUserId', '==', userId),
+        where('toUid', '==', userId),
         where('read', '==', false)
       );
 

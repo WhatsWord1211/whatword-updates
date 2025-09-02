@@ -58,8 +58,6 @@ export default StyleSheet.create({
   screenContainer: {
     flex: 1,
     backgroundColor: '#1F2937',
-    alignItems: 'center',
-    padding: 15,
     paddingHorizontal: 16,
   },
   difficultyContainer: {
@@ -82,6 +80,9 @@ export default StyleSheet.create({
     height: 90,
     marginTop: 80,
     marginBottom: 40,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     fontSize: 26,
@@ -110,8 +111,11 @@ export default StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 8,
     marginVertical: 8,
-    width: 200,
+    width: '90%',
+    maxWidth: 320,
+    minWidth: 280,
     alignItems: 'center',
+    alignSelf: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -123,6 +127,27 @@ export default StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    flexShrink: 1,
+    flexWrap: 'nowrap',
+  },
+
+  difficultyButton: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginVertical: 8,
+    width: '95%',
+    maxWidth: 350,
+    minWidth: 300,
+    alignItems: 'center',
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
 
   guestNotice: {
@@ -301,13 +326,24 @@ export default StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
+  
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginBottom: 16,
+    fontFamily: 'Roboto-Regular',
+    lineHeight: 20,
+  },
 
   scroll: {
     width: '100%',
   },
   inputDisplay: {
     flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 15,
+    width: '100%',
   },
   inputLetter: {
     width: 44,
@@ -321,6 +357,8 @@ export default StyleSheet.create({
     borderRadius: 6,
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filledLetter: {
     backgroundColor: '#374151',
@@ -329,7 +367,7 @@ export default StyleSheet.create({
     backgroundColor: '#4B5563',
   },
   alphabetContainer: {
-    marginBottom: 0,
+    marginBottom: -10,
     width: '100%',
     alignItems: 'center',
   },
@@ -341,7 +379,6 @@ export default StyleSheet.create({
     maxWidth: '100%',
     alignSelf: 'center',
     paddingBottom: 1,
-    paddingHorizontal: 1,
   },
   letter: {
     width: 26,
@@ -358,20 +395,19 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Regular',
     textAlign: 'center',
   },
+
   eliminatedLetter: {
     backgroundColor: '#6B7280',
-    color: '#E5E7EB',
   },
   presentLetter: {
     backgroundColor: '#10B981',
-    color: '#1F2937',
   },
   inputControls: {
     flexDirection: 'row',
     justifyContent: 'center',
     width: '100%',
     marginBottom: 15,
-    marginTop: -20,
+    marginTop: -30,
   },
   // Style for PvP word setting screen (no negative margin)
   inputControlsPvP: {
@@ -392,6 +428,7 @@ export default StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
+    minWidth: 140,
   },
   guessButtonContainer: {
     backgroundColor: '#10B981',
@@ -404,12 +441,16 @@ export default StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
+    minWidth: 140,
   },
   buttonTextBackspace: {
     color: '#1F2937',
     fontSize: 16,
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    flexShrink: 1,
+    flexWrap: 'nowrap',
   },
   feedbackGuide: {
     flexDirection: 'row',
@@ -444,7 +485,7 @@ export default StyleSheet.create({
   },
   guessGrid: {
     marginHorizontal: 20,
-    marginVertical: 5,
+    marginVertical: 2,
   },
   guessRow: {
     flexDirection: 'row',
@@ -477,7 +518,7 @@ export default StyleSheet.create({
   },
   fabTop: {
     position: 'absolute',
-    top: 80, // Moved down slightly to avoid covering header
+    top: 10, // Reduced top margin since SafeAreaView already handles status bar spacing
     right: 20,
     backgroundColor: '#F59E0B',
     width: 44,
@@ -499,7 +540,25 @@ export default StyleSheet.create({
   // Alternative FAB positioning for screens with heavy top margins
   fabTopFixed: {
     position: 'absolute',
-    top: 50,
+    // top value is now set dynamically using safe area insets
+    right: 20,
+    backgroundColor: '#F59E0B',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+    zIndex: 1000,
+  },
+  // HomeScreen specific FAB positioning
+  fabTopHomeScreen: {
+    position: 'absolute',
+    top: 5, // Top right corner with minimal safe area spacing
     right: 20,
     backgroundColor: '#F59E0B',
     width: 44,
@@ -1023,6 +1082,11 @@ export default StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#1D4ED8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   notificationsText: {
     color: '#FFFFFF',
@@ -1121,28 +1185,48 @@ export default StyleSheet.create({
   tabContainer: {
     flexDirection: 'row',
     marginBottom: 20,
-    backgroundColor: '#374151',
-    borderRadius: 8,
-    padding: 4,
     width: '100%',
-    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: '#4B5563',
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 6,
     alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
+    minWidth: 0,
+    maxWidth: '25%',
   },
   activeTabButton: {
     backgroundColor: '#F59E0B',
   },
   tabButtonText: {
     color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  tabLink: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    minWidth: 0,
+  },
+  tabLinkText: {
     fontSize: 14,
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    flexShrink: 1,
   },
   activeTabButtonText: {
     color: '#1F2937',
@@ -1421,11 +1505,12 @@ export default StyleSheet.create({
   settingsSection: {
     width: '100%',
     backgroundColor: '#374151',
-    padding: 20,
+    padding: 16,
     borderRadius: 12,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#4B5563',
+    alignSelf: 'stretch',
   },
   settingItem: {
     flexDirection: 'row',
@@ -1434,10 +1519,29 @@ export default StyleSheet.create({
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#4B5563',
+    flexWrap: 'wrap',
   },
   settingLabel: {
     fontSize: 16,
     color: '#E5E7EB',
+    fontFamily: 'Roboto-Medium',
+  },
+  settingValue: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  frequencyButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  frequencyButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
     fontFamily: 'Roboto-Medium',
   },
   // Actions Section Styles
@@ -1503,6 +1607,353 @@ export default StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     width: 70,
+  },
+  
+  // Theme Selector Styles
+  themeSelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  
+  themeOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  
+  themeOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  // Volume Slider Styles
+  volumeSlider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  
+  volumeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  volumeButtonText: {
+    color: '#1F2937',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  
+  volumeText: {
+    fontSize: 14,
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  
+  // Action Button Styles
+  actionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Enhanced Action Button Styles
+  enhancedActionButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minHeight: 56,
+    justifyContent: 'center',
+  },
+
+  enhancedActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+
+  // Cache Management Styles
+  cacheManagementContainer: {
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+
+  cacheInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+
+  cacheInfoLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+
+  cacheInfoValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  cacheDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  
+  // Time Button Styles
+  timeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  
+  timeButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  
+  // Modal Styles for Settings
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  
+  timeInput: {
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+    width: '100%',
+  },
+  
+  // Privacy Settings Styles
+  privacyLevelButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  
+  privacyLevelText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  
+  privacyLevelSubtext: {
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  
+  privacySelector: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    width: '100%',
+    marginTop: 8,
+    alignSelf: 'stretch',
+  },
+  
+  privacyOption: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 60,
+    maxWidth: '100%',
+    alignItems: 'center',
+    flexShrink: 1,
+    flex: 1,
+  },
+  
+  privacyOptionText: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    flexWrap: 'wrap',
+    flexShrink: 1,
+  },
+
+  // Special style for setting items with privacy selectors
+  settingItemWithSelector: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#4B5563',
+  },
+  
+  infoContainer: {
+    padding: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 8,
+  },
+  
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  
+  infoText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  
+  // Friend Discovery Styles
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  searchContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  
+  searchInput: {
+    flex: 1,
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+  },
+  
+  searchButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  
+  searchButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
+  resultsContainer: {
+    marginTop: 16,
+  },
+  
+  resultsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  
+  userCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  
+  userInfo: {
+    flex: 1,
+  },
+  
+  username: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  
+  userStats: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  
+  friendOfFriend: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  
+  addFriendButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  
+  addFriendButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  emptyState: {
+    alignItems: 'center',
+    padding: 32,
+  },
+  
+  emptyStateText: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  
+  leaderboardInfo: {
+    padding: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 8,
+    marginBottom: 16,
   },
   editForm: {
     width: '100%',
@@ -1765,8 +2216,10 @@ export default StyleSheet.create({
     gap: 8,
   },
   letterBox: {
-    width: 50,
-    height: 50,
+    width: '12%',
+    maxWidth: 60,
+    minWidth: 45,
+    aspectRatio: 1,
     borderWidth: 2,
     borderColor: '#E5E7EB',
     borderRadius: 8,
@@ -2085,7 +2538,7 @@ export default StyleSheet.create({
   },
   // CreateChallengeScreen styles
   friendItem: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     backgroundColor: '#374151',
     padding: 15,
     borderRadius: 8,
@@ -2100,7 +2553,8 @@ export default StyleSheet.create({
     elevation: 2,
   },
   friendInfo: {
-    flex: 1,
+    marginBottom: 15,
+    alignItems: 'center',
   },
   friendUsername: {
     fontSize: 18, // Increased font size
@@ -2108,6 +2562,7 @@ export default StyleSheet.create({
     color: '#E5E7EB',
     fontFamily: 'Roboto-Bold',
     marginBottom: 0, // Removed bottom margin since no email below
+    textAlign: 'center',
   },
   // friendEmail style removed since we no longer display emails
   challengeButton: {
@@ -2115,12 +2570,23 @@ export default StyleSheet.create({
     paddingVertical: 12, // Increased padding for better touch target
     paddingHorizontal: 24, // Increased horizontal padding
     borderRadius: 8, // Increased border radius
-    marginLeft: 15,
+    marginLeft: 0, // Remove left margin since we're centering
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 3,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  checkButton: {
+    backgroundColor: '#10B981', // Green for check
+  },
+  quitButton: {
+    backgroundColor: '#EF4444', // Red for quit
   },
   challengeButtonText: {
     color: '#FFFFFF',
@@ -2953,13 +3419,7 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Regular',
   },
 
-  // Friend hard mode status styles for CreateChallengeScreen
-  friendHardModeStatus: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontFamily: 'Roboto-Regular',
-    marginTop: 2,
-  },
+
 
   // ProfileScreen difficulty section styling
   difficultySection: {
@@ -2981,5 +3441,128 @@ export default StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
     fontFamily: 'Roboto-Regular',
+  },
+
+  // Notification Badge Styles
+  notificationBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 1,
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontFamily: 'Roboto-Bold',
+  },
+
+  // Compact Challenge Box Styles for ResumeGamesScreen
+  compactChallengeItem: {
+    flexDirection: 'row',
+    backgroundColor: '#374151',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#4B5563',
+  },
+  compactChallengeInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  compactChallengeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#E5E7EB',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 2,
+  },
+  compactChallengeSubtext: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 1,
+  },
+  compactChallengeDate: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontFamily: 'Roboto-Regular',
+  },
+  compactChallengeButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  compactChallengeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+  },
+
+  // Enhanced styles for awaiting acceptance boxes
+  awaitingAcceptanceItem: {
+    flexDirection: 'column',
+    backgroundColor: '#1F2937',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    shadowColor: '#F59E0B',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  awaitingAcceptanceTextContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  awaitingAcceptanceInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  awaitingAcceptanceTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 4,
+  },
+  awaitingAcceptanceSubtext: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 2,
+  },
+  awaitingAcceptanceDate: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

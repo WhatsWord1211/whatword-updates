@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from './firebase';
 import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
@@ -104,7 +105,7 @@ const SetWordScreen = () => {
         Alert.alert('Challenge Sent!', `Challenge sent to ${challenge.toUsername}!`, [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('Friends')
+            onPress: () => navigation.replace('ResumeGames')
           }
         ]);
         playSound('chime');
@@ -123,7 +124,7 @@ const SetWordScreen = () => {
   };
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       <View style={styles.difficultyContainer}>
         {showDifficultySelection ? (
           <>
@@ -136,24 +137,24 @@ const SetWordScreen = () => {
             </Text>
             
             <TouchableOpacity
-              style={styles.button}
+              style={styles.difficultyButton}
               onPress={() => selectDifficulty('easy')}
             >
-              <Text style={styles.buttonText}>Easy (4 letters)</Text>
+              <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Easy (4 letters)</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.button}
+              style={styles.difficultyButton}
               onPress={() => selectDifficulty('regular')}
             >
-              <Text style={styles.buttonText}>Regular (5 letters)</Text>
+              <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Regular (5 letters)</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.button}
+              style={styles.difficultyButton}
               onPress={() => selectDifficulty('hard')}
             >
-              <Text style={styles.buttonText}>Hard (6 letters)</Text>
+              <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Hard (6 letters)</Text>
             </TouchableOpacity>
           </>
         ) : (
@@ -180,17 +181,18 @@ const SetWordScreen = () => {
               maxLength={difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6}
             />
 
-            <TouchableOpacity
-              style={[styles.button, loading && styles.disabledButton]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>
-                {isAccepting ? 'Start Game' : 'Send Challenge'}
-              </Text>
-            </TouchableOpacity>
+
           </>
         )}
+
+        {/* Send Button */}
+        <TouchableOpacity
+          style={[styles.difficultyButton, loading && styles.disabledButton]}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText}>SEND</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.textButton}
@@ -199,7 +201,7 @@ const SetWordScreen = () => {
           <Text style={styles.textButtonText}>Cancel</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 

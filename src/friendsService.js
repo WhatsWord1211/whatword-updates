@@ -354,9 +354,11 @@ class FriendsService {
         challengeId,
         playerIds: [challengeData.fromUid, challengeData.toUid],
         wordLength: challengeData.wordLength,
+        type: 'pvp',
         gameMode: 'pvp',
         status: 'ready',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString()
       });
 
       // Send push notification to sender
@@ -431,10 +433,15 @@ class FriendsService {
   listenToFriends(callback) {
     if (!this.currentUser) return null;
     
-    const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-    const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+    // TEMPORARILY DISABLED TO TEST PERMISSION ISSUE
+    console.log('FriendsService: listenToFriends DISABLED for testing');
+    callback([]);
+    return () => {};
     
-    this.friendsUnsubscribe = onSnapshot(friendsQuery, async (snapshot) => {
+    // const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
+    // const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+    
+    // this.friendsUnsubscribe = onSnapshot(friendsQuery, async (snapshot) => {
       const friends = [];
       for (const friendDocSnapshot of snapshot.docs) {
         const friendData = friendDocSnapshot.data();
@@ -462,10 +469,15 @@ class FriendsService {
   listenToFriendRequests(callback) {
     if (!this.currentUser) return null;
     
-    const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-    const requestsQuery = query(friendsRef, where('status', '==', 'pending'));
+    // TEMPORARILY DISABLED TO TEST PERMISSION ISSUE
+    console.log('FriendsService: listenToFriendRequests DISABLED for testing');
+    callback([]);
+    return () => {};
     
-    this.requestsUnsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
+    // const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
+    // const requestsQuery = query(friendsRef, where('status', '==', 'pending'));
+    
+    // this.requestsUnsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
       const requests = [];
       for (const requestDocSnapshot of snapshot.docs) {
         const requestData = requestDocSnapshot.data();

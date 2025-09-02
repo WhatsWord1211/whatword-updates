@@ -394,7 +394,7 @@ class PushNotificationService {
       const notificationsRef = collection(this.firestore, 'notifications');
       const q = query(
         notificationsRef,
-        where('userId', '==', userId),
+        where('toUid', '==', userId),
         orderBy('timestamp', 'desc'),
         limit(limit)
       );
@@ -444,7 +444,7 @@ class PushNotificationService {
       const notificationsRef = collection(this.firestore, 'notifications');
       const q = query(
         notificationsRef,
-        where('userId', '==', userId),
+        where('toUid', '==', userId),
         where('read', '==', false)
       );
       
@@ -491,7 +491,7 @@ class PushNotificationService {
       const notificationsRef = collection(this.firestore, 'notifications');
       const q = query(
         notificationsRef,
-        where('userId', '==', userId),
+        where('toUid', '==', userId),
         where('read', '==', false)
       );
       

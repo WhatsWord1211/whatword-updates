@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, onSnapshot, arrayRemove, updateDoc, getDoc } from 'firebase/firestore';
@@ -122,14 +123,14 @@ const FriendsListScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.screenContainer}>
+      <SafeAreaView style={styles.screenContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       <Text style={styles.header}>Your Friends</Text>
       
       {friends.length === 0 ? (
@@ -189,7 +190,7 @@ const FriendsListScreen = () => {
       >
         <Text style={styles.textButtonText}>Back to Friends</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 };
 

@@ -10,23 +10,39 @@ import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
 import { Audio } from 'expo-av';
 import playerProfileService from './playerProfileService';
-
-// Placeholder function for showing an ad
-const showAd = async () => {
-  try {
-    console.log('GameScreen: Displaying ad for hint');
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return true;
-  } catch (error) {
-    console.error('GameScreen: Failed to display ad for hint', error);
-    return false;
-  }
-};
+import { useTheme } from './ThemeContext';
+import adService from './adService';
 
 const GameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { showDifficulty, gameMode, wordLength, soloWord, gameId: initialGameId, playerId, isCreator, guesses: savedGuesses, inputWord: savedInputWord, alphabet: savedAlphabet, targetWord: savedTargetWord, gameState: savedGameState, hintCount: savedHintCount } = route.params || {};
+  const { colors } = useTheme();
+  
+  // Validate route params and provide defaults
+  const params = route.params || {};
+  const { 
+    showDifficulty, 
+    gameMode, 
+    wordLength, 
+    soloWord, 
+    gameId: initialGameId, 
+    playerId, 
+    isCreator, 
+    guesses: savedGuesses, 
+    inputWord: savedInputWord, 
+    alphabet: savedAlphabet, 
+    targetWord: savedTargetWord, 
+    gameState: savedGameState, 
+    hintCount: savedHintCount 
+  } = params;
+
+  // Safety check - if no valid params, log warning but don't force navigation
+  useEffect(() => {
+    if (!gameMode && !showDifficulty && !soloWord) {
+      console.warn('GameScreen: No valid game parameters detected');
+      // Don't force navigation back, let the component handle missing params gracefully
+    }
+  }, [gameMode, showDifficulty, soloWord]);
 
 
 
@@ -50,9 +66,11 @@ const GameScreen = () => {
       showDifficulty, 
       isCreator, 
       gameState: savedGameState,
-      wordLength 
+      wordLength,
+      hasParams: !!route.params,
+      paramKeys: route.params ? Object.keys(route.params) : []
     });
-  }, []);
+  }, [route.params]);
 
   const [alphabet, setAlphabet] = useState(savedAlphabet || Array(26).fill('unknown'));
   const [hintCount, setHintCount] = useState(savedHintCount || 0);
@@ -146,6 +164,19 @@ const GameScreen = () => {
     }
   };
 
+  // Show interstitial ad after game completion
+  const showGameCompletionAd = useCallback(async () => {
+    try {
+      if (gameMode === 'solo') {
+        // For solo games, show ad after completion
+        await adService.showInterstitialAd();
+      }
+      // For PvP games, ads are handled differently (after returning to resume screen)
+    } catch (error) {
+      console.error('GameScreen: Failed to show game completion ad:', error);
+    }
+  }, [gameMode]);
+
   const handleHint = useCallback(async () => {
     console.log('GameScreen: handleHint called', { hintCount });
     if (hintCount >= 3) {
@@ -156,8 +187,13 @@ const GameScreen = () => {
     }
 
     try {
-      const adWatched = await showAd();
-      if (!adWatched) return;
+      // Show rewarded ad for hint
+      const adWatched = await adService.showRewardedAdForHint();
+      if (!adWatched) {
+        console.log('GameScreen: Ad not watched, hint not given');
+        return;
+      }
+      
       await playSound('hint').catch(() => {});
 
       // Get letter frequencies in target word
@@ -962,24 +998,40 @@ const GameScreen = () => {
 
   if (!soundsLoaded) {
     return (
-      <SafeAreaView style={styles.screenContainer}>
-        <Text style={styles.loadingText}>Loading sounds...</Text>
+      <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+        <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading sounds...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
       {isLoading && (
         <View style={styles.loadingOverlay}>
-          <Text style={styles.loadingText}>Loading...</Text>
+                      <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading...</Text>
         </View>
       )}
       {gameState === 'selectDifficulty' ? (
         <View style={styles.difficultyContainer}>
-          <Text style={styles.header}>Select Difficulty</Text>
+          {/* Back Button */}
+          <TouchableOpacity
+            style={[styles.backButton, { 
+              position: 'absolute',
+              top: 10,
+              left: 20,
+              zIndex: 1
+            }]}
+            onPress={() => {
+              playSound('chime');
+              navigation.goBack();
+            }}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          
+          <Text style={[styles.header, { color: colors.textPrimary }]}>Select Difficulty</Text>
           {gameMode === 'pvp' && (
-            <Text style={{ fontSize: 18, color: '#F59E0B', textAlign: 'center', marginBottom: 15 }}>
+            <Text style={{ fontSize: 18, color: colors.primary, textAlign: 'center', marginBottom: 15 }}>
               PvP Game Setup
             </Text>
           )}
@@ -1027,10 +1079,10 @@ const GameScreen = () => {
           {/* Hard Mode Lock Status Message */}
           {!hardModeUnlocked && (
             <View style={styles.lockStatusContainer}>
-              <Text style={styles.lockStatusText}>
+              <Text style={[styles.lockStatusText, { color: colors.textSecondary }]}>
                 🔒 You need to unlock Hard Mode first
               </Text>
-              <Text style={styles.lockStatusSubtext}>
+              <Text style={[styles.lockStatusSubtext, { color: colors.textMuted }]}>
                 Reach Word Expert rank or get premium access
               </Text>
             </View>
@@ -1038,8 +1090,8 @@ const GameScreen = () => {
         </View>
       ) : gameState === 'waiting' ? (
         <View style={styles.waitingContainer}>
-          <Text style={styles.header}>Waiting for Opponent</Text>
-          <Text style={{ fontSize: 16, color: '#D1D5DB', textAlign: 'center', marginVertical: 10 }}>
+          <Text style={[styles.header, { color: colors.textPrimary }]}>Waiting for Opponent</Text>
+          <Text style={{ fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginVertical: 10 }}>
             Your opponent will join automatically when they accept your challenge.
           </Text>
           <TouchableOpacity 
@@ -1049,19 +1101,26 @@ const GameScreen = () => {
             <Text style={styles.buttonText}>Back to Home</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.fabTop} onPress={() => setShowMenuPopup(true)}>
-            <Text style={styles.fabText}>☰</Text>
+            <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <>
-          <Text style={styles.soloheader}>
+          <Text style={[styles.soloheader, { color: colors.textPrimary }]}>
             {gameMode === 'solo' ? 'Guess The Word' : gameState === 'setWord' ? 'Set Your Word' : 'Guess Their Word'}
           </Text>
           <View style={styles.inputDisplay}>
             {[...Array(wordLength || 5)].map((_, idx) => (
               <Text
                 key={`input-${idx}`}
-                style={[styles.inputLetter, inputWord[idx] ? styles.filledLetter : styles.emptyLetter]}
+                style={[
+                  styles.inputLetter, 
+                  { 
+                    color: colors.textPrimary,
+                    backgroundColor: inputWord[idx] ? colors.surface : colors.surfaceLight,
+                    borderColor: colors.border
+                  }
+                ]}
               >
                 {inputWord[idx] || ''}
               </Text>
@@ -1084,8 +1143,13 @@ const GameScreen = () => {
                         <Text
                           style={[
                             styles.letter,
-                            alphabet[index] === 'absent' && styles.eliminatedLetter,
-                            alphabet[index] === 'present' && styles.presentLetter
+                            { 
+                              color: colors.textPrimary,
+                              backgroundColor: colors.surface,
+                              borderColor: colors.border
+                            },
+                            alphabet[index] === 'absent' && { backgroundColor: colors.surfaceDark },
+                            alphabet[index] === 'present' && { backgroundColor: colors.success }
                           ]}
                         >
                           {letter}
@@ -1100,7 +1164,7 @@ const GameScreen = () => {
                   style={[styles.hintLinkContainer, { marginTop: 5, marginBottom: 5 }]} 
                   onPress={handleHint ? handleHint : () => console.warn('GameScreen: handleHint is undefined')}
                 >
-                  <Text style={styles.hintLink}>Hint</Text>
+                  <Text style={[styles.hintLink, { color: colors.primary }]}>Hint</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1124,11 +1188,11 @@ const GameScreen = () => {
           <View style={styles.feedbackGuide}>
             <View style={styles.feedbackItem}>
               <View style={styles.feedbackCircle} />
-              <Text style={styles.feedbackText}>Correct Letter</Text>
+              <Text style={[styles.feedbackText, { color: colors.textSecondary }]}>Correct Letter</Text>
             </View>
             <View style={styles.feedbackItem}>
               <View style={styles.feedbackDot} />
-              <Text style={styles.feedbackText}>Correct Spot</Text>
+              <Text style={[styles.feedbackText, { color: colors.textSecondary }]}>Correct Spot</Text>
             </View>
           </View>
           <ScrollView 
@@ -1136,18 +1200,18 @@ const GameScreen = () => {
             style={styles.scroll} 
             contentContainerStyle={{ flexGrow: 1 }}
           >
-            <Text style={styles.sectionTitle}>Your Guesses</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Your Guesses</Text>
             <View style={styles.guessGrid}>
               {guesses.map((g, idx) => (
                 <View key={`guess-${idx}`} style={styles.guessRow}>
                   <View style={styles.guessWord}>
                     {g.isHint ? (
-                      <Text style={[styles.guessLetter, { fontSize: 24 }]}>HINT</Text>
+                      <Text style={[styles.guessLetter, { fontSize: 24, color: colors.textPrimary }]}>HINT</Text>
                     ) : (
                       g.word.split('').map((letter, i) => (
                         <Text
                           key={`letter-${idx}-${i}`}
-                          style={[styles.guessLetter, { fontSize: 24 }]}
+                          style={[styles.guessLetter, { fontSize: 24, color: colors.textPrimary }]}
                         >
                           {letter}
                         </Text>
@@ -1175,13 +1239,13 @@ const GameScreen = () => {
             </View>
           </ScrollView>
           <TouchableOpacity style={styles.fabTop} onPress={() => setShowMenuPopup(true)}>
-            <Text style={styles.fabText}>☰</Text>
+            <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>
           </TouchableOpacity>
           <Modal visible={!!showInvalidPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.invalidGuessPopup, styles.modalShadow]}>
-                <Text style={styles.invalidGuessTitle}>Invalid Guess!</Text>
-                <Text style={styles.invalidGuessMessage}>
+                <Text style={[styles.invalidGuessTitle, { color: colors.textPrimary }]}>Invalid Guess!</Text>
+                <Text style={[styles.invalidGuessMessage, { color: colors.textSecondary }]}>
                   Please enter a valid {wordLength || 5}-letter word.
                 </Text>
                 <TouchableOpacity
@@ -1196,8 +1260,8 @@ const GameScreen = () => {
           <Modal visible={!!showCongratsPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.congratsPopup, styles.modalShadow]}>
-                <Text style={styles.congratsTitle}>Congratulations!</Text>
-                <Text style={styles.congratsMessage}>You solved the word!</Text>
+                <Text style={[styles.congratsTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
+                <Text style={[styles.congratsMessage, { color: colors.textSecondary }]}>You solved the word!</Text>
                 <TouchableOpacity
                   style={styles.congratsButtonContainer}
                   onPress={() => {
@@ -1213,8 +1277,8 @@ const GameScreen = () => {
           <Modal visible={!!showWinPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.winPopup, styles.modalShadow]}>
-                <Text style={styles.winTitle}>Victory!</Text>
-                <Text style={styles.winMessage}>
+                <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Victory!</Text>
+                <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
                   {gameMode === 'solo'
                     ? `You won in ${guesses.length} guesses!`
                     : `You won with ${guesses.length} guesses, opponent used ${opponentGuessCountOnSolve || opponentGuesses.length} guesses!`}
@@ -1223,6 +1287,8 @@ const GameScreen = () => {
                   style={styles.winButtonContainer}
                   onPress={async () => {
                     setShowWinPopup(false);
+                    // Show ad after game completion
+                    await showGameCompletionAd();
                     await AsyncStorage.removeItem('savedGames');
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
@@ -1235,6 +1301,8 @@ const GameScreen = () => {
                     style={styles.winButtonContainer}
                     onPress={async () => {
                       setShowWinPopup(false);
+                      // Show ad before starting new game
+                      await showGameCompletionAd();
                       setGuesses([]);
                       setInputWord('');
                       setAlphabet(Array(26).fill('unknown'));
@@ -1263,8 +1331,8 @@ const GameScreen = () => {
           <Modal visible={!!showLosePopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.losePopup, styles.modalShadow]}>
-                <Text style={styles.loseTitle}>You Lost!</Text>
-                <Text style={styles.loseMessage}>
+                <Text style={[styles.loseTitle, { color: colors.textPrimary }]}>You Lost!</Text>
+                <Text style={[styles.loseMessage, { color: colors.textSecondary }]}>
                   {gameMode === 'solo'
                     ? `The word was: ${targetWord}`
                     : `You used ${guesses.length} guesses, opponent used ${opponentGuessCountOnSolve || opponentGuesses.length} guesses.`}
@@ -1273,6 +1341,8 @@ const GameScreen = () => {
                   style={styles.loseButtonContainer}
                   onPress={async () => {
                     setShowLosePopup(false);
+                    // Show ad after game completion
+                    await showGameCompletionAd();
                     await AsyncStorage.removeItem('savedGames');
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
@@ -1286,14 +1356,16 @@ const GameScreen = () => {
           <Modal visible={!!showTiePopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
-                <Text style={styles.opponentGuessesTitle}>It's a Tie!</Text>
-                <Text style={styles.opponentGuessesMessage}>
+                <Text style={[styles.opponentGuessesTitle, { color: colors.textPrimary }]}>It's a Tie!</Text>
+                <Text style={[styles.opponentGuessesMessage, { color: colors.textSecondary }]}>
                   Both players used {guesses.length} guesses!
                 </Text>
                 <TouchableOpacity
                   style={styles.opponentGuessesButtonContainer}
                   onPress={async () => {
                     setShowTiePopup(false);
+                    // Show ad after game completion
+                    await showGameCompletionAd();
                     await AsyncStorage.removeItem('savedGames');
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
@@ -1307,8 +1379,8 @@ const GameScreen = () => {
           <Modal visible={!!showStartGamePopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
-                <Text style={styles.opponentGuessesTitle}>Let The Games Begin!</Text>
-                <Text style={styles.opponentGuessesMessage}>
+                <Text style={[styles.opponentGuessesTitle, { color: colors.textPrimary }]}>Let The Games Begin!</Text>
+                <Text style={[styles.opponentGuessesMessage, { color: colors.textSecondary }]}>
                   Both players have set their words. Start guessing!
                 </Text>
                 <TouchableOpacity
@@ -1326,7 +1398,7 @@ const GameScreen = () => {
           <Modal visible={!!showMenuPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.menuPopup, styles.modalShadow]}>
-                <Text style={styles.menuTitle}>Menu</Text>
+                <Text style={[styles.menuTitle, { color: colors.textPrimary }]}>Menu</Text>
                 <TouchableOpacity
                   style={styles.menuButtonContainer}
                   onPress={handleQuit}
@@ -1351,8 +1423,8 @@ const GameScreen = () => {
           <Modal visible={!!showQuitConfirmPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.quitConfirmPopup, styles.modalShadow]}>
-                <Text style={styles.quitConfirmTitle}>Quit Game?</Text>
-                <Text style={styles.quitConfirmMessage}>
+                <Text style={[styles.quitConfirmTitle, { color: colors.textPrimary }]}>Quit Game?</Text>
+                <Text style={[styles.quitConfirmMessage, { color: colors.textSecondary }]}>
                   Are you sure you want to quit?
                 </Text>
                 <TouchableOpacity
@@ -1376,14 +1448,16 @@ const GameScreen = () => {
           <Modal visible={!!showWordRevealPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.wordRevealPopup, styles.modalShadow]}>
-                <Text style={styles.wordRevealTitle}>Game Over</Text>
-                <Text style={styles.wordRevealMessage}>
+                <Text style={[styles.wordRevealTitle, { color: colors.textPrimary }]}>Game Over</Text>
+                <Text style={[styles.wordRevealMessage, { color: colors.textSecondary }]}>
                   The word was: {targetWord || 'Unknown'}
                 </Text>
                 <TouchableOpacity
                   style={styles.wordRevealButtonContainer}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowWordRevealPopup(false);
+                    // Show ad after quit confirmation
+                    await showGameCompletionAd();
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}
@@ -1396,8 +1470,8 @@ const GameScreen = () => {
           <Modal visible={!!showHintPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.hintPopup, styles.modalShadow]}>
-                <Text style={styles.hintTitle}>Hint</Text>
-                <Text style={styles.hintMessage}>
+                <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>Hint</Text>
+                <Text style={[styles.hintMessage, { color: colors.textSecondary }]}>
                   The word contains the letter: {hintLetter}
                 </Text>
                 <TouchableOpacity
@@ -1415,8 +1489,8 @@ const GameScreen = () => {
           <Modal visible={!!showHintLimitPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.hintPopup, styles.modalShadow]}>
-                <Text style={styles.hintTitle}>No Hints Left!</Text>
-                <Text style={styles.hintMessage}>
+                <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>No Hints Left!</Text>
+                <Text style={[styles.hintMessage, { color: colors.textSecondary }]}>
                   You have used all 3 hints for this game.
                 </Text>
                 <TouchableOpacity
@@ -1434,8 +1508,8 @@ const GameScreen = () => {
           <Modal visible={!!showOpponentSolvedPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.opponentSolvedPopup, styles.modalShadow]}>
-                <Text style={styles.opponentSolvedTitle}>Opponent Solved!</Text>
-                <Text style={styles.opponentSolvedMessage}>
+                <Text style={[styles.opponentSolvedTitle, { color: colors.textPrimary }]}>Opponent Solved!</Text>
+                <Text style={[styles.opponentSolvedMessage, { color: colors.textSecondary }]}>
                   {opponentGuessCountOnSolve && guesses.length < opponentGuessCountOnSolve
                     ? `Your opponent solved your word in ${opponentGuessCountOnSolve} guesses! You have ${opponentGuessCountOnSolve - guesses.length} guesses left to tie or win.`
                     : `Your opponent solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses. You've used too many guesses to win.`}
@@ -1455,8 +1529,8 @@ const GameScreen = () => {
           <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.maxGuessesPopup, styles.modalShadow]}>
-                <Text style={styles.maxGuessesTitle}>Max Guesses Reached!</Text>
-                <Text style={styles.maxGuessesMessage}>
+                <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
+                <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}>
                   You've reached the maximum of {MAX_GUESSES} guesses. Waiting for opponent to finish.
                 </Text>
                 <TouchableOpacity
@@ -1464,6 +1538,8 @@ const GameScreen = () => {
                   onPress={async () => {
                     setShowMaxGuessesPopup(false);
                     await saveGameState();
+                    // Show ad after max guesses reached
+                    await showGameCompletionAd();
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}

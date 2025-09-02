@@ -33,14 +33,4 @@ export const auth = initializeAuth(app, {
 export const db = getFirestore(app);
 export { app };
 
-// Add debugging for dev mode
-if (__DEV__) {
-  console.log('🔧 DEV MODE: Firebase initialized with AsyncStorage persistence');
-  console.log('🔧 DEV MODE: Auth instance:', auth);
-  console.log('🔧 DEV MODE: Firestore instance:', db);
-  
-  // Check if we can connect to Firebase
-  auth.onAuthStateChanged((user) => {
-    console.log('🔧 DEV MODE: Auth state changed:', user ? 'User logged in' : 'No user');
-  });
-}
+// Development mode debugging removed for production

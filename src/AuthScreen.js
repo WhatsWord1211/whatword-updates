@@ -1,25 +1,37 @@
-// AuthScreen with clean authentication flow - no guest mode
+// AuthScreen with improved user experience flow
+// - Defaults to "Create Account" for new users (better conversion)
+// - "Sign In" option easily accessible for returning users
+// - Firebase automatically handles "remember me" functionality
+// - No guest mode - clean authentication flow
 // NOTE: Facebook and Google sign-in buttons are temporarily hidden for production
 // They will be re-enabled once OAuth is properly configured and tested
-// UPDATE: Main screen bypassed - goes directly to email form since it's the only sign-in option
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image } from "react-native";
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Pressable } from "react-native";
+import { useNavigation } from '@react-navigation/native';
+
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential, GoogleAuthProvider } from "firebase/auth";
 import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { useTheme } from './ThemeContext';
 
 // Configure WebBrowser for OAuth
 WebBrowser.maybeCompleteAuthSession();
 
 const AuthScreen = () => {
+  const navigation = useNavigation();
+  const { colors } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(false); // Default to Create Account for new users
   const [loading, setLoading] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(true); // Auto-show email form since it's the only option
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Google OAuth configuration
   const googleConfig = {
@@ -42,10 +54,9 @@ const AuthScreen = () => {
 
   const handleGoogleSignIn = async () => {
     try {
-      console.log('🔧 DEV MODE: Starting Google OAuth...');
       await promptAsync();
     } catch (error) {
-      console.error('🔧 DEV MODE: Google OAuth prompt error:', error);
+      console.error('Google OAuth prompt error:', error);
       Alert.alert("Google Sign-In Error", "Failed to start Google sign-in process.");
     }
   };
@@ -53,7 +64,6 @@ const AuthScreen = () => {
   const handleGoogleSignInSuccess = async (accessToken) => {
     try {
       setLoading(true);
-      console.log('🔧 DEV MODE: Google OAuth successful, getting user info...');
       
       // Get user info from Google
       const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -61,13 +71,9 @@ const AuthScreen = () => {
       });
       const userInfo = await userInfoResponse.json();
       
-      console.log('🔧 DEV MODE: Google user info:', userInfo);
-      
       // Create Firebase credential using the access token
       const credential = GoogleAuthProvider.credential(null, accessToken);
       const result = await signInWithCredential(auth, credential);
-      
-      console.log('🔧 DEV MODE: Firebase sign-in successful:', result.user.uid);
       
       // Check if user profile exists
       const userDocRef = doc(db, 'users', result.user.uid);
@@ -80,7 +86,6 @@ const AuthScreen = () => {
           email: result.user.email,
           displayName: result.user.displayName || userInfo.name || result.user.email.split('@')[0]
         });
-        console.log('🔧 DEV MODE: Profile updated successfully');
       } else {
         // Create new profile
         await setDoc(userDocRef, {
@@ -97,14 +102,12 @@ const AuthScreen = () => {
           friends: [],
           isAnonymous: false,
         });
-        console.log('🔧 DEV MODE: Profile created successfully');
       }
       
       Alert.alert("Success!", "Signed in with Google successfully!");
-      console.log('🔧 DEV MODE: Google sign-in completed, user should be redirected automatically');
       
     } catch (error) {
-      console.error('🔧 DEV MODE: Google sign-in error:', error);
+      console.error('Google sign-in error:', error);
       Alert.alert("Google Sign-In Error", error.message || "An error occurred during Google sign-in.");
     } finally {
       setLoading(false);
@@ -127,38 +130,44 @@ const AuthScreen = () => {
       return;
     }
 
+    // Check password confirmation for new accounts
+    if (!isLogin && password !== confirmPassword) {
+      Alert.alert("Password Mismatch", "Passwords do not match. Please make sure both password fields are identical.");
+      return;
+    }
+
+    // Check password length for new accounts
+    if (!isLogin && password.length < 6) {
+      Alert.alert("Password Too Short", "Password must be at least 6 characters long.");
+      return;
+    }
+
+    // Check terms agreement for new accounts
+    if (!isLogin && !agreeToTerms) {
+      Alert.alert("Terms Agreement Required", "You must agree to the Terms of Service and Privacy Policy to create an account.");
+      return;
+    }
+
     try {
       setLoading(true);
-      console.log('🔧 DEV MODE: Starting email auth...');
-      console.log('🔧 DEV MODE: Auth instance:', auth);
-      console.log('🔧 DEV MODE: DB instance:', db);
-      
       let result;
 
       if (isLogin) {
-        console.log('🔧 DEV MODE: Attempting sign in...');
         result = await signInWithEmailAndPassword(auth, email, password);
-        console.log('🔧 DEV MODE: Sign in successful:', result.user.uid);
         
         // Ensure user profile exists and is updated on sign in
         const userDocRef = doc(db, 'users', result.user.uid);
-        console.log('🔧 DEV MODE: User doc ref created:', userDocRef.path);
         
-        console.log('🔧 DEV MODE: Attempting to get user doc...');
         const userDoc = await getDoc(userDocRef);
-        console.log('🔧 DEV MODE: User doc retrieved:', userDoc.exists());
         
         if (userDoc.exists()) {
           // Update existing profile with last login time
-          console.log('🔧 DEV MODE: Updating existing profile...');
           await updateDoc(userDocRef, {
             lastLogin: new Date(),
             email: email
           });
-          console.log('🔧 DEV MODE: Profile updated successfully');
         } else {
           // Create profile if it doesn't exist
-          console.log('🔧 DEV MODE: Creating new profile...');
           await setDoc(userDocRef, {
             uid: result.user.uid,
             username: email.split('@')[0],
@@ -173,25 +182,12 @@ const AuthScreen = () => {
             friends: [],
             isAnonymous: false
           });
-          console.log('🔧 DEV MODE: Profile created successfully');
         }
-        
-
-        console.log('🔧 DEV MODE: Sign in completed, user should be redirected automatically');
-        console.log('🔧 DEV MODE: Current auth user:', auth.currentUser);
-        
-        // Add a small delay to ensure App.js state update propagates
-        setTimeout(() => {
-          console.log('🔧 DEV MODE: Delayed check - auth user:', auth.currentUser);
-        }, 1000);
       } else {
         // Create new account
-        console.log('🔧 DEV MODE: Creating new account...');
         result = await createUserWithEmailAndPassword(auth, email, password);
-        console.log('🔧 DEV MODE: Account created:', result.user.uid);
         
         // Create user profile in Firestore
-        console.log('🔧 DEV MODE: Creating user profile...');
         await setDoc(doc(db, 'users', result.user.uid), {
           uid: result.user.uid,
           username: email.split('@')[0],
@@ -218,76 +214,118 @@ const AuthScreen = () => {
           isPremium: false,
           hardModeUnlocked: false
         });
-        console.log('🔧 DEV MODE: Profile created successfully');
         
         Alert.alert("Success!", "Account created successfully! You can now customize your profile.");
-        console.log('🔧 DEV MODE: Account creation completed, user should be redirected automatically');
-        console.log('🔧 DEV MODE: Current auth user:', auth.currentUser);
-        
-        // Add a small delay to ensure App.js state update propagates
-        setTimeout(() => {
-          console.log('🔧 DEV MODE: Delayed check - auth user:', auth.currentUser);
-        }, 1000);
       }
     } catch (error) {
-      console.error('🔧 DEV MODE: Auth error:', error);
-      console.error('🔧 DEV MODE: Error code:', error.code);
-      console.error('🔧 DEV MODE: Error message:', error.message);
+      console.error('Auth error:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
       Alert.alert("Error", error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTermsPress = () => {
-    Alert.alert(
-      "Terms & Privacy", 
-      "Terms of Service and Privacy Policy will be available soon.",
-      [{ text: "OK" }]
-    );
-  };
+
 
 
 
   if (showEmailForm) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background, paddingBottom: 40 }]}>
         <View style={styles.content}>
-          <Text style={styles.welcomeTextEmail}>Welcome To</Text>
+                  <Text style={[styles.welcomeTextEmail, { color: colors.textPrimary }]}>Welcome To</Text>
         
-          <Image
-            source={require('../assets/images/WhatWord-header.png')}
-            style={styles.headerImageEmail}
-            resizeMode="contain"
-          />
-        
-        <Text style={styles.subtitle}>
-          {isLogin ? "" : "Create your account"}
-        </Text>
-        
-        <Text style={styles.gameDescription}>
-          Solve your friend's word before they solve yours
-        </Text>
+        <Image
+          source={require('../assets/images/WhatWord-header.png')}
+          style={styles.headerImageEmail}
+          resizeMode="contain"
+        />
+      
+      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+        {isLogin ? "" : ""}
+      </Text>
+      
+      <Text style={[styles.gameDescription, { color: colors.textSecondary }]}>
+        Solve your friend's word before they solve yours
+      </Text>
           
           <View style={styles.formEmail}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
               placeholder="Email"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textMuted}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
             
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#9CA3AF"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={[styles.input, styles.passwordInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+                placeholder="Password"
+                placeholderTextColor={colors.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                style={styles.passwordToggle}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Text style={[styles.passwordToggleText, { color: colors.textMuted }]}>
+                  {showPassword ? '🙈' : '👁️'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            {/* Confirm Password Field - Only show for new accounts */}
+            {!isLogin && (
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
+                  placeholder="Confirm Password"
+                  placeholderTextColor={colors.textMuted}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggle}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Text style={[styles.passwordToggleText, { color: colors.textMuted }]}>
+                    {showConfirmPassword ? '🙈' : '👁️'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            {/* Terms Agreement Checkbox - Only show for new accounts */}
+            {!isLogin && (
+              <View style={styles.checkboxContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.checkbox, 
+                    { borderColor: colors.primary },
+                    agreeToTerms && { backgroundColor: colors.primary }
+                  ]}
+                  onPress={() => setAgreeToTerms(!agreeToTerms)}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  {agreeToTerms && <Text style={[styles.checkmark, { color: colors.textInverse }]}>✓</Text>}
+                </TouchableOpacity>
+                <Text style={[styles.checkboxLabel, { color: colors.textPrimary }]}>
+                  I agree to the{" "}
+                  <Text style={[styles.termsLink, { color: colors.primary }]} onPress={() => navigation.navigate('Legal', { section: 'terms' })}>Terms of Service</Text>
+                  {" "}and{" "}
+                  <Text style={[styles.termsLink, { color: colors.primary }]} onPress={() => navigation.navigate('Legal', { section: 'privacy' })}>Privacy Policy</Text>
+                </Text>
+              </View>
+            )}
             
             <TouchableOpacity 
               style={[styles.button, loading && styles.disabledButton]}
@@ -301,26 +339,30 @@ const AuthScreen = () => {
             
             <TouchableOpacity 
               style={styles.textButton}
-              onPress={() => setIsLogin(!isLogin)}
+              onPress={() => {
+                setIsLogin(!isLogin);
+                // Clear form fields when switching modes
+                setEmail("");
+                setPassword("");
+                setConfirmPassword("");
+                setShowPassword(false);
+                setShowConfirmPassword(false);
+                setAgreeToTerms(false);
+              }}
             >
               <Text style={styles.textButtonText}>
-                {isLogin ? "Need an account? Create Account" : "Have an account? Sign In"}
+                {isLogin ? "New to WhatWord? " : "Already have an account? "}
+                {isLogin && (
+                  <Text style={[styles.textButtonText, { color: '#8B5CF6' }]}>Create Account</Text>
+                )}
+                {!isLogin && (
+                  <Text style={[styles.textButtonText, { color: '#8B5CF6' }]}>Sign In</Text>
+                )}
               </Text>
             </TouchableOpacity>
           </View>
           
-          {/* Terms and Conditions */}
-          <TouchableOpacity 
-            style={styles.termsContainer}
-            onPress={handleTermsPress}
-          >
-            <Text style={styles.termsText}>
-              By continuing, you agree to the{" "}
-              <Text style={styles.termsLink}>terms</Text>
-              {" "}and{" "}
-              <Text style={styles.termsLink}>privacy policy</Text>
-            </Text>
-          </TouchableOpacity>
+
         </View>
       </SafeAreaView>
     );
@@ -330,7 +372,7 @@ const AuthScreen = () => {
   // This will be re-enabled when social sign-in options are added back
   /*
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingBottom: 40 }]}>
       <View style={styles.content}>
         <Text style={styles.welcomeText}>Welcome To</Text>
         
@@ -384,9 +426,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     alignItems: "center",
     padding: 20,
+    paddingTop: 40,
   },
   headerImage: {
     width: "100%",
@@ -398,7 +441,7 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 120,
     marginTop: -10,
-    marginBottom: 15,
+    marginBottom: -5,
     maxWidth: 350,
   },
   welcomeText: {
@@ -432,16 +475,26 @@ const styles = StyleSheet.create({
   gameDescription: {
     fontSize: 20, // Increased from 16 to 20 for better visibility
     color: "#E5E7EB", // Changed from #9CA3AF to #E5E7EB for better contrast
-    marginBottom: 30,
+    marginBottom: 25,
+    marginTop: -15,
     textAlign: "center",
     fontStyle: "italic",
     lineHeight: 26, // Increased line height to match larger font
     fontWeight: "500", // Added medium weight for better readability
   },
+  welcomeBackText: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    marginBottom: 15,
+    textAlign: "center",
+    fontStyle: "italic",
+    lineHeight: 18,
+    paddingHorizontal: 20,
+  },
   buttonContainer: {
     width: "100%",
     maxWidth: 300,
-    marginBottom: 40,
+    marginBottom: 20,
   },
   socialButton: {
     paddingVertical: 16,
@@ -481,19 +534,19 @@ const styles = StyleSheet.create({
   form: {
     width: "100%",
     maxWidth: 300,
-    marginBottom: 30,
+    marginBottom: 20,
   },
   formEmail: {
     width: "100%",
     maxWidth: 300,
-    marginBottom: 30,
-    marginTop: 10,
+    marginBottom: 6,
+    marginTop: 5,
   },
   input: {
     backgroundColor: "#374151",
     borderRadius: 8,
     padding: 15,
-    marginBottom: 15,
+    marginBottom: 16,
     color: "#E5E7EB",
     fontSize: 16,
     borderWidth: 1,
@@ -504,7 +557,8 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 8,
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 10,
+    marginTop: 8,
   },
   buttonText: {
     color: "#1F2937",
@@ -513,6 +567,7 @@ const styles = StyleSheet.create({
   },
   textButton: {
     alignItems: "center",
+    marginBottom: 12,
   },
   textButtonText: {
     color: "#F59E0B",
@@ -533,16 +588,6 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
-  },
-  termsContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  termsText: {
-    color: "#9CA3AF",
-    fontSize: 12,
-    textAlign: "center",
-    lineHeight: 18,
   },
   termsLink: {
     color: "#F59E0B",
@@ -572,6 +617,55 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "600",
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 0,
+    paddingHorizontal: 20,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderRadius: 4,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    padding: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: '#F59E0B',
+  },
+  checkmark: {
+    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  checkboxLabel: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    flex: 1,
+    lineHeight: 18,
+  },
+  passwordContainer: {
+    position: 'relative',
+    marginBottom: 0,
+  },
+  passwordInput: {
+    paddingRight: 50, // Make room for the toggle button
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 15,
+    top: 15,
+    padding: 5,
+  },
+  passwordToggleText: {
+    fontSize: 18,
   },
 });
 

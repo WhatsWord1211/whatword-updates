@@ -109,12 +109,22 @@ const PvPGameScreen = () => {
   // Determine final game result when both players have finished
   const determineGameResult = async (gameData, currentUserId) => {
     try {
-      const currentPlayerData = getMyPlayerData();
+      const currentPlayerData = getMyPlayerData(gameData);
       const opponentPlayerData = getOpponentPlayerData(gameData);
       
       // Safety checks for player data
       if (!currentPlayerData || !opponentPlayerData) {
-        console.error('determineGameResult: Missing player data', { currentPlayerData, opponentPlayerData });
+        console.error('determineGameResult: Missing player data', { 
+          currentPlayerData, 
+          opponentPlayerData,
+          gameData: {
+            hasPlayer1: !!gameData.player1,
+            hasPlayer2: !!gameData.player2,
+            player1Solved: gameData.player1?.solved,
+            player2Solved: gameData.player2?.solved,
+            currentUserId: currentUser?.uid
+          }
+        });
         return;
       }
       
@@ -335,7 +345,12 @@ const PvPGameScreen = () => {
               });
               
               if (currentPlayerFinished && opponentPlayerFinished) {
-                console.log('PvPGameScreen: Auto-completing finished game');
+                console.log('PvPGameScreen: Auto-completing finished game', {
+                  currentPlayerFinished,
+                  opponentPlayerFinished,
+                  currentPlayerData: { solved: currentPlayerData.solved, attempts: currentPlayerData.attempts },
+                  opponentPlayerData: { solved: opponentPlayerData.solved, attempts: opponentPlayerData.attempts }
+                });
                 // Game should be completed - determine result
                 determineGameResult(gameData, currentUser.uid).catch(error => {
                   console.error('Failed to auto-complete game:', error);
@@ -398,15 +413,15 @@ const PvPGameScreen = () => {
     return unsubscribe;
   }, [gameId, currentUser]);
 
-  const getMyPlayerData = () => {
-    if (!game || !currentUser) return null;
+  const getMyPlayerData = (gameData = game) => {
+    if (!gameData || !currentUser) return null;
     
     // Debug logging removed for cleaner logs
     
     // Handle new game structure (player1/player2)
-    if (game.player1 && game.player2 && game.player1.uid && game.player2.uid) {
-      const isPlayer1 = game.player1.uid === currentUser.uid;
-      const myPlayer = isPlayer1 ? game.player1 : game.player2;
+    if (gameData.player1 && gameData.player2 && gameData.player1.uid && gameData.player2.uid) {
+      const isPlayer1 = gameData.player1.uid === currentUser.uid;
+      const myPlayer = isPlayer1 ? gameData.player1 : gameData.player2;
       
       // Additional safety check
       if (!myPlayer.uid) {
@@ -426,13 +441,13 @@ const PvPGameScreen = () => {
     }
     
     // Handle old game structure (playerWord/opponentWord)
-    if (game.creatorId && game.playerIds && Array.isArray(game.playerIds) && currentUser && currentUser.uid) {
-      const isCreator = game.creatorId === currentUser.uid;
+    if (gameData.creatorId && gameData.playerIds && Array.isArray(gameData.playerIds) && currentUser && currentUser.uid) {
+      const isCreator = gameData.creatorId === currentUser.uid;
       const result = {
         uid: currentUser.uid,
-        attempts: isCreator ? (game.playerGuesses?.length || 0) : (game.opponentGuesses?.length || 0),
-        solved: isCreator ? game.playerSolved : game.opponentSolved,
-        word: isCreator ? game.playerWord : game.opponentWord,
+        attempts: isCreator ? (gameData.playerGuesses?.length || 0) : (gameData.opponentGuesses?.length || 0),
+        solved: isCreator ? gameData.playerSolved : gameData.opponentSolved,
+        word: isCreator ? gameData.playerWord : gameData.opponentWord,
         field: isCreator ? 'player1' : 'player2' // Fallback for old structure
       };
       // Debug logging removed for cleaner logs
@@ -469,6 +484,7 @@ const PvPGameScreen = () => {
       
       const result = {
         uid: opponentPlayer.uid,
+        username: opponentPlayer.username,
         attempts: opponentPlayer.attempts || 0,
         solved: opponentPlayer.solved || false,
         word: opponentPlayer.word
@@ -489,6 +505,7 @@ const PvPGameScreen = () => {
       
       const result = {
         uid: opponentUid,
+        username: null, // Username not available in old game structure
         attempts: isCreator ? (gameData.opponentGuesses?.length || 0) : (gameData.playerGuesses?.length || 0),
         solved: isCreator ? gameData.opponentSolved : gameData.playerSolved,
         word: isCreator ? gameData.opponentWord : gameData.playerWord

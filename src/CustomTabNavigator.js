@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Text, View, StyleSheet, TouchableOpacity, PanGestureHandler, State, Animated, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -83,7 +83,7 @@ const CustomTabNavigator = () => {
     // Listen for pending challenges
     const challengesQuery = query(
       collection(db, 'challenges'),
-      where('to', '==', auth.currentUser.uid),
+      where('toUid', '==', auth.currentUser.uid),
       where('status', '==', 'pending')
     );
 
@@ -98,12 +98,14 @@ const CustomTabNavigator = () => {
       
       // Clear dismissed notifications if there are no actual notifications
       clearDismissedNotificationsIfNoNew();
+    }, (error) => {
+      console.error('CustomTabNavigator: Challenges query error:', error);
     });
 
     // Listen for pending friend requests
     const requestsQuery = query(
       collection(db, 'friendRequests'),
-      where('to', '==', auth.currentUser.uid),
+      where('toUid', '==', auth.currentUser.uid),
       where('status', '==', 'pending')
     );
 
@@ -118,40 +120,59 @@ const CustomTabNavigator = () => {
       
       // Clear dismissed notifications if there are no actual notifications
       clearDismissedNotificationsIfNoNew();
+    }, (error) => {
+      console.error('CustomTabNavigator: Friend requests query error:', error);
     });
 
-    // Listen for active PvP games
-    const activeGamesQuery = query(
-      collection(db, 'games'),
-      where('players', 'array-contains', auth.currentUser.uid),
-              where('status', 'in', ['ready', 'active', 'waiting_for_opponent'])
-    );
+    // Listen for active PvP games using a different approach
+    // Instead of querying games collection directly, we'll listen to user's activeGames array
+    // and then fetch individual game documents
+    const userDocRef = doc(db, 'users', auth.currentUser.uid);
     
-    const activeGamesUnsubscribe = onSnapshot(activeGamesQuery, (snapshot) => {
-      const activeGames = [];
-      snapshot.forEach((doc) => {
-        const gameData = doc.data();
-        if (gameData.type === 'pvp' && ['ready', 'active'].includes(gameData.status)) {
-          activeGames.push({ id: doc.id, ...gameData });
+    const activeGamesUnsubscribe = onSnapshot(userDocRef, async (userDoc) => {
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const activeGameIds = userData.activeGames || [];
+        
+        if (activeGameIds.length > 0) {
+          // Fetch game documents for active games
+          const gamePromises = activeGameIds.map(gameId => getDoc(doc(db, 'games', gameId)));
+          const gameDocs = await Promise.all(gamePromises);
+          
+          const activeGames = [];
+          gameDocs.forEach((gameDoc, index) => {
+            if (gameDoc.exists()) {
+              const gameData = gameDoc.data();
+              
+              // Only include PvP games that are in active states
+              if (gameData.type === 'pvp' && ['ready', 'active', 'waiting_for_opponent'].includes(gameData.status)) {
+                activeGames.push({ id: activeGameIds[index], ...gameData });
+              }
+            }
+          });
+          
+          setActivePvPGames(activeGames);
+          
+          // Reset notifications seen flag when new active games arrive
+          if (activeGames.length > 0) {
+            setNotificationsSeen(false);
+            saveNotificationsSeen(false);
+          }
+          
+          // Clear dismissed notifications if there are no actual notifications
+          clearDismissedNotificationsIfNoNew();
+        } else {
+          setActivePvPGames([]);
         }
-      });
-      
-      setActivePvPGames(activeGames);
-      
-      // Reset notifications seen flag when new active games arrive
-      if (activeGames.length > 0) {
-        setNotificationsSeen(false);
-        saveNotificationsSeen(false);
       }
-      
-      // Clear dismissed notifications if there are no actual notifications
-      clearDismissedNotificationsIfNoNew();
+    }, (error) => {
+      console.error('CustomTabNavigator: User document query error:', error);
     });
 
     // Listen for notifications
     const notificationsQuery = query(
       collection(db, 'notifications'),
-      where('to', '==', auth.currentUser.uid),
+      where('toUid', '==', auth.currentUser.uid),
       where('read', '==', false)
     );
     
@@ -167,6 +188,8 @@ const CustomTabNavigator = () => {
       
       // Clear dismissed notifications if there are no actual notifications
       clearDismissedNotificationsIfNoNew();
+    }, (error) => {
+      console.error('CustomTabNavigator: Notifications query error:', error);
     });
 
     return () => {

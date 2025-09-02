@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Modal, Alert, ScrollView, Switch } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
 import { playSound } from './soundsUtil';
+import { useTheme } from './ThemeContext';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
+  const { colors } = useTheme();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -307,119 +310,36 @@ const ProfileScreen = () => {
     return 'Level 10 - Legend';
   };
 
-  // Check if hard mode is unlocked
-  const isHardModeUnlocked = () => {
-    if (!userProfile) return false;
-    
-    // Check if user is premium
-    if (userProfile.isPremium) return true;
-    
-    // Check if user has reached Word Expert rank
-    const currentRank = getRankTitleFromProfile(userProfile);
-    return currentRank === 'Word Expert' || currentRank === 'Word Master';
-  };
 
-  // Unlock hard mode via premium purchase
-  const unlockHardModePremium = async () => {
-    try {
-      // In a real app, this would integrate with your payment system
-      // For now, we'll simulate a successful purchase
-      await updateDoc(doc(db, 'users', user.uid), {
-        isPremium: true,
-        hardModeUnlocked: true
-      });
-      
-      Alert.alert(
-        'Hard Mode Unlocked! 🎉',
-        'You now have access to Hard Mode (6-letter words) through your premium subscription!',
-        [{ text: 'Awesome!', style: 'default' }]
-      );
-      
-      // Reload profile to reflect changes
-      loadUserProfile(user);
-    } catch (error) {
-      console.error('Failed to unlock hard mode:', error);
-      Alert.alert('Error', 'Failed to unlock hard mode. Please try again.');
-    }
-  };
 
   if (loading) {
     return (
-      <View style={styles.screenContainer}>
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
+      <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+        <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading profile...</Text>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
       <ScrollView style={{ flex: 1, width: '100%' }}>
         {/* Rank Display */}
         <View style={styles.rankDisplayContainer}>
           <View style={styles.rankBadge}>
-            <Text style={styles.rankTitle}>🏆 {getRankTitle()}</Text>
-            <Text style={styles.rankSubtitle}>Your Current Rank</Text>
+            <Text style={[styles.rankTitle, { color: colors.textPrimary }]}>🏆 {getRankTitle()}</Text>
+            <Text style={[styles.rankSubtitle, { color: colors.textSecondary }]}>Your Current Rank</Text>
           </View>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelTitle}>⭐ {getLevelTitle()}</Text>
-            <Text style={styles.levelSubtitle}>Your Current Level</Text>
+            <Text style={[styles.levelTitle, { color: colors.textPrimary }]}>⭐ {getLevelTitle()}</Text>
+            <Text style={[styles.levelSubtitle, { color: colors.textSecondary }]}>Your Current Level</Text>
           </View>
         </View>
 
-        {/* Hard Mode Unlock Section */}
-        <View style={styles.hardModeUnlockContainer}>
-          <Text style={styles.sectionTitle}>🔒 Hard Mode Access</Text>
-          {isHardModeUnlocked() ? (
-            <View style={styles.unlockedContainer}>
-              <Text style={styles.unlockedTitle}>🎉 Hard Mode Unlocked!</Text>
-              <Text style={styles.unlockedSubtitle}>
-                {userProfile?.isPremium 
-                  ? 'You have premium access to Hard Mode (6-letter words)'
-                  : 'You unlocked Hard Mode by reaching Word Expert rank!'
-                }
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.lockedContainer}>
-              <Text style={styles.lockedTitle}>🔒 Hard Mode Locked</Text>
-              <Text style={styles.lockedSubtitle}>
-                Unlock Hard Mode by either:
-              </Text>
-              <View style={styles.unlockOptions}>
-                <View style={styles.unlockOption}>
-                  <Text style={styles.unlockOptionTitle}>🏆 Reach Word Expert Rank</Text>
-                  <Text style={styles.unlockOptionSubtitle}>
-                    Complete Regular mode games with an average of ≤8 attempts
-                  </Text>
-                  <View style={styles.progressContainer}>
-                    <Text style={styles.progressText}>
-                      Current: {getRankTitleFromProfile(userProfile)}
-                    </Text>
-                    <Text style={styles.progressText}>
-                      Target: Word Expert
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.unlockOption}>
-                  <Text style={styles.unlockOptionTitle}>💎 Premium Unlock</Text>
-                  <Text style={styles.unlockOptionSubtitle}>
-                    Get instant access to Hard Mode and other premium features
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.premiumButton}
-                    onPress={unlockHardModePremium}
-                  >
-                    <Text style={styles.premiumButtonText}>Unlock Now</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
+
 
         {/* Solo Mode Stats */}
         <View style={styles.statsContainer}>
-          <Text style={styles.sectionTitle}>🎯 Solo Mode Stats</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>🎯 Solo Mode Stats</Text>
           
           {/* Easy Mode (4 letters) */}
           <View style={styles.difficultySection}>
@@ -618,25 +538,12 @@ const ProfileScreen = () => {
         <View style={styles.settingsSection}>
           <Text style={styles.sectionTitle}>Settings</Text>
           
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>Push Notifications</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: '#767577', true: '#F59E0B' }}
-              thumbColor={notificationsEnabled ? '#FFFFFF' : '#f4f3f4'}
-            />
-          </View>
-          
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>Sound Effects</Text>
-            <Switch
-              value={soundEnabled}
-              onValueChange={setSoundEnabled}
-              trackColor={{ false: '#767577', true: '#F59E0B' }}
-              thumbColor={soundEnabled ? '#FFFFFF' : '#f4f3f4'}
-            />
-          </View>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <Text style={styles.buttonText}>Open Settings</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Actions */}
@@ -699,7 +606,7 @@ const ProfileScreen = () => {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 

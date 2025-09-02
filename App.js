@@ -20,13 +20,19 @@ import SetWordGameScreen from './src/SetWordGameScreen';
 import CreateChallengeScreen from './src/CreateChallengeScreen';
 import PvPGameScreen from './src/PvPGameScreen';
 import ResumeGamesScreen from './src/ResumeGamesScreen';
+import SettingsScreen from './src/SettingsScreen';
+import PrivacySettingsScreen from './src/PrivacySettingsScreen';
+import FriendDiscoveryScreen from './src/FriendDiscoveryScreen';
+import LegalScreen from './src/LegalScreen';
+
+import { ThemeProvider } from './src/ThemeContext';
+import './src/adService'; // Initialize AdMob service
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 // Main tab navigator - MOVED OUTSIDE App component
 const MainTabs = () => {
-  console.log('🔧 DEV MODE: MainTabs component is rendering!');
   return <CustomTabNavigator />;
 };
 
@@ -36,16 +42,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    console.log('🔧 DEV MODE: App.js useEffect running...');
-    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('🔧 DEV MODE: Auth state changed in App.js:', user ? `User authenticated: ${user.uid}` : 'No user');
-      
       if (user) {
-        console.log('🔧 DEV MODE: Setting user state to:', user.uid);
         setUser(user);
       } else {
-        console.log('🔧 DEV MODE: Setting user state to: null');
         setUser(null);
       }
       
@@ -55,16 +55,10 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  console.log('🔧 DEV MODE: App.js rendering with user:', user ? user.uid : 'null');
-  console.log('🔧 DEV MODE: Loading state:', loading);
-
   // Determine which component to render
   const navigationCondition = user ? 'MainTabs' : 'Auth';
-  console.log('🔧 DEV MODE: Navigation condition - user ? MainTabs : Auth =', navigationCondition);
-  console.log('🔧 DEV MODE: User object:', user);
 
   if (loading) {
-    console.log('🔧 DEV MODE: Showing loading screen');
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
@@ -72,46 +66,58 @@ export default function App() {
     );
   }
 
-  console.log('🔧 DEV MODE: About to render navigation. User exists:', !!user);
-  
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ 
-        headerShown: false, 
-        animation: 'none',
-        animationDuration: 0,
-        presentation: 'transparentModal'
-      }}>
-        {user ? (
-          <>
-            <Stack.Screen name="MainTabs" component={MainTabs} />
-            <Stack.Screen 
-              name="HowToPlay" 
-              component={HowToPlayScreen}
-              options={{ 
-                animation: 'none',
-                animationDuration: 0,
-                presentation: 'transparentModal',
-                gestureEnabled: false
-              }}
-            />
-            <Stack.Screen name="Game" component={GameScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="SetWord" component={SetWordScreen} />
-            <Stack.Screen name="SetWordGame" component={SetWordGameScreen} />
-            <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
-            <Stack.Screen name="PvPGame" component={PvPGameScreen} />
-            <Stack.Screen name="ResumeGames" component={ResumeGamesScreen} />
+    <ThemeProvider>
+      <NavigationContainer>
+        <Stack.Navigator 
+          initialRouteName={user ? "MainTabs" : "Auth"}
+          screenOptions={{ 
+            headerShown: false, 
+            animation: 'none',
+            animationDuration: 0,
+            presentation: 'transparentModal'
+          }}
+        >
+          {user ? (
+            <>
+              <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen 
+                name="HowToPlay" 
+                component={HowToPlayScreen}
+                options={{ 
+                  animation: 'none',
+                  animationDuration: 0,
+                  presentation: 'transparentModal',
+                  gestureEnabled: false
+                }}
+              />
+              <Stack.Screen name="Game" component={GameScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="SetWord" component={SetWordScreen} />
+              <Stack.Screen name="SetWordGame" component={SetWordGameScreen} />
+              <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
+              <Stack.Screen name="PvPGame" component={PvPGameScreen} />
+                          <Stack.Screen name="ResumeGames" component={ResumeGamesScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} />
+            <Stack.Screen name="FriendDiscovery" component={FriendDiscoveryScreen} />
             <Stack.Screen name="AddFriends" component={AddFriendsScreen} />
-            <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
-            <Stack.Screen name="PendingChallenges" component={PendingChallengesScreen} />
-            <Stack.Screen name="FriendsList" component={FriendsListScreen} />
-          </>
-        ) : (
-          <Stack.Screen name="Auth" component={AuthScreen} />
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+              <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
+              <Stack.Screen name="PendingChallenges" component={PendingChallengesScreen} />
+              <Stack.Screen name="FriendsList" component={FriendsListScreen} />
+              {/* Legal screen accessible to authenticated users */}
+              <Stack.Screen name="Legal" component={LegalScreen} />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="Auth" component={AuthScreen} />
+              {/* Legal screen accessible to unauthenticated users */}
+              <Stack.Screen name="Legal" component={LegalScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ThemeProvider>
   );
 }
 

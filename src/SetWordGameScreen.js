@@ -169,14 +169,16 @@ const SetWordGameScreen = () => {
              throw new Error('Challenge data is incomplete. Please try again.');
            }
            
-                       const gameData = {
-              type: 'pvp',
-              difficulty: difficulty,
-              wordLength: difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6,
-              players: [challenge.from, challenge.to],
-              status: 'active',
-              createdAt: new Date(),
-              currentTurn: challenge.from, // Player 1 goes first
+                                 const gameData = {
+            type: 'pvp',
+            difficulty: difficulty,
+            wordLength: difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6,
+            players: [challenge.from, challenge.to],
+            status: 'active',
+            createdAt: new Date(),
+            lastActivity: new Date(), // Add this field for ResumeGamesScreen
+            lastUpdated: new Date(), // Add this field for PvPGameScreen
+            currentTurn: challenge.from, // Player 1 goes first
               player1: {
                 uid: challenge.from,
                 username: challenge.fromUsername || challenge.from || 'Player 1',
@@ -235,18 +237,15 @@ const SetWordGameScreen = () => {
          
          // Send notification to Player 1 that the game has started
          try {
-           const notificationData = {
-             type: 'gameStarted',
-             from: auth.currentUser.uid,
-             to: challenge.from,
-             gameId: gameRef.id,
-             message: `${challenge.toUsername || 'Player 2'} has accepted your challenge! The game is ready to begin.`,
-             timestamp: new Date(),
-             read: false
-           };
-           
-           await addDoc(collection(db, 'notifications'), notificationData);
-           console.log('🔍 Game start notification sent to Player 1');
+           const NotificationService = require('./notificationService').default;
+           const notificationService = new NotificationService();
+           await notificationService.sendChallengeResponseNotification(
+             challenge.from,
+             challenge.toUsername || 'Player 2',
+             challenge.id,
+             true // accepted = true
+           );
+           console.log('🔍 Game start notification sent to Player 1 via notification service');
          } catch (notificationError) {
            console.error('🔍 Failed to send game start notification:', notificationError);
          }
@@ -285,13 +284,23 @@ const SetWordGameScreen = () => {
         console.log('🔍 Challenge document path:', challengeRef.path);
         console.log('🔍 Challenge should be visible to user:', challengeData.to);
         
+        playSound('chime');
+        
+        // Show success message
         Alert.alert('Challenge Sent!', `Challenge sent to ${challenge.toUsername}!`, [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('CreateChallenge')
+            onPress: () => {
+              // Navigate back to challenge screen
+              navigation.navigate('CreateChallenge');
+            }
           }
         ]);
-        playSound('chime');
+        
+        // Also navigate back after a short delay as a fallback
+        setTimeout(() => {
+          navigation.navigate('CreateChallenge');
+        }, 500);
       }
     } catch (error) {
       console.error('🔍 Failed to submit word:', error);
@@ -343,25 +352,27 @@ const SetWordGameScreen = () => {
   const addLetter = (letter) => {
     if (word.length < (difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6)) {
       setWord(prev => prev + letter);
-      playSound('letterInput');
+      playSound('letterInput').catch(() => {});
     }
   };
 
-  const removeLetter = () => {
-    if (word.length > 0) {
-      setWord(prev => prev.slice(0, -1));
-      playSound('backspace');
-    }
-  };
 
-  const clearWord = () => {
-    setWord('');
-  };
+
+
 
   if (showDifficultySelection) {
     return (
-      <View style={styles.screenContainer}>
-
+      <SafeAreaView style={styles.screenContainer}>
+        {/* Back Button */}
+        <TouchableOpacity
+          style={[styles.backButton, { alignSelf: 'flex-start', marginLeft: 20, marginTop: 20 }]}
+          onPress={() => {
+            playSound('chime');
+            navigation.goBack();
+          }}
+        >
+          <Text style={styles.backButtonText}>← Back</Text>
+        </TouchableOpacity>
         
         <View style={styles.difficultyContainer}>
           <Text style={styles.header}>Choose Difficulty</Text>
@@ -373,22 +384,22 @@ const SetWordGameScreen = () => {
           </Text>
           
           <TouchableOpacity
-            style={styles.button}
+            style={styles.difficultyButton}
             onPress={() => selectDifficulty('easy')}
           >
-            <Text style={styles.buttonText}>Easy (4 letters)</Text>
+            <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Easy (4 letters)</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={styles.button}
+            style={styles.difficultyButton}
             onPress={() => selectDifficulty('regular')}
           >
-            <Text style={styles.buttonText}>Regular (5 letters)</Text>
+            <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Regular (5 letters)</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
             style={[
-              styles.button, 
+              styles.difficultyButton, 
               (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButton
             ]}
             onPress={() => {
@@ -416,6 +427,7 @@ const SetWordGameScreen = () => {
           >
             <Text style={[
               styles.buttonText,
+              { numberOfLines: 1 },
               (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButtonText
             ]}>
               {!hardModeUnlocked 
@@ -445,7 +457,7 @@ const SetWordGameScreen = () => {
             </View>
           )}
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -476,18 +488,21 @@ const SetWordGameScreen = () => {
          <View style={styles.inputControlsPvP}>
            <TouchableOpacity
              style={[styles.backspaceButtonContainer, word.length === 0 && styles.disabledButton]}
-             onPress={removeLetter}
+                           onPress={() => {
+                setWord(prev => prev.slice(0, -1));
+                playSound('backspace').catch(() => {});
+              }}
              disabled={word.length === 0}
            >
-             <Text style={styles.buttonTextBackspace}>BACKSPACE</Text>
+                           <Text style={[styles.buttonTextBackspace, { numberOfLines: 1 }]}>BACKSPACE</Text>
            </TouchableOpacity>
            
            <TouchableOpacity
              style={[styles.guessButtonContainer, word.length === 0 && styles.disabledButton]}
-             onPress={clearWord}
-             disabled={word.length === 0}
+             onPress={handleSubmit}
+             disabled={word.length === 0 || loading}
            >
-             <Text style={styles.buttonText}>CLEAR</Text>
+             <Text style={styles.buttonText}>SEND</Text>
            </TouchableOpacity>
          </View>
 
@@ -512,16 +527,7 @@ const SetWordGameScreen = () => {
            </View>
          </View>
 
-        {/* Submit Button */}
-        <TouchableOpacity
-          style={[styles.button, loading && styles.disabledButton]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>
-            {isAccepting ? 'Start Game' : 'Send Challenge'}
-          </Text>
-        </TouchableOpacity>
+
 
         {/* Back Button */}
         <TouchableOpacity

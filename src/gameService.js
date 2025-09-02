@@ -34,7 +34,7 @@ class GameService {
       const gameData = {
         gameId,
         challengeId: challengeData.challengeId,
-        players: [challengeData.fromUid, challengeData.toUid],
+        playerIds: [challengeData.fromUid, challengeData.toUid],
         wordLength: challengeData.wordLength,
         type: 'pvp',
         status: 'ready', // ready, active, waiting_for_opponent, completed
@@ -62,7 +62,7 @@ class GameService {
       };
 
       await setDoc(doc(db, 'games', gameId), gameData);
-      console.log('GameService: PvP game created successfully', { gameId, players: gameData.players });
+      console.log('GameService: PvP game created successfully', { gameId, players: gameData.playerIds });
       
       return gameId;
     } catch (error) {
@@ -83,8 +83,9 @@ class GameService {
       
       const gameData = gameDoc.data();
       
-      // Verify user has access to this game
-      if (!gameData.players.includes(this.getCurrentUser().uid)) {
+      // Verify user has access to this game (handle both field naming conventions)
+      const playersArray = gameData.playerIds || gameData.players;
+      if (!playersArray || !playersArray.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -105,8 +106,9 @@ class GameService {
       
       const gameData = gameDoc.data();
       
-      // Verify user is a player in this game
-      if (!gameData.players.includes(this.getCurrentUser().uid)) {
+      // Verify user is a player in this game (handle both field naming conventions)
+      const playersArray = gameData.playerIds || gameData.players;
+      if (!playersArray || !playersArray.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -132,6 +134,31 @@ class GameService {
       await updateDoc(doc(db, 'games', gameId), updates);
       console.log('GameService: Player word set successfully', { gameId, word, updateField });
       
+      // Send notification to opponent when word is set
+      const opponentId = gameData.playerIds.find(id => id !== this.getCurrentUser().uid);
+      if (opponentId) {
+        try {
+          const currentUserDoc = await getDoc(doc(db, 'users', this.getCurrentUser().uid));
+          const currentUserData = currentUserDoc.data();
+          
+          await notificationService.sendPushNotification(
+            opponentId,
+            'Game Ready!',
+            `${currentUserData.username || 'Your opponent'} has set their word. The game is ready to begin!`,
+            { 
+              type: 'game_ready', 
+              gameId,
+              senderId: this.getCurrentUser().uid, 
+              senderName: currentUserData.username 
+            }
+          );
+          console.log('GameService: Notification sent to opponent about word being set');
+        } catch (notificationError) {
+          console.error('GameService: Failed to send notification to opponent:', notificationError);
+          // Don't throw error - word setting should still succeed even if notification fails
+        }
+      }
+      
       return true;
     } catch (error) {
       console.error('GameService: Failed to set player word:', error);
@@ -149,8 +176,9 @@ class GameService {
       
       const gameData = gameDoc.data();
       
-      // Verify user is a player in this game
-      if (!gameData.playerIds.includes(this.getCurrentUser().uid)) {
+      // Verify user is a player in this game (handle both field naming conventions)
+      const playersArray = gameData.playerIds || gameData.players;
+      if (!playersArray || !playersArray.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -207,7 +235,7 @@ class GameService {
                         if (playerAttempts < opponentAttempts) {
               updates.winnerId = this.getCurrentUser().uid;
             } else if (opponentAttempts < playerAttempts) {
-              updates.winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
+              updates.winnerId = gameData.playerIds.find(id => id !== this.getCurrentUser().uid);
             } else {
               updates.tie = true;
               updates.winnerId = null;
@@ -222,14 +250,14 @@ class GameService {
             // Only opponent solved - check if current player has max attempts
             const playerGuesses = isCreator ? gameData.playerGuesses : gameData.opponentGuesses;
             if (playerGuesses.length >= 25) {
-              updates.winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
+              updates.winnerId = gameData.playerIds.find(id => id !== this.getCurrentUser().uid);
             }
           }
           
           // Send game completion notifications to both players
           try {
             const currentUserId = this.getCurrentUser().uid;
-            const opponentId = gameData.players.find(id => id !== currentUserId);
+            const opponentId = gameData.playerIds.find(id => id !== currentUserId);
             
             // Get opponent's username for the notification
             const opponentDoc = await getDoc(doc(db, 'users', opponentId));
@@ -283,7 +311,7 @@ class GameService {
         }
       } else {
         // Switch turns if guess is incorrect
-        const nextPlayer = gameData.players.find(id => id !== this.getCurrentUser().uid);
+        const nextPlayer = gameData.playerIds.find(id => id !== this.getCurrentUser().uid);
         updates.currentTurn = nextPlayer;
         
         // Check if game is over due to max attempts (without solving)
@@ -302,7 +330,7 @@ class GameService {
             // Send game completion notifications for tie game
             try {
               const currentUserId = this.getCurrentUser().uid;
-              const opponentId = gameData.players.find(id => id !== currentUserId);
+              const opponentId = gameData.playerIds.find(id => id !== currentUserId);
               
               // Get opponent's username for the notification
               const opponentDoc = await getDoc(doc(db, 'users', opponentId));
@@ -397,8 +425,9 @@ class GameService {
       if (doc.exists()) {
         const gameData = doc.data();
         
-        // Verify user has access to this game
-        if (gameData.players.includes(this.getCurrentUser().uid)) {
+        // Verify user has access to this game (handle both field naming conventions)
+        const playersArray = gameData.playerIds || gameData.players;
+        if (playersArray && playersArray.includes(this.getCurrentUser().uid)) {
           callback({ id: doc.id, ...gameData });
         } else {
           console.warn('GameService: Access denied to game updates');
@@ -422,7 +451,7 @@ class GameService {
     const gamesRef = collection(db, 'games');
     const q = query(
       gamesRef,
-      where('players', 'array-contains', this.getCurrentUser().uid),
+      where('playerIds', 'array-contains', this.getCurrentUser().uid),
               where('type', '==', 'pvp'),
         where('status', 'in', ['ready', 'active']),
         orderBy('lastActivity', 'desc')
@@ -449,8 +478,9 @@ class GameService {
       
       const gameData = gameDoc.data();
       
-      // Verify user is a player in this game
-      if (!gameData.playerIds.includes(this.getCurrentUser().uid)) {
+      // Verify user is a player in this game (handle both field naming conventions)
+      const playersArray = gameData.playerIds || gameData.players;
+      if (!playersArray || !playersArray.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -590,13 +620,14 @@ class GameService {
       
       const gameData = gameDoc.data();
       
-      // Verify user is a player in this game
-      if (!gameData.players.includes(this.getCurrentUser().uid)) {
+      // Verify user is a player in this game (handle both field naming conventions)
+      const playersArray = gameData.playerIds || gameData.players;
+      if (!playersArray || !playersArray.includes(this.getCurrentUser().uid)) {
         throw new Error('Access denied: You are not a player in this game');
       }
       
       // Determine winner (the other player)
-      const winnerId = gameData.players.find(id => id !== this.getCurrentUser().uid);
+      const winnerId = playersArray.find(id => id !== this.getCurrentUser().uid);
       
       const updates = {
         status: 'completed',
@@ -613,7 +644,7 @@ class GameService {
       // Send game completion notifications for forfeited game
       try {
         const currentUserId = this.getCurrentUser().uid;
-        const opponentId = gameData.players.find(id => id !== currentUserId);
+        const opponentId = gameData.playerIds.find(id => id !== currentUserId);
         
         // Get opponent's username for the notification
         const opponentDoc = await getDoc(doc(db, 'users', opponentId));
@@ -672,14 +703,14 @@ class GameService {
           
         case 'player1_forfeited':
           // Player 1 inactive for 7 days - Player 2 wins
-          updates.winnerId = gameData.players.find(id => id !== gameData.players[0]);
-          updates.forfeitedBy = gameData.players[0];
+          updates.winnerId = gameData.playerIds.find(id => id !== gameData.playerIds[0]);
+          updates.forfeitedBy = gameData.playerIds[0];
           break;
           
         case 'player2_forfeited':
           // Player 2 inactive for 7 days - Player 1 wins
-          updates.winnerId = gameData.players.find(id => id !== gameData.players[1]);
-          updates.forfeitedBy = gameData.players[1];
+          updates.winnerId = gameData.playerIds.find(id => id !== gameData.playerIds[1]);
+          updates.forfeitedBy = gameData.playerIds[1];
           break;
           
         case 'both_forfeited':
@@ -693,8 +724,8 @@ class GameService {
       
       // Send game completion notifications for timeout
       try {
-        const player1Id = gameData.players[0];
-        const player2Id = gameData.players[1];
+        const player1Id = gameData.playerIds[0];
+        const player2Id = gameData.playerIds[1];
         
         // Get usernames for notifications
         const player1Doc = await getDoc(doc(db, 'users', player1Id));
@@ -768,7 +799,7 @@ class GameService {
       // Extract only the statistics needed for leaderboard
       const gameStats = {
         gameId: gameId,
-        players: gameData.players,
+        players: gameData.playerIds,
         completedAt: gameData.completedAt,
         winnerId: gameData.winnerId,
         tie: gameData.tie,
@@ -777,12 +808,12 @@ class GameService {
         forfeitedBy: gameData.forfeitedBy,
         // Preserve player performance data for leaderboard calculations
         playerStats: {
-          [gameData.players[0]]: {
+          [gameData.playerIds[0]]: {
             attempts: gameData.player1?.attempts || gameData.playerGuesses?.length || 0,
             solved: gameData.player1?.solved || false,
             solveTime: gameData.player1?.solveTime
           },
-          [gameData.players[1]]: {
+          [gameData.playerIds[1]]: {
             attempts: gameData.player2?.attempts || gameData.opponentGuesses?.length || 0,
             solved: gameData.player2?.solved || false,
             solveTime: gameData.player2?.solveTime

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
@@ -14,7 +15,7 @@ const PendingChallengesScreen = () => {
   useEffect(() => {
     const challengesQuery = query(
       collection(db, 'challenges'),
-      where('to', '==', auth.currentUser.uid),
+      where('toUid', '==', auth.currentUser.uid),
       where('status', '==', 'pending')
     );
 
@@ -91,14 +92,14 @@ const PendingChallengesScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.screenContainer}>
+      <SafeAreaView style={styles.screenContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       <Text style={styles.header}>Game Challenges</Text>
       
       {pendingChallenges.length === 0 ? (
@@ -125,7 +126,7 @@ const PendingChallengesScreen = () => {
       >
         <Text style={styles.textButtonText}>Back to Friends</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 };
 

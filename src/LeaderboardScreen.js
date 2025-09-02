@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ScrollView, RefreshControl, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc } from 'firebase/firestore';
@@ -17,28 +18,35 @@ const LeaderboardScreen = () => {
   const [activeDifficulty, setActiveDifficulty] = useState('regular'); // 'easy', 'regular', or 'hard'
   const [userFriends, setUserFriends] = useState([]);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        loadUserFriends(currentUser);
-        loadLeaderboards(currentUser);
         checkHardModeUnlock(currentUser);
+        // Load friends first, then leaderboards will be loaded via useFocusEffect
+        loadUserFriends(currentUser);
       }
     });
 
     return unsubscribe;
   }, []);
 
+  // Load leaderboards when friends are loaded
+  useEffect(() => {
+    if (user && userFriends.length > 0) {
+      loadLeaderboards(user);
+    }
+  }, [user, userFriends]);
+
   // Refresh leaderboard when screen comes into focus or difficulty changes
   useFocusEffect(
     React.useCallback(() => {
-      if (user) {
-        loadUserFriends(user);
+      if (user && userFriends.length > 0) {
         loadLeaderboards(user);
       }
-    }, [user, activeDifficulty])
+    }, [user, userFriends, activeDifficulty])
   );
 
   // Check hard mode unlock status
@@ -71,12 +79,14 @@ const LeaderboardScreen = () => {
 
   const loadUserFriends = async (currentUser) => {
     try {
+      setIsLoading(true);
       console.log('LeaderboardScreen: Loading user friends for:', currentUser.uid);
       // Get user's friends from the main user document
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (!userDoc.exists()) {
         console.log('LeaderboardScreen: User document not found');
         setUserFriends([]);
+        setIsLoading(false);
         return;
       }
       
@@ -122,6 +132,7 @@ const LeaderboardScreen = () => {
       setUserFriends(friends);
     } catch (error) {
       console.error('Failed to load user friends:', error);
+      setIsLoading(false);
     }
   };
 
@@ -129,8 +140,10 @@ const LeaderboardScreen = () => {
     try {
       await loadSoloLeaderboard(currentUser);
       await loadPvpLeaderboard(currentUser);
+      setIsLoading(false);
     } catch (error) {
       console.error('Failed to load leaderboards:', error);
+      setIsLoading(false);
     }
   };
 
@@ -530,7 +543,7 @@ const LeaderboardScreen = () => {
   };
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       <ScrollView 
         style={{ flex: 1, width: '100%' }}
         refreshControl={
@@ -656,7 +669,7 @@ const LeaderboardScreen = () => {
           )}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
