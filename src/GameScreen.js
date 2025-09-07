@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, auth } from './firebase'; // Added auth import
 import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -9,6 +9,8 @@ import { isValidWord, getFeedback, selectRandomWord } from './gameLogic';
 import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
 import { Audio } from 'expo-av';
+import ThreeDGreenDot from './ThreeDGreenDot';
+import ThreeDPurpleRing from './ThreeDPurpleRing';
 import playerProfileService from './playerProfileService';
 import { useTheme } from './ThemeContext';
 import adService from './adService';
@@ -17,6 +19,7 @@ const GameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   
   // Validate route params and provide defaults
   const params = route.params || {};
@@ -273,7 +276,7 @@ const GameScreen = () => {
       console.log('GameScreen: Setting targetWord', { gameId, targetWord: upperWord });
       setTargetWord(upperWord);
     }
-  }, [gameMode, savedTargetWord, soloWord, gameId]);
+  }, [gameMode, savedTargetWord, soloWord]);
 
   // Initialize difficulty for solo games
   useEffect(() => {
@@ -1100,7 +1103,10 @@ const GameScreen = () => {
           >
             <Text style={styles.buttonText}>Back to Home</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.fabTop} onPress={() => setShowMenuPopup(true)}>
+          <TouchableOpacity 
+            style={[styles.fabTop, { top: insets.top + 10 }]} 
+            onPress={() => setShowMenuPopup(true)}
+          >
             <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>
           </TouchableOpacity>
         </View>
@@ -1148,8 +1154,8 @@ const GameScreen = () => {
                               backgroundColor: colors.surface,
                               borderColor: colors.border
                             },
-                            alphabet[index] === 'absent' && { backgroundColor: colors.surfaceDark },
-                            alphabet[index] === 'present' && { backgroundColor: colors.success }
+                            alphabet[index] === 'absent' && styles.eliminatedLetter,
+                            alphabet[index] === 'present' && styles.presentLetter
                           ]}
                         >
                           {letter}
@@ -1187,11 +1193,11 @@ const GameScreen = () => {
           </View>
           <View style={styles.feedbackGuide}>
             <View style={styles.feedbackItem}>
-              <View style={styles.feedbackCircle} />
+              <ThreeDPurpleRing size={15} ringWidth={2} style={{ marginRight: 6 }} />
               <Text style={[styles.feedbackText, { color: colors.textSecondary }]}>Correct Letter</Text>
             </View>
             <View style={styles.feedbackItem}>
-              <View style={styles.feedbackDot} />
+              <ThreeDGreenDot size={15} style={{ marginRight: 6 }} />
               <Text style={[styles.feedbackText, { color: colors.textSecondary }]}>Correct Spot</Text>
             </View>
           </View>
@@ -1221,16 +1227,10 @@ const GameScreen = () => {
                   {!g.isHint && (
                     <View style={styles.feedbackContainer}>
                       {[...Array(guaranteeCircles(g.circles))].map((_, i) => (
-                        <View
-                          key={`circle-${idx}-${i}`}
-                          style={styles.feedbackCircle}
-                        />
+                        <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={15} ringWidth={2} style={{ marginRight: 6 }} />
                       ))}
                       {[...Array(guaranteeCircles(g.dots))].map((_, i) => (
-                        <View
-                          key={`dot-${idx}-${i}`}
-                          style={styles.feedbackDot}
-                        />
+                        <ThreeDGreenDot key={`dot-${idx}-${i}`} size={15} style={{ marginRight: 6 }} />
                       ))}
                     </View>
                   )}
@@ -1238,7 +1238,10 @@ const GameScreen = () => {
               ))}
             </View>
           </ScrollView>
-          <TouchableOpacity style={styles.fabTop} onPress={() => setShowMenuPopup(true)}>
+          <TouchableOpacity 
+            style={[styles.fabTop, { top: insets.top + 10 }]} 
+            onPress={() => setShowMenuPopup(true)}
+          >
             <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>
           </TouchableOpacity>
           <Modal visible={!!showInvalidPopup} transparent animationType="fade">
@@ -1277,10 +1280,12 @@ const GameScreen = () => {
           <Modal visible={!!showWinPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.winPopup, styles.modalShadow]}>
-                <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Victory!</Text>
+                <Text style={[styles.winTitle, { color: colors.textPrimary }]}>
+                  {gameMode === 'solo' ? 'Congratulations!' : 'Victory!'}
+                </Text>
                 <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
                   {gameMode === 'solo'
-                    ? `You won in ${guesses.length} guesses!`
+                    ? `You solved the word in ${guesses.length} guesses!`
                     : `You won with ${guesses.length} guesses, opponent used ${opponentGuessCountOnSolve || opponentGuesses.length} guesses!`}
                 </Text>
                 <TouchableOpacity

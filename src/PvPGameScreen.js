@@ -4,11 +4,15 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
-import { playSound } from './soundsUtil';
+import { Audio } from 'expo-av';
+import { loadSounds, playSound } from './soundsUtil';
+import adService from './adService';
 import { getFeedback, isValidWord } from './gameLogic';
 import styles from './styles';
 import gameService from './gameService';
 import playerProfileService from './playerProfileService';
+import ThreeDPurpleRing from './ThreeDPurpleRing';
+import ThreeDGreenDot from './ThreeDGreenDot';
 
 /**
  * PvP Game State System:
@@ -64,6 +68,12 @@ const PvPGameScreen = () => {
   const [showQuitConfirmPopup, setShowQuitConfirmPopup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [pendingResultData, setPendingResultData] = useState(null);
+  const [resultSoundPlayed, setResultSoundPlayed] = useState(false);
+  const showGameOverPopupRef = useRef(false);
+  const resultSoundPlayedRef = useRef(false);
+  const handledCompletionRef = useRef(false);
+  const showCongratulationsPopupRef = useRef(false);
   
   const scrollViewRef = useRef(null);
   
@@ -83,6 +93,23 @@ const PvPGameScreen = () => {
   ];
   
   const getMaxGuesses = () => (game && game.maxAttempts) ? game.maxAttempts : 25;
+
+  // Keep refs in sync with state to avoid stale closures inside snapshot listener
+  useEffect(() => {
+    showGameOverPopupRef.current = showGameOverPopup;
+  }, [showGameOverPopup]);
+  useEffect(() => {
+    resultSoundPlayedRef.current = resultSoundPlayed;
+  }, [resultSoundPlayed]);
+  useEffect(() => {
+    showCongratulationsPopupRef.current = showCongratulationsPopup;
+  }, [showCongratulationsPopup]);
+  useEffect(() => {
+    // Reset guards when switching to a different game
+    handledCompletionRef.current = false;
+    resultSoundPlayedRef.current = false;
+    setResultSoundPlayed(false);
+  }, [gameId]);
 
   // Helper functions to get player data
   const getCurrentPlayerData = (gameData) => {
@@ -151,12 +178,22 @@ const PvPGameScreen = () => {
         tie = true;
       }
       
-      // Update game status
+      // Update game status and track results visibility
       await updateDoc(doc(db, 'games', gameId), {
         status: 'completed',
         completedAt: new Date().toISOString(),
         winnerId: winnerId,
-        tie: tie
+        tie: tie,
+        resultsSeenBy: [],
+        // Mark first and second finisher for precise badge logic on Home
+        firstFinisherId: (gameData.player1?.solved && !gameData.player2?.solved) ? gameData.player1?.uid
+                         : (!gameData.player1?.solved && gameData.player2?.solved) ? gameData.player2?.uid
+                         : (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) < new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
+                         : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
+                         : null,
+        secondFinisherId: (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) > new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
+                          : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
+                          : null
       });
       
       // Update stats for both players
@@ -174,28 +211,67 @@ const PvPGameScreen = () => {
       } catch (error) {
         console.error('PvPGameScreen: Failed to update PvP rolling averages:', error);
       }
-      
-      // Delete completed game and preserve statistics
-      await deleteCompletedGame(gameId, { 
-        ...gameData, 
-        status: 'completed', 
-        completedAt: new Date().toISOString(), 
-        winnerId: winnerId, 
-        tie: tie 
-      });
-      
-      // Show game over popup with result
-      setGameOverData({ winnerId, tie, currentUserId });
-      setShowGameOverPopup(true);
-      
-      // Play appropriate sound
-      if (tie) {
-        await playSound('tie').catch(() => {});
-      } else if (winnerId === currentUserId) {
-        await playSound('victory').catch(() => {});
-      } else {
-        await playSound('lose').catch(() => {});
+
+      // Save stats immediately for leaderboard (do not wait for archival)
+      try {
+        const playersArray = gameData.playerIds || gameData.players || [gameData.player1?.uid, gameData.player2?.uid].filter(Boolean);
+        const statsDoc = {
+          gameId: gameId,
+          players: playersArray,
+          completedAt: new Date().toISOString(),
+          winnerId: winnerId,
+          tie: !!tie,
+          type: 'pvp',
+          wordLength: gameData.wordLength,
+          difficulty: gameDifficulty,
+          playerStats: {
+            [gameData.player1?.uid || playersArray?.[0]]: {
+              attempts: gameData.player1?.attempts ?? 0,
+              solved: !!gameData.player1?.solved,
+              solveTime: gameData.player1?.solveTime || null
+            },
+            [gameData.player2?.uid || playersArray?.[1]]: {
+              attempts: gameData.player2?.attempts ?? 0,
+              solved: !!gameData.player2?.solved,
+              solveTime: gameData.player2?.solveTime || null
+            }
+          }
+        };
+        await setDoc(doc(db, 'gameStats', gameId), statsDoc);
+      } catch (statsErr) {
+        console.error('PvPGameScreen: Failed to write immediate gameStats for leaderboard:', statsErr);
       }
+      
+      // Send completion notifications (in-app Firestore notifications so Home can badge)
+      try {
+        // Avoid duplicate notifications if already sent
+        const gameRef = doc(db, 'games', gameId);
+        const snap = await getDoc(gameRef);
+        const fresh = snap.exists() ? snap.data() : {};
+        if (!fresh.notificationsSent) {
+          const { getNotificationService } = require('./notificationService');
+          const notificationService = getNotificationService();
+          const player1Uid = gameData.player1?.uid;
+          const player2Uid = gameData.player2?.uid;
+          const messageFor = (uid) => {
+            if (tie) return "It's a tie! Both players finished.";
+            return winnerId === uid ? 'Congratulations! You won!' : 'Game over! Your opponent won.';
+          };
+          if (player1Uid && player2Uid) {
+            await Promise.all([
+              notificationService.sendGameCompletionNotification(player1Uid, gameId, messageFor(player1Uid)),
+              notificationService.sendGameCompletionNotification(player2Uid, gameId, messageFor(player2Uid))
+            ]);
+          }
+          // Mark notifications sent
+          await updateDoc(gameRef, { notificationsSent: true });
+        }
+      } catch (notifyErr) {
+        console.error('PvPGameScreen: Failed to send completion notifications:', notifyErr);
+      }
+
+      // Do not delete completed game immediately; keep until both players view results
+      // UI for final results is handled by the snapshot listener to allow gating after congrats
       
     } catch (error) {
       console.error('PvPGameScreen: Failed to determine game result:', error);
@@ -228,6 +304,30 @@ const PvPGameScreen = () => {
     return unsubscribe;
   }, []);
 
+  // Ensure audio is configured and sounds are preloaded so first backspace plays immediately
+  useEffect(() => {
+    const initializeAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+        await loadSounds();
+        // Warm up backspace sound silently to avoid first-press delay
+        try {
+          await playSound('backspace', { volume: 0 });
+        } catch (_) {}
+      } catch (error) {
+        // Keep UI responsive even if audio init fails
+        console.error('PvPGameScreen: Failed to initialize audio or load sounds', error);
+      }
+    };
+    initializeAudio();
+  }, []);
+
   // Auto-scroll to bottom when guesses are updated
   useEffect(() => {
     if (guesses.length > 0 && scrollViewRef.current) {
@@ -255,9 +355,11 @@ const PvPGameScreen = () => {
 
     // Listen to game updates
     const gameRef = doc(db, 'games', gameId);
-    const unsubscribe = onSnapshot(gameRef, (doc) => {
-      if (doc.exists()) {
-        const gameData = { id: doc.id, ...doc.data() };
+    const unsubscribe = onSnapshot(gameRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const gameData = { id: docSnap.id, ...docSnap.data() };
+        // Ensure UI leaves loading state immediately regardless of status
+        setGame(prev => prev && prev.id === gameData.id && prev.status === gameData.status ? prev : gameData);
         
         // Game update received - keeping minimal logging for debugging
         
@@ -266,35 +368,49 @@ const PvPGameScreen = () => {
           // Only navigate away if we're not in the process of showing the game over popup
           if (gameData.status === 'completed') {
             // Game was completed by the other player, show game over popup
-            const currentPlayerData = getMyPlayerData();
+            const currentPlayerData = getMyPlayerData(gameData);
             const opponentPlayerData = getOpponentPlayerData(gameData);
             
             if (currentPlayerData && opponentPlayerData && gameData.winnerId !== undefined) {
               // Determine result for this player
               const isWinner = gameData.winnerId === currentUser.uid;
               const isTie = gameData.tie;
-              
-              setGameOverData({ 
-                winnerId: gameData.winnerId, 
-                tie: isTie, 
-                currentUserId: currentUser.uid 
-              });
-              setShowGameOverPopup(true);
-              
-              // Auto-scroll to show the latest guess when game is over
-              if (scrollViewRef.current && guesses.length > 0) {
-                setTimeout(() => {
-                  scrollViewRef.current?.scrollToEnd({ animated: true });
-                }, 100);
-              }
-              
-              // Play appropriate sound
-              if (isTie) {
-                playSound('tie').catch(() => {});
-              } else if (isWinner) {
-                playSound('victory').catch(() => {});
+
+              const resultPayload = {
+                winnerId: gameData.winnerId,
+                tie: isTie,
+                currentUserId: currentUser.uid
+              };
+
+              // If the congratulations popup is up (use ref to avoid race with setState), delay showing results until it's dismissed
+              if (showCongratulationsPopupRef.current) {
+                setPendingResultData(resultPayload);
               } else {
-                playSound('lose').catch(() => {});
+                // Guard against duplicate handling
+                if (!showGameOverPopupRef.current) {
+                  setGameOverData(resultPayload);
+                  setShowGameOverPopup(true);
+                }
+
+                // Auto-scroll to show the latest guess when game is over
+                if (scrollViewRef.current && guesses.length > 0) {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 100);
+                }
+
+                // Play appropriate sound once when results are visible
+                if (!resultSoundPlayedRef.current) {
+                  if (isTie) {
+                    playSound('tie').catch(() => {});
+                  } else if (isWinner) {
+                    playSound('victory').catch(() => {});
+                  } else {
+                    playSound('lose').catch(() => {});
+                  }
+                  setResultSoundPlayed(true);
+                  resultSoundPlayedRef.current = true;
+                }
               }
             }
           } else {
@@ -329,7 +445,7 @@ const PvPGameScreen = () => {
           
           // Check if game should be automatically completed (both players finished but status still 'active')
           if (gameData.status === 'active') {
-            const currentPlayerData = getMyPlayerData();
+            const currentPlayerData = getMyPlayerData(gameData);
             const opponentPlayerData = getOpponentPlayerData(gameData);
             
             if (currentPlayerData && opponentPlayerData) {
@@ -881,31 +997,8 @@ const PvPGameScreen = () => {
     // Check if game is over
     const isGameOver = game.status === 'completed';
 
-    if (isGameOver) {
-      let message = '';
-      let isWinner = false;
-      
-      if (game.tie) {
-        message = "It's a tie! Both players reached the same number of attempts.";
-      } else if (game.winnerId === currentUser.uid) {
-        message = `Congratulations! You won the game!`;
-        isWinner = true;
-      } else {
-        message = `Game over! Your opponent won.`;
-      }
-
-      return (
-        <View style={styles.gameOverContainer}>
-          <Text style={styles.gameOverText}>{message}</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => navigation.navigate('Home')}
-          >
-            <Text style={styles.buttonText}>Return to Home</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
+    // Do not render inline game-over UI; final results are shown via modal with sound
+    if (isGameOver) return null;
 
     // Check if current player has already solved their opponent's word
     if (myPlayerData?.solved) {
@@ -919,20 +1012,8 @@ const PvPGameScreen = () => {
       // Check if opponent has also solved (game is complete)
       const opponentData = getOpponentPlayerData(game);
       if (opponentData?.solved) {
-        // Both players solved - show game completion message
-        return (
-          <View style={styles.gameStatusContainer}>
-            <Text style={[styles.attemptsText, { color: '#10B981', fontWeight: 'bold' }]}>
-              🎉 Both players solved! Game complete!
-            </Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => navigation.navigate('Home')}
-            >
-              <Text style={styles.buttonText}>Return to Home</Text>
-            </TouchableOpacity>
-          </View>
-        );
+        // Both solved; results modal will handle messaging
+        return null;
       } else {
         // Only current player solved - show waiting message
         return (
@@ -1033,11 +1114,11 @@ const PvPGameScreen = () => {
       
       <View style={styles.feedbackGuide}>
         <View style={styles.feedbackItem}>
-          <View style={styles.feedbackCircle} />
+          <ThreeDPurpleRing size={15} ringWidth={2} style={{ marginRight: 6 }} />
           <Text style={styles.feedbackText}>Correct Letter</Text>
         </View>
         <View style={styles.feedbackItem}>
-          <View style={styles.feedbackDot} />
+          <ThreeDGreenDot size={15} style={{ marginRight: 6 }} />
           <Text style={styles.feedbackText}>Correct Spot</Text>
         </View>
       </View>
@@ -1061,17 +1142,11 @@ const PvPGameScreen = () => {
               ))}
             </View>
                          <View style={styles.feedbackContainer}>
-               {[...Array(isNaN(g.circles) ? 0 : g.circles || 0)].map((_, i) => (
-                <View
-                  key={`circle-${idx}-${i}`}
-                  style={styles.feedbackCircle}
-                />
+              {[...Array(isNaN(g.circles) ? 0 : g.circles || 0)].map((_, i) => (
+               <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={15} ringWidth={2} style={{ marginRight: 6 }} />
               ))}
               {[...Array(isNaN(g.dots) ? 0 : g.dots || 0)].map((_, i) => (
-                <View
-                  key={`dot-${idx}-${i}`}
-                  style={styles.feedbackDot}
-                />
+                <ThreeDGreenDot key={`dot-${idx}-${i}`} size={15} style={{ marginRight: 6 }} />
               ))}
             </View>
           </View>
@@ -1155,11 +1230,34 @@ const PvPGameScreen = () => {
               style={styles.winButtonContainer}
               onPress={() => {
                 setShowCongratulationsPopup(false);
-                navigation.navigate('Home');
-                playSound('chime').catch(() => {});
+                const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
+                  ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
+                  : null);
+                if (resolvedResult) {
+                  if (!showGameOverPopupRef.current) {
+                    setGameOverData(resolvedResult);
+                    setShowGameOverPopup(true);
+                  }
+                  if (!resultSoundPlayedRef.current) {
+                    if (resolvedResult.tie) {
+                      playSound('tie').catch(() => {});
+                    } else if (resolvedResult.winnerId === currentUser?.uid) {
+                      playSound('victory').catch(() => {});
+                    } else {
+                      playSound('lose').catch(() => {});
+                    }
+                    setResultSoundPlayed(true);
+                    resultSoundPlayedRef.current = true;
+                  }
+                  setPendingResultData(null);
+                } else {
+                  playSound('chime').catch(() => {});
+                  // First solver: return to main menu while waiting for opponent
+                  navigation.navigate('Home');
+                }
               }}
             >
-              <Text style={styles.buttonText}>Return to Home</Text>
+              <Text style={styles.buttonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1182,10 +1280,26 @@ const PvPGameScreen = () => {
             </Text>
             <TouchableOpacity
               style={styles.winButtonContainer}
-              onPress={() => {
-                setShowGameOverPopup(false);
-                navigation.navigate('Home');
-                playSound('chime').catch(() => {});
+              onPress={async () => {
+                try {
+                  setShowGameOverPopup(false);
+                  if (game?.id && currentUser?.uid) {
+                    await updateDoc(doc(db, 'games', game.id), {
+                      resultsSeenBy: arrayUnion(currentUser.uid)
+                    });
+                  }
+                  // Show interstitial ad after acknowledging results
+                  try {
+                    await adService.showInterstitialAd();
+                  } catch (adErr) {
+                    console.error('PvPGameScreen: Failed to show interstitial ad:', adErr);
+                  }
+                } catch (markErr) {
+                  console.error('PvPGameScreen: Failed to mark results seen on acknowledge:', markErr);
+                } finally {
+                  navigation.navigate('Home');
+                  playSound('chime').catch(() => {});
+                }
               }}
             >
               <Text style={styles.buttonText}>Main Menu</Text>

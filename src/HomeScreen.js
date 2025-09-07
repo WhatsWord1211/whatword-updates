@@ -10,6 +10,7 @@ import styles from './styles';
 import { loadSounds, playSound } from './soundsUtil';
 import authService from './authService';
 import { useTheme } from './ThemeContext';
+import { getNotificationService } from './notificationService';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
@@ -27,13 +28,18 @@ const HomeScreen = () => {
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [pendingChallenges, setPendingChallenges] = useState([]);
   const [badgeCleared, setBadgeCleared] = useState(false);
+  const [unseenResultsCount, setUnseenResultsCount] = useState(0);
+  const [isSoundReady, setIsSoundReady] = useState(false);
 
   const [userProfile, setUserProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [showRankModal, setShowRankModal] = useState(false);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
 
   const notificationsUnsubscribeRef = useRef(null);
+  const completedResultsUnsubscribeRef = useRef(null);
+  const prevUnseenCountRef = useRef(0);
 
   // Load user profile and set up listeners
   const markNotificationAsRead = async (notificationId) => {
@@ -135,30 +141,51 @@ const HomeScreen = () => {
             // Set empty game invites for now
             setGameInvites([]);
             
-            // Set up pending challenges listener (challenges received)
-            // Query for challenges where current user is the recipient
-            const challengesQuery = query(
+            // Set up pending challenges listeners
+            // Incoming (to current user)
+            const incomingChallengesQuery = query(
               collection(db, 'challenges'),
               where('toUid', '==', currentUser.uid),
               where('status', '==', 'pending')
             );
-            const unsubscribeChallenges = onSnapshot(challengesQuery, (snapshot) => {
-              const userChallenges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              
-              // Debug logging
-              console.log('HomeScreen: Challenge snapshot update', {
-                userChallenges: userChallenges.length,
-                challengeStatuses: userChallenges.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
+
+            // Outgoing (from current user) awaiting acceptance
+            const outgoingChallengesQuery = query(
+              collection(db, 'challenges'),
+              where('fromUid', '==', currentUser.uid),
+              where('status', '==', 'pending')
+            );
+
+            const unsubscribeIncoming = onSnapshot(incomingChallengesQuery, (snapshot) => {
+              const incoming = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), _source: 'incoming' }));
+              setPendingChallenges(prev => {
+                const outgoing = prev.filter(c => c._source === 'outgoing');
+                const merged = [...incoming, ...outgoing];
+                console.log('HomeScreen: Challenge snapshot update (incoming)', {
+                  userChallenges: merged.length,
+                  challengeStatuses: merged.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
+                });
+                if (merged.length > 0) setBadgeCleared(false);
+                return merged;
               });
-              
-              setPendingChallenges(userChallenges);
-              
-              // Reset badge cleared state if new challenges come in
-              if (userChallenges.length > 0) {
-                setBadgeCleared(false);
-              }
             }, (error) => {
-              console.error('HomeScreen: Challenges query error:', error);
+              console.error('HomeScreen: Incoming challenges query error:', error);
+            });
+
+            const unsubscribeOutgoing = onSnapshot(outgoingChallengesQuery, (snapshot) => {
+              const outgoing = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), _source: 'outgoing' }));
+              setPendingChallenges(prev => {
+                const incoming = prev.filter(c => c._source === 'incoming');
+                const merged = [...incoming, ...outgoing];
+                console.log('HomeScreen: Challenge snapshot update (outgoing)', {
+                  userChallenges: merged.length,
+                  challengeStatuses: merged.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
+                });
+                if (merged.length > 0) setBadgeCleared(false);
+                return merged;
+              });
+            }, (error) => {
+              console.error('HomeScreen: Outgoing challenges query error:', error);
             });
             
 
@@ -167,9 +194,10 @@ const HomeScreen = () => {
             // invitesUnsubscribeRef.current = unsubscribeInvites; // Disabled since gameInvites query is disabled
             
             if (challengesUnsubscribeRef.current) {
-              challengesUnsubscribeRef.current();
+              const prev = challengesUnsubscribeRef.current;
+              if (Array.isArray(prev)) prev.forEach(fn => fn && fn()); else if (typeof prev === 'function') prev();
             }
-            challengesUnsubscribeRef.current = unsubscribeChallenges;
+            challengesUnsubscribeRef.current = [unsubscribeIncoming, unsubscribeOutgoing];
             
 
             
@@ -196,7 +224,78 @@ const HomeScreen = () => {
               notificationsUnsubscribeRef.current();
             }
             notificationsUnsubscribeRef.current = unsubscribeNotifications;
-            challengesUnsubscribeRef.current = unsubscribeChallenges;
+
+            // Listen for completed games with unseen results for badge on Resume
+            // Support both schemas: games with `playerIds` or legacy `players`
+            const completedQuery1 = query(
+              collection(db, 'games'),
+              where('type', '==', 'pvp'),
+              where('playerIds', 'array-contains', currentUser.uid),
+              where('status', '==', 'completed')
+            );
+            const completedQuery2 = query(
+              collection(db, 'games'),
+              where('type', '==', 'pvp'),
+              where('players', 'array-contains', currentUser.uid),
+              where('status', '==', 'completed')
+            );
+
+            const handleCompletedSnapshot = (docs1, docs2) => {
+              let unseen = 0;
+              const allDocs = new Map();
+              docs1.forEach(d => allDocs.set(d.id, d));
+              docs2.forEach(d => allDocs.set(d.id, d));
+              Array.from(allDocs.values()).forEach((docSnap) => {
+                const data = docSnap.data();
+                if (data?.status !== 'completed') return;
+                const playersArray = data.playerIds || data.players || [];
+                const seen = Array.isArray(data.resultsSeenBy) ? data.resultsSeenBy : [];
+                // Only first finisher should get badge: if both solved, mark who finished first
+                const firstFinisherId = data.firstFinisherId || null;
+                // If explicit firstFinisherId is stored, only count for that user
+                if (firstFinisherId) {
+                  if (firstFinisherId === currentUser.uid && !seen.includes(currentUser.uid)) unseen += 1;
+                } else {
+                  // Fallback: Only count if current user had solved and opponent hadn’t at some point (waiting_for_opponent)
+                  const isPlayer1 = playersArray[0] === currentUser.uid;
+                  const meSolved = isPlayer1 ? data.player1?.solved : data.player2?.solved;
+                  const oppSolved = isPlayer1 ? data.player2?.solved : data.player1?.solved;
+                  if (meSolved && !seen.includes(currentUser.uid)) {
+                    unseen += 1;
+                  }
+                }
+              });
+              setUnseenResultsCount(unseen);
+              if (unseen > 0) setBadgeCleared(false);
+              // Play a chime only when the unseen count increases to avoid repeated sounds
+              if (unseen > prevUnseenCountRef.current && isSoundReady) {
+                playSound('chime').catch(() => {});
+              }
+              prevUnseenCountRef.current = unseen;
+            };
+
+            let completedSnap1 = null;
+            let completedSnap2 = null;
+
+            const unsubscribeCompleted1 = onSnapshot(completedQuery1, (snapshot) => {
+              completedSnap1 = snapshot.docs;
+              handleCompletedSnapshot(completedSnap1 || [], completedSnap2 || []);
+            }, (error) => {
+              console.error('HomeScreen: Completed games query error:', error);
+            });
+
+            const unsubscribeCompleted2 = onSnapshot(completedQuery2, (snapshot) => {
+              completedSnap2 = snapshot.docs;
+              handleCompletedSnapshot(completedSnap1 || [], completedSnap2 || []);
+            }, (error) => {
+              console.error('HomeScreen: Completed games (players) query error:', error);
+            });
+
+            if (completedResultsUnsubscribeRef.current) {
+              const prev = completedResultsUnsubscribeRef.current;
+              if (Array.isArray(prev)) prev.forEach(fn => fn && fn()); else if (typeof prev === 'function') prev();
+            }
+            completedResultsUnsubscribeRef.current = [unsubscribeCompleted1, unsubscribeCompleted2];
           } catch (error) {
             console.error('HomeScreen: Failed to set up listeners:', error);
           }
@@ -262,7 +361,7 @@ const HomeScreen = () => {
             // Load profile and other data in background
             Promise.all([
               loadUserProfile(currentUser),
-              loadSounds(),
+              loadSounds().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
               
               clearStuckGameState() // Clear any stuck game state
@@ -311,7 +410,12 @@ const HomeScreen = () => {
         //   invitesUnsubscribeRef.current();
         // }
         if (challengesUnsubscribeRef.current) {
-          challengesUnsubscribeRef.current();
+          const prev = challengesUnsubscribeRef.current;
+          if (Array.isArray(prev)) {
+            prev.forEach(fn => fn && fn());
+          } else if (typeof prev === 'function') {
+            prev();
+          }
         }
 
         if (notificationsUnsubscribeRef.current) {
@@ -485,11 +589,15 @@ const HomeScreen = () => {
       >
         <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
         
-        {/* Player Rank Display */}
-        <View style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+        {/* Player Rank Display - Clickable to show rank ladder */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowRankModal(true)}
+          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}
+        >
           <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Rank:</Text>
           <Text style={[styles.rankValue, { color: colors.primary }]}>{getPlayerRank()}</Text>
-        </View>
+        </TouchableOpacity>
         
 
         
@@ -543,11 +651,11 @@ const HomeScreen = () => {
           >
             <Text style={styles.buttonText}>Resume</Text>
           </TouchableOpacity>
-          {/* Notification Badge */}
-          {!badgeCleared && (pendingChallenges.length > 0 || notifications.length > 0) && (
+          {/* Notification Badge (also show when there are completed results unseen) */}
+          {!badgeCleared && (pendingChallenges.length > 0 || notifications.length > 0 || unseenResultsCount > 0) && (
             <View style={[styles.notificationBadge, { backgroundColor: '#FF4444' }]}>
               <Text style={styles.notificationBadgeText}>
-                {pendingChallenges.length + notifications.length}
+                {pendingChallenges.length + notifications.length + unseenResultsCount}
               </Text>
             </View>
           )}
@@ -616,6 +724,44 @@ const HomeScreen = () => {
         </View>
       </Modal>
       
+      {/* Rank Ladder Modal */}
+      <Modal visible={showRankModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.header, { color: colors.textPrimary }]}>Rank Ladder</Text>
+            {(() => {
+              const ranks = [
+                'Unranked',
+                'Rookie',
+                'Word Learner',
+                'Word Enthusiast',
+                'Word Pro',
+                'Word Expert',
+                'Word Master',
+              ];
+              const current = getPlayerRank();
+              return (
+                <View style={{ width: '100%', marginTop: 10, marginBottom: 10 }}>
+                  {ranks.map((rank, index) => (
+                    <View key={`${rank}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6 }}>
+                      <Text style={{ color: rank === current ? colors.primary : colors.textPrimary, fontWeight: rank === current ? '700' : '500' }}>
+                        {`${index + 1}. ${rank}`}{rank === current ? '  (You)' : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })()}
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => setShowRankModal(false)}
+            >
+              <Text style={styles.buttonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showInvalidPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.invalidGuessPopup, styles.modalShadow]}>

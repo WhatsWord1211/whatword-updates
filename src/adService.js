@@ -1,19 +1,11 @@
-// AdMob imports - will work in development builds, fallback for Expo Go
+// AdMob imports - avoid loading in Expo Go (no native module)
+import Constants from 'expo-constants';
+
 let mobileAds, BannerAd, BannerAdSize, TestIds, InterstitialAd, RewardedAd, RewardedAdEventType;
 
-try {
-  const adModule = require('react-native-google-mobile-ads');
-  mobileAds = adModule.default;
-  BannerAd = adModule.BannerAd;
-  BannerAdSize = adModule.BannerAdSize;
-  TestIds = adModule.TestIds;
-  InterstitialAd = adModule.InterstitialAd;
-  RewardedAd = adModule.RewardedAd;
-  RewardedAdEventType = adModule.RewardedAdEventType;
-  console.log('AdMob module loaded successfully');
-} catch (error) {
-  console.log('AdMob not available in Expo Go - using fallback mode');
-  // Fallback for Expo Go development
+if (Constants?.appOwnership === 'expo') {
+  // Running in Expo Go - native module unavailable
+  console.log('Running in Expo Go - Ads disabled (fallback mode)');
   mobileAds = null;
   BannerAd = null;
   BannerAdSize = null;
@@ -21,6 +13,27 @@ try {
   InterstitialAd = null;
   RewardedAd = null;
   RewardedAdEventType = null;
+} else {
+  try {
+    const adModule = require('react-native-google-mobile-ads');
+    mobileAds = adModule.default;
+    BannerAd = adModule.BannerAd;
+    BannerAdSize = adModule.BannerAdSize;
+    TestIds = adModule.TestIds;
+    InterstitialAd = adModule.InterstitialAd;
+    RewardedAd = adModule.RewardedAd;
+    RewardedAdEventType = adModule.RewardedAdEventType;
+    console.log('AdMob module loaded successfully');
+  } catch (error) {
+    console.log('AdMob not available - using fallback mode');
+    mobileAds = null;
+    BannerAd = null;
+    BannerAdSize = null;
+    TestIds = null;
+    InterstitialAd = null;
+    RewardedAd = null;
+    RewardedAdEventType = null;
+  }
 }
 
 // Test Ad Unit IDs (replace with real ones for production)
@@ -84,6 +97,7 @@ class AdService {
       }
 
       this.interstitialAd = InterstitialAd.createForAdRequest(AD_UNIT_IDS.INTERSTITIAL, {
+        // Default to non-personalized; consent flow can later adjust if needed
         requestNonPersonalizedAdsOnly: true,
         keywords: ['word game', 'puzzle', 'brain game'],
       });
@@ -126,6 +140,7 @@ class AdService {
       }
 
       this.rewardedAd = RewardedAd.createForAdRequest(AD_UNIT_IDS.REWARDED, {
+        // Default to non-personalized; consent flow can later adjust if needed
         requestNonPersonalizedAdsOnly: true,
         keywords: ['word game', 'puzzle', 'brain game'],
       });

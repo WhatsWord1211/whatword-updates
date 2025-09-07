@@ -1,14 +1,14 @@
 {
-      "expo": {
-      "name": "WhatWord",
-      "slug": "whatword",
-      "scheme": "whatword",
-      "owner": "wilderbssmstr",
-      "version": "1.0.0",
-      "orientation": "portrait",
-      "icon": "./assets/icon.png",
-      "userInterfaceStyle": "light",
-      "android": {
+  "expo": {
+    "name": "WhatWord",
+    "slug": "whatword",
+    "scheme": "whatword",
+    "owner": "wilderbssmstr",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
       "versionCode": 1,
@@ -41,13 +41,24 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.whatword.app",
-      "googleServicesFile": "./firebase/GoogleService-Info.plist"
+      "googleServicesFile": "./firebase/GoogleService-Info.plist",
+      "infoPlist": {
+        "NSUserTrackingUsageDescription": "Your data will be used to deliver personalized ads and to measure ad performance.",
+        "NSUserNotificationsUsageDescription": "Allow notifications to alert you about new challenges, friend requests, and game updates."
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "plugins": [
+      [
+        "react-native-google-mobile-ads",
+        {
+          "android_app_id": "ca-app-pub-3940256099942544~3347511713",
+          "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
       [
         "expo-build-properties",
         {
@@ -57,7 +68,8 @@
             "buildToolsVersion": "35.0.0"
           }
         }
-      ]
+      ],
+      "expo-tracking-transparency"
     ]
   }
 }

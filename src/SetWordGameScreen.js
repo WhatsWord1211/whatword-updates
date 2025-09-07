@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-na
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
-import { addDoc, updateDoc, doc, collection, arrayUnion } from 'firebase/firestore';
+import { addDoc, updateDoc, doc, collection, arrayUnion, getDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import { isValidWord } from './gameLogic';
 import styles from './styles';
@@ -174,6 +174,7 @@ const SetWordGameScreen = () => {
             difficulty: difficulty,
             wordLength: difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6,
             players: [challenge.from, challenge.to],
+            playerIds: [challenge.from, challenge.to],
             status: 'active',
             createdAt: new Date(),
             lastActivity: new Date(), // Add this field for ResumeGamesScreen
@@ -263,7 +264,9 @@ const SetWordGameScreen = () => {
           type: 'pvp',
           difficulty: difficulty,
           from: challenge.from,
+          fromUid: challenge.from, // add canonical uid field for listeners
           to: challenge.to,
+          toUid: challenge.to, // add canonical uid field for listeners
           fromUsername: challenge.fromUsername,
           toUsername: challenge.toUsername,
           status: 'pending',
@@ -347,6 +350,7 @@ const SetWordGameScreen = () => {
 
     setDifficulty(selectedDifficulty);
     setShowDifficultySelection(false);
+    playSound('chime').catch(() => {});
   };
 
   const addLetter = (letter) => {

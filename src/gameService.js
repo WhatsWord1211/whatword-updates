@@ -9,10 +9,11 @@ import {
   query,
   where,
   orderBy,
-  deleteDoc
+  deleteDoc,
+  arrayRemove
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import notificationService from './notificationService';
+import { getNotificationService } from './notificationService';
 
 class GameService {
   constructor() {
@@ -141,7 +142,7 @@ class GameService {
           const currentUserDoc = await getDoc(doc(db, 'users', this.getCurrentUser().uid));
           const currentUserData = currentUserDoc.data();
           
-          await notificationService.sendPushNotification(
+          await getNotificationService().sendPushNotification(
             opponentId,
             'Game Ready!',
             `${currentUserData.username || 'Your opponent'} has set their word. The game is ready to begin!`,
@@ -265,19 +266,19 @@ class GameService {
             
             // Send notification to current player
             if (updates.winnerId === currentUserId) {
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 currentUserId, 
                 gameId, 
                 `Congratulations! You won against ${opponentUsername}!`
               );
             } else if (updates.tie) {
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 currentUserId, 
                 gameId, 
                 `It's a tie! Both players reached the same number of attempts.`
               );
             } else {
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 currentUserId, 
                 gameId, 
                 `Game over! ${opponentUsername} won the game.`
@@ -286,19 +287,19 @@ class GameService {
             
             // Send notification to opponent
             if (updates.winnerId === opponentId) {
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 opponentId, 
                 gameId, 
                 `Congratulations! You won against ${this.getCurrentUser().displayName || 'Opponent'}!`
               );
             } else if (updates.tie) {
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 opponentId, 
                 gameId, 
                 `It's a tie! Both players reached the same number of attempts.`
               );
             } else {
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 opponentId, 
                 gameId, 
                 `Game over! ${this.getCurrentUser().displayName || 'Opponent'} won the game.`
@@ -337,13 +338,13 @@ class GameService {
               const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
               
               // Send notification to both players about the tie
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 currentUserId, 
                 gameId, 
                 `It's a tie! Both players reached the maximum attempts without solving.`
               );
               
-              await notificationService.sendGameCompletionNotification(
+              await getNotificationService().sendGameCompletionNotification(
                 opponentId, 
                 gameId, 
                 `It's a tie! Both players reached the maximum attempts without solving.`
@@ -651,14 +652,14 @@ class GameService {
         const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
         
         // Send notification to current player (forfeiter)
-        await notificationService.sendGameCompletionNotification(
+        await getNotificationService().sendGameCompletionNotification(
           currentUserId, 
           gameId, 
           `You forfeited the game. ${opponentUsername} wins by default.`
         );
         
         // Send notification to opponent (winner)
-        await notificationService.sendGameCompletionNotification(
+        await getNotificationService().sendGameCompletionNotification(
           opponentId, 
           gameId, 
           `Your opponent forfeited the game. You win by default!`
@@ -736,12 +737,12 @@ class GameService {
         switch (timeoutType) {
           case 'player1_forfeited':
             // Player 1 inactive - Player 2 wins
-            await notificationService.sendGameCompletionNotification(
+            await getNotificationService().sendGameCompletionNotification(
               player1Id, 
               gameId, 
               `Game timed out due to inactivity. ${player2Username} wins by default.`
             );
-            await notificationService.sendGameCompletionNotification(
+            await getNotificationService().sendGameCompletionNotification(
               player2Id, 
               gameId, 
               `Your opponent timed out due to inactivity. You win by default!`
@@ -750,12 +751,12 @@ class GameService {
             
           case 'player2_forfeited':
             // Player 2 inactive - Player 1 wins
-            await notificationService.sendGameCompletionNotification(
+            await getNotificationService().sendGameCompletionNotification(
               player2Id, 
               gameId, 
               `Game timed out due to inactivity. ${player1Username} wins by default.`
             );
-            await notificationService.sendGameCompletionNotification(
+            await getNotificationService().sendGameCompletionNotification(
               player1Id, 
               gameId, 
               `Your opponent timed out due to inactivity. You win by default!`
@@ -764,12 +765,12 @@ class GameService {
             
           case 'both_forfeited':
             // Both inactive - tie
-            await notificationService.sendGameCompletionNotification(
+            await getNotificationService().sendGameCompletionNotification(
               player1Id, 
               gameId, 
               `Game timed out due to inactivity from both players. It's a tie.`
             );
-            await notificationService.sendGameCompletionNotification(
+            await getNotificationService().sendGameCompletionNotification(
               player2Id, 
               gameId, 
               `Game timed out due to inactivity from both players. It's a tie.`
@@ -796,6 +797,19 @@ class GameService {
     try {
       console.log('🗑️ GameService: Deleting completed game:', gameId);
       
+      // Attempt to remove this game from both players' activeGames arrays (best-effort)
+      try {
+        const playerIds = gameData.playerIds || gameData.players || [];
+        if (Array.isArray(playerIds) && playerIds.length >= 2) {
+          await Promise.all([
+            updateDoc(doc(db, 'users', playerIds[0]), { activeGames: arrayRemove(gameId) }).catch(() => {}),
+            updateDoc(doc(db, 'users', playerIds[1]), { activeGames: arrayRemove(gameId) }).catch(() => {})
+          ]);
+        }
+      } catch (cleanupError) {
+        console.error('GameService: Failed to clean up activeGames arrays during deletion:', cleanupError);
+      }
+
       // Extract only the statistics needed for leaderboard
       const gameStats = {
         gameId: gameId,
@@ -805,7 +819,7 @@ class GameService {
         tie: gameData.tie,
         type: 'pvp',
         wordLength: gameData.wordLength, // Add wordLength for difficulty filtering
-        forfeitedBy: gameData.forfeitedBy,
+        forfeitedBy: gameData.forfeitedBy ?? null,
         // Preserve player performance data for leaderboard calculations
         playerStats: {
           [gameData.playerIds[0]]: {

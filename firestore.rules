@@ -1,23 +1,46 @@
 rules_version = '2';
 service cloud.firestore {
+  // Helper functions
+  function isPvpParticipant(game, uid) {
+    return (
+      (game.data.players != null && uid in game.data.players) ||
+      (game.data.playerIds != null && uid in game.data.playerIds) ||
+      (game.data.player1 != null && game.data.player1.uid == uid) ||
+      (game.data.player2 != null && game.data.player2.uid == uid)
+    );
+  }
+
+  function isGameBetween(gameId, uidA, uidB) {
+    let game = get(/databases/$(database)/documents/games/$(gameId));
+    return (
+      // PvP games: both users must be participants
+      (game.data.type == 'pvp' && isPvpParticipant(game, uidA) && isPvpParticipant(game, uidB)) ||
+      // Solo games: owner is uidA or uidB
+      (game.data.type == 'solo' && (game.data.userId == uidA || game.data.userId == uidB))
+    );
+  }
+
   match /databases/{database}/documents {
     // User profiles - owner has full access, others can read for friend system
     match /users/{userId} {
       // Owner has full access to their profile
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      // Other users can read user data for friend system and leaderboards
-      // This is necessary for the app to function properly
+
+      // Other authenticated users can read user data for friend system and leaderboards
       allow read: if request.auth != null;
-      
-      // Allow users to update other users' activeGames arrays when they're involved in a game
-      allow update: if request.auth != null && 
+
+      // Allow participants to add/remove game IDs in another user's activeGames list
+      // Only activeGames can be changed; and any added/removed game must involve both users
+      allow update: if request.auth != null &&
         request.auth.uid != userId &&
-        request.resource.data.keys().hasAll(['activeGames']) &&
-        request.resource.data.activeGames is list;
-      
-      // Allow users to update their own profile data
-      allow update: if request.auth != null && request.auth.uid == userId;
+        // Only the activeGames field may change
+        request.resource.data.keys().hasOnly(['activeGames']) &&
+        request.resource.data.activeGames is list && resource.data.activeGames is list &&
+        // For all gameIds present after update: either existed before, or is a game between both users
+        request.resource.data.activeGames.size() > 0 &&
+        request.resource.data.activeGames.every(gid => (gid in resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId)) &&
+        // For all gameIds present before update: either remain, or (if removed) must also be a game between both users
+        resource.data.activeGames.every(gid => (gid in request.resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId));
     }
     
     // Games - only participants can access
@@ -91,16 +114,20 @@ service cloud.firestore {
     
     // Game statistics - users can read for leaderboards, but only modify their own
     match /gameStats/{gameStatId} {
-      // Anyone can read game stats for leaderboard functionality
+      // Anyone authenticated can read game stats for leaderboard functionality
       allow read: if request.auth != null;
-      
-      // Users can only create their own stats
-      allow create: if request.auth != null && 
-        request.resource.data.userId == request.auth.uid;
-      
-      // Users can only update/delete their own stats
-      allow update, delete: if request.auth != null && 
-        resource.data.userId == request.auth.uid;
+
+      // Participants of the game can create or update the stats document
+      allow create, update: if request.auth != null &&
+        request.resource.data.type == 'pvp' &&
+        request.resource.data.players is list &&
+        request.auth.uid in request.resource.data.players;
+
+      // Participants can delete stats (rarely used; retain symmetry)
+      allow delete: if request.auth != null &&
+        resource.data.type == 'pvp' &&
+        resource.data.players is list &&
+        request.auth.uid in resource.data.players;
     }
     
     // Friend requests - only the sender and recipient can access
@@ -213,8 +240,38 @@ service cloud.firestore {
     
     // User subcollections - friends
     match /users/{userId}/friends/{friendId} {
-      allow read, write: if request.auth != null && 
-        request.auth.uid == userId;
+      // Either party in the friendship can read the record
+      allow read: if request.auth != null && (request.auth.uid == userId || request.auth.uid == friendId);
+
+      // Sender (friendId) can create a pending request in recipient's subcollection
+      allow create: if request.auth != null &&
+        request.auth.uid == friendId &&
+        request.resource.data.status in ['pending', 'accepted', 'declined'] &&
+        // For initial request from sender, ensure senderId matches caller when present
+        (!('senderId' in request.resource.data) || request.resource.data.senderId == request.auth.uid);
+
+      // Updates:
+      // - Recipient (owner userId) can accept/decline a pending request on their doc
+      // - Owner can also mark a friend as blocked on their own doc
+      allow update: if request.auth != null && (
+        (
+          request.auth.uid == userId &&
+          (
+            (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'declined']) ||
+            (request.resource.data.status == 'blocked')
+          )
+        ) ||
+        // On accept, the recipient may mirror a doc into sender's subcollection
+        (
+          request.auth.uid == friendId &&
+          request.resource.data.status in ['accepted'] &&
+          // When mirroring, ensure the friendId field (if present) matches caller
+          (!('friendId' in request.resource.data) || request.resource.data.friendId == request.auth.uid)
+        )
+      );
+
+      // Either party can delete their copy of the relationship document
+      allow delete: if request.auth != null && (request.auth.uid == userId || request.auth.uid == friendId);
     }
     
     // User subcollections - challenges

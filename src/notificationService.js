@@ -1275,27 +1275,26 @@ class NotificationService {
       // Get the recipient's push token
       const pushToken = await this.getUserPushToken(toUserId);
       
+      // Always create a Firestore notification so the app can badge even without push
+      const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      await setDoc(doc(db, 'notifications', notificationId), {
+        toUserId,
+        toUid: toUserId, // compatibility with queries expecting toUid
+        title,
+        body,
+        data,
+        pushToken: pushToken || null,
+        timestamp: new Date().toISOString(),
+        read: false,
+        status: pushToken ? 'pending' : 'in_app'
+      });
+      
       if (pushToken) {
-        // Store notification in Firestore for Cloud Function to process
-        const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        await setDoc(doc(db, 'notifications', notificationId), {
-          toUserId,
-          title,
-          body,
-          data,
-          pushToken,
-          timestamp: new Date().toISOString(),
-          read: false,
-          status: 'pending'
-        });
-        
         console.log('NotificationService: Push notification queued for Cloud Function');
-        return notificationId;
       } else {
-        console.log('NotificationService: No push token found for user:', toUserId);
-        return null;
+        console.log('NotificationService: Created in-app notification (no push token) for user:', toUserId);
       }
+      return notificationId;
     } catch (error) {
       console.error('NotificationService: Failed to send push notification:', error);
       return null;

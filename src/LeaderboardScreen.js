@@ -268,7 +268,7 @@ const LeaderboardScreen = () => {
         try {
           console.log('LeaderboardScreen: Checking PvP leaderboard for friend:', friend.uid, friend.username, 'difficulty:', activeDifficulty);
           
-          // Get all PvP game stats where this user participated
+          // Get all PvP game stats where this user participated (all difficulties)
           const pvpStatsQuery = query(
             collection(db, 'gameStats'),
             where('players', 'array-contains', friend.uid),
@@ -283,80 +283,58 @@ const LeaderboardScreen = () => {
             console.log('LeaderboardScreen: Sample PvP stat:', pvpStats[0]);
           }
           
-          if (pvpStats.length > 0) {
-            console.log('LeaderboardScreen: Processing PvP stats for friend:', friend.uid, 'total stats:', pvpStats.length);
-            
-            // Filter by difficulty and get last 15 games
-            const difficultyStats = pvpStats.filter(stat => {
-              // Check for wordLength first (new format)
-              if (stat.wordLength !== undefined) {
-                if (activeDifficulty === 'easy') {
-                  return stat.wordLength === 4;
-                } else if (activeDifficulty === 'hard') {
-                  return stat.wordLength === 6;
-                } else {
-                  return stat.wordLength === 5; // regular
-                }
-              }
-              
-              // Fallback to difficulty field for older games
-              if (stat.difficulty !== undefined) {
-                if (activeDifficulty === 'easy') {
-                  return stat.difficulty === 'easy';
-                } else if (activeDifficulty === 'hard') {
-                  return stat.difficulty === 'hard';
-                } else {
-                  return stat.difficulty === 'regular';
-                }
-              }
-              
-              // If neither field exists, log and exclude
-              console.log('LeaderboardScreen: PvP stat missing both wordLength and difficulty:', stat);
-              return false;
-            });
-            
-            console.log('LeaderboardScreen: Filtered stats for difficulty', activeDifficulty, 'count:', difficultyStats.length);
-            
-            if (difficultyStats.length > 0) {
-              // Sort by completion time and take last 15 games
-              const sortedStats = difficultyStats
-                .sort((a, b) => new Date(b.completedAt || b.timestamp) - new Date(a.completedAt || a.timestamp))
-                .slice(0, 15);
-              
-              // Calculate win percentage from last 15 games
-              let wins = 0;
-              const totalGames = sortedStats.length;
-              
-              for (const gameStats of sortedStats) {
-                if (gameStats.winnerId === friend.uid) {
-                  wins++;
-                }
-              }
-              
-              const winPercentage = totalGames > 0 ? (wins / totalGames) * 100 : 0;
-              
-              leaderboardData.push({
-                uid: friend.uid,
-                username: friend.username || friend.displayName || 'Unknown Player',
-                displayName: friend.displayName || friend.username || 'Unknown Player',
-                winPercentage: winPercentage,
-                wins: wins,
-                totalGames: totalGames,
-                gamesCount: totalGames
-              });
-              
-              console.log('LeaderboardScreen: Added PvP friend to leaderboard:', {
-                uid: friend.uid,
-                username: friend.username,
-                winPercentage,
-                wins,
-                totalGames,
-                difficulty: activeDifficulty
-              });
-            } else {
-              console.log('LeaderboardScreen: No PvP stats found for difficulty', activeDifficulty, 'for friend:', friend.uid);
+          // Filter by selected difficulty, then sort by completion time and take last 15 games
+          const difficultyFiltered = pvpStats.filter(stat => {
+            if (!stat) return false;
+            // Prefer wordLength if available (new format)
+            if (stat.wordLength !== undefined) {
+              if (activeDifficulty === 'easy') return stat.wordLength === 4;
+              if (activeDifficulty === 'hard') return stat.wordLength === 6;
+              return stat.wordLength === 5; // regular
+            }
+            // Fallback to difficulty string (legacy)
+            if (stat.difficulty !== undefined) {
+              if (activeDifficulty === 'easy') return stat.difficulty === 'easy';
+              if (activeDifficulty === 'hard') return stat.difficulty === 'hard';
+              return stat.difficulty === 'regular';
+            }
+            return false;
+          });
+
+          const sortedStats = difficultyFiltered
+            .filter(stat => (stat.completedAt || stat.timestamp))
+            .sort((a, b) => new Date(b.completedAt || b.timestamp) - new Date(a.completedAt || a.timestamp))
+            .slice(0, 15);
+
+          let wins = 0;
+          const totalGames = sortedStats.length;
+          for (const gameStats of sortedStats) {
+            if (gameStats.winnerId === friend.uid) {
+              wins++;
             }
           }
+
+          const winPercentage = totalGames > 0 ? (wins / totalGames) * 100 : 0;
+
+          // Always include friend in leaderboard, even with 0 games
+          leaderboardData.push({
+            uid: friend.uid,
+            username: friend.username || friend.displayName || 'Unknown Player',
+            displayName: friend.displayName || friend.username || 'Unknown Player',
+            winPercentage: winPercentage,
+            wins: wins,
+            totalGames: totalGames,
+            gamesCount: totalGames
+          });
+
+          console.log('LeaderboardScreen: Added PvP friend to leaderboard:', {
+            uid: friend.uid,
+            username: friend.username,
+            winPercentage,
+            wins,
+            totalGames,
+            difficulty: activeDifficulty
+          });
         } catch (error) {
           console.error(`Failed to get PvP game stats for user ${friend.uid}:`, error);
           // Continue with other users even if one fails
@@ -365,8 +343,11 @@ const LeaderboardScreen = () => {
       
       console.log('LeaderboardScreen: Total PvP leaderboard entries:', leaderboardData.length);
       
-      // Sort by win percentage (highest is best)
-      leaderboardData.sort((a, b) => b.winPercentage - a.winPercentage);
+      // Sort by win percentage (highest is best). If tie, prefer more games.
+      leaderboardData.sort((a, b) => {
+        if (b.winPercentage !== a.winPercentage) return b.winPercentage - a.winPercentage;
+        return (b.totalGames || 0) - (a.totalGames || 0);
+      });
       
       // Add ranks
       const rankedData = leaderboardData.map((player, index) => ({
