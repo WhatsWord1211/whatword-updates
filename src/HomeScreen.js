@@ -33,6 +33,8 @@ const HomeScreen = () => {
 
   const [userProfile, setUserProfile] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [startedGameCount, setStartedGameCount] = useState(0);
+  const startedGameIdsRef = useRef(new Set());
   const [showRankModal, setShowRankModal] = useState(false);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
@@ -165,7 +167,8 @@ const HomeScreen = () => {
                   userChallenges: merged.length,
                   challengeStatuses: merged.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
                 });
-                if (merged.length > 0) setBadgeCleared(false);
+                // Only incoming pending challenges should influence the Resume badge
+                if (incoming.length > 0) setBadgeCleared(false);
                 return merged;
               });
             }, (error) => {
@@ -181,7 +184,7 @@ const HomeScreen = () => {
                   userChallenges: merged.length,
                   challengeStatuses: merged.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
                 });
-                if (merged.length > 0) setBadgeCleared(false);
+                // Outgoing pending challenges should not trigger/break the Resume badge state
                 return merged;
               });
             }, (error) => {
@@ -296,6 +299,48 @@ const HomeScreen = () => {
               if (Array.isArray(prev)) prev.forEach(fn => fn && fn()); else if (typeof prev === 'function') prev();
             }
             completedResultsUnsubscribeRef.current = [unsubscribeCompleted1, unsubscribeCompleted2];
+
+            // Listen for accepted challenges that indicate a game has started (P2 set their word)
+            const acceptedChallengesQuery = query(
+              collection(db, 'challenges'),
+              where('fromUid', '==', currentUser.uid),
+              where('status', '==', 'accepted')
+            );
+
+            const unsubscribeAccepted = onSnapshot(acceptedChallengesQuery, async (snapshot) => {
+              try {
+                let newCount = startedGameIdsRef.current.size;
+                const notificationService = getNotificationService();
+                snapshot.docs.forEach((docSnap) => {
+                  const data = docSnap.data();
+                  const challengeId = docSnap.id;
+                  if (!startedGameIdsRef.current.has(challengeId)) {
+                    startedGameIdsRef.current.add(challengeId);
+                    newCount = startedGameIdsRef.current.size;
+                    // Fire a local notification so P1 gets an immediate alert in Expo Go
+                    notificationService.showLocalNotification({
+                      title: 'Game Started',
+                      body: `${data.toUsername || 'Your opponent'} set their word. Let the game begin!`,
+                      data: { type: 'challenge_accepted', challengeId, gameId: data.gameId || null },
+                      sound: true,
+                      priority: 'high',
+                    }).catch(() => {});
+                    // Also play a chime
+                    playSound('chime').catch(() => {});
+                  }
+                });
+                // Contribute to Resume badge when a game actually starts (P2 set word)
+                setStartedGameCount(newCount);
+                if (newCount > 0) setBadgeCleared(false);
+              } catch (e) {
+                console.error('HomeScreen: Accepted challenges listener error:', e);
+              }
+            }, (error) => {
+              console.error('HomeScreen: Accepted challenges query error:', error);
+            });
+
+            // Include in cleanup
+            challengesUnsubscribeRef.current = [unsubscribeIncoming, unsubscribeOutgoing, unsubscribeAccepted];
           } catch (error) {
             console.error('HomeScreen: Failed to set up listeners:', error);
           }
@@ -651,11 +696,11 @@ const HomeScreen = () => {
           >
             <Text style={styles.buttonText}>Resume</Text>
           </TouchableOpacity>
-          {/* Notification Badge (also show when there are completed results unseen) */}
-          {!badgeCleared && (pendingChallenges.length > 0 || notifications.length > 0 || unseenResultsCount > 0) && (
+          {/* Notification Badge: only incoming pending challenges, unseen results, and unread notifications */}
+          {!badgeCleared && ((pendingChallenges.filter(c => c._source === 'incoming').length > 0) || notifications.length > 0 || unseenResultsCount > 0) && (
             <View style={[styles.notificationBadge, { backgroundColor: '#FF4444' }]}>
               <Text style={styles.notificationBadgeText}>
-                {pendingChallenges.length + notifications.length + unseenResultsCount}
+                {pendingChallenges.filter(c => c._source === 'incoming').length + notifications.length + unseenResultsCount}
               </Text>
             </View>
           )}
@@ -730,25 +775,72 @@ const HomeScreen = () => {
           <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.header, { color: colors.textPrimary }]}>Rank Ladder</Text>
             {(() => {
-              const ranks = [
-                'Unranked',
-                'Rookie',
-                'Word Learner',
-                'Word Enthusiast',
-                'Word Pro',
-                'Word Expert',
-                'Word Master',
+              const easyAvg = userProfile?.easyAverageScore ?? 0;
+              const regularAvg = userProfile?.regularAverageScore ?? 0;
+              const hardAvg = userProfile?.hardAverageScore ?? 0;
+
+              const rankDefs = [
+                { name: 'Rookie', metric: 'easy', label: 'Easy avg ≤ 20', target: 20 },
+                { name: 'Word Learner', metric: 'easy', label: 'Easy avg ≤ 15', target: 15 },
+                { name: 'Word Enthusiast', metric: 'easy', label: 'Easy avg ≤ 8', target: 8 },
+                { name: 'Word Pro', metric: 'regular', label: 'Regular avg ≤ 12', target: 12 },
+                { name: 'Word Expert', metric: 'regular', label: 'Regular avg ≤ 8', target: 8 },
+                { name: 'Word Master', metric: 'hard', label: 'Hard avg ≤ 8', target: 8 },
               ];
+
+              const metricValue = (metric) => {
+                if (metric === 'easy') return easyAvg || 0;
+                if (metric === 'regular') return regularAvg || 0;
+                if (metric === 'hard') return hardAvg || 0;
+                return 0;
+              };
+              const isMet = (metric, target) => {
+                const v = metricValue(metric);
+                return v > 0 && v <= target;
+              };
+
+              const ranks = ['Unranked', ...rankDefs.map(r => r.name)];
               const current = getPlayerRank();
+
+              // Determine next rank target relative to current progress
+              const highestMetIndex = rankDefs.reduce((acc, def, idx) => (isMet(def.metric, def.target) ? idx : acc), -1);
+              const next = rankDefs[highestMetIndex + 1] || null;
+              const youVal = next ? metricValue(next.metric) : 0;
+
               return (
                 <View style={{ width: '100%', marginTop: 10, marginBottom: 10 }}>
-                  {ranks.map((rank, index) => (
-                    <View key={`${rank}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6 }}>
-                      <Text style={{ color: rank === current ? colors.primary : colors.textPrimary, fontWeight: rank === current ? '700' : '500' }}>
-                        {`${index + 1}. ${rank}`}{rank === current ? '  (You)' : ''}
+                  {next && (
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ color: colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>
+                        Next: {next.name}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 2 }}>
+                        {next.label} • You: {youVal ? youVal.toFixed(1) : '—'}
                       </Text>
                     </View>
-                  ))}
+                  )}
+
+                  {ranks.map((rank, index) => {
+                    const def = rankDefs.find(d => d.name === rank);
+                    const criteria = def ? def.label : null;
+                    return (
+                      <View key={`${rank}-${index}`} style={{ paddingVertical: 6 }}>
+                        <Text style={{ color: rank === current ? colors.primary : colors.textPrimary, fontWeight: rank === current ? '700' : '500' }}>
+                          {`${index + 1}. ${rank}`}{rank === current ? '  (You)' : ''}
+                        </Text>
+                        {criteria && (
+                          <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                            {criteria}
+                          </Text>
+                        )}
+                        {rank === current && next && (
+                          <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                            Next: {next.name} • {next.label} • You: {youVal ? youVal.toFixed(1) : '—'}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               );
             })()}

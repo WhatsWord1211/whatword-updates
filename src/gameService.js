@@ -636,13 +636,15 @@ class GameService {
         forfeitedBy: this.getCurrentUser().uid,
         completedAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString(),
-        lastActivity: new Date().toISOString()
+        lastActivity: new Date().toISOString(),
+        // Auto-mark results as seen for the quitting player to avoid redundant badge/results
+        resultsSeenBy: [this.getCurrentUser().uid]
       };
       
       await updateDoc(doc(db, 'games', gameId), updates);
       console.log('GameService: Game forfeited successfully', { gameId, forfeitedBy: this.getCurrentUser().uid });
       
-      // Send game completion notifications for forfeited game
+      // Send game completion notification only to the opponent (winner)
       try {
         const currentUserId = this.getCurrentUser().uid;
         const opponentId = gameData.playerIds.find(id => id !== currentUserId);
@@ -650,13 +652,6 @@ class GameService {
         // Get opponent's username for the notification
         const opponentDoc = await getDoc(doc(db, 'users', opponentId));
         const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
-        
-        // Send notification to current player (forfeiter)
-        await getNotificationService().sendGameCompletionNotification(
-          currentUserId, 
-          gameId, 
-          `You forfeited the game. ${opponentUsername} wins by default.`
-        );
         
         // Send notification to opponent (winner)
         await getNotificationService().sendGameCompletionNotification(
@@ -668,9 +663,6 @@ class GameService {
         console.error('GameService: Failed to send forfeit notifications:', notificationError);
         // Don't fail the forfeit if notifications fail
       }
-      
-      // Delete completed game and preserve statistics
-      await this.deleteCompletedGame(gameId, { ...gameData, ...updates });
       
       return true;
     } catch (error) {

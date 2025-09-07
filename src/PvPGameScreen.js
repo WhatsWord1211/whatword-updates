@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from './ThemeContext';
 import { db, auth } from './firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { Audio } from 'expo-av';
@@ -51,6 +52,8 @@ const PvPGameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { gameId } = route.params;
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   
   const [game, setGame] = useState(null);
   const [inputWord, setInputWord] = useState('');
@@ -61,6 +64,7 @@ const PvPGameScreen = () => {
   const [showLosePopup, setShowLosePopup] = useState(false);
   const [showTiePopup, setShowTiePopup] = useState(false);
   const [showCongratulationsPopup, setShowCongratulationsPopup] = useState(false);
+  const [isSecondSolver, setIsSecondSolver] = useState(false);
   const [showGameOverPopup, setShowGameOverPopup] = useState(false);
   const [gameOverData, setGameOverData] = useState(null);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
@@ -196,9 +200,8 @@ const PvPGameScreen = () => {
                           : null
       });
       
-      // Update stats for both players
+      // Update stats only for the current user (avoid permission issues updating other user's profile)
       await updateUserStats(currentUserId, winnerId === currentUserId);
-      await updateUserStats(opponentPlayerData.uid, winnerId === opponentPlayerData.uid);
       
       // Update PvP rolling averages for both players
       const gameDifficulty = gameData.difficulty || 'regular';
@@ -207,7 +210,6 @@ const PvPGameScreen = () => {
       
       try {
         await playerProfileService.updatePvpDifficultyRollingAverages(currentUserId, gameDifficulty, currentUserWin);
-        await playerProfileService.updatePvpDifficultyRollingAverages(opponentPlayerData.uid, gameDifficulty, opponentWin);
       } catch (error) {
         console.error('PvPGameScreen: Failed to update PvP rolling averages:', error);
       }
@@ -257,11 +259,15 @@ const PvPGameScreen = () => {
             if (tie) return "It's a tie! Both players finished.";
             return winnerId === uid ? 'Congratulations! You won!' : 'Game over! Your opponent won.';
           };
-          if (player1Uid && player2Uid) {
+          // Only notify the first finisher to avoid ghost badge for the second finisher
+          const firstFinisher = fresh.firstFinisherId || null;
+          if (tie && player1Uid && player2Uid) {
             await Promise.all([
               notificationService.sendGameCompletionNotification(player1Uid, gameId, messageFor(player1Uid)),
               notificationService.sendGameCompletionNotification(player2Uid, gameId, messageFor(player2Uid))
             ]);
+          } else if (firstFinisher && (firstFinisher === player1Uid || firstFinisher === player2Uid)) {
+            await notificationService.sendGameCompletionNotification(firstFinisher, gameId, messageFor(firstFinisher));
           }
           // Mark notifications sent
           await updateDoc(gameRef, { notificationsSent: true });
@@ -679,27 +685,28 @@ const PvPGameScreen = () => {
     // Only allow letter toggling if player can still guess
     if (!canGuess()) return;
     
-    // Play toggle sound
-    playSound('toggleLetter').catch(() => {});
-    
-    if (alphabet[index] === 'unknown') {
+    const current = alphabet[index];
+    if (current === 'unknown') {
       setAlphabet(prev => {
-        const newAlphabet = [...prev];
-        newAlphabet[index] = 'absent';
-        return newAlphabet;
+        const next = [...prev];
+        next[index] = 'absent';
+        return next;
       });
-    } else if (alphabet[index] === 'absent') {
+      playSound('toggleLetter').catch(() => {});
+    } else if (current === 'absent') {
       setAlphabet(prev => {
-        const newAlphabet = [...prev];
-        newAlphabet[index] = 'present';
-        return newAlphabet;
+        const next = [...prev];
+        next[index] = 'present';
+        return next;
       });
+      playSound('toggleLetterSecond').catch(() => {});
     } else {
       setAlphabet(prev => {
-        const newAlphabet = [...prev];
-        newAlphabet[index] = 'unknown';
-        return newAlphabet;
+        const next = [...prev];
+        next[index] = 'unknown';
+        return next;
       });
+      playSound('toggleLetter').catch(() => {});
     }
   };
 
@@ -847,6 +854,18 @@ const PvPGameScreen = () => {
       }
       
              if (isCorrect) {
+               // Determine if this player is the second solver (opponent already finished or maxed out)
+               try {
+                 // Read latest game data to avoid stale state
+                 const currentSnap = await getDoc(gameRef);
+                 const currentData = currentSnap.exists() ? currentSnap.data() : game;
+                 const opponentAtSolve = getOpponentPlayerData(currentData);
+                 const opponentFinished = !!(opponentAtSolve?.solved) || (typeof opponentAtSolve?.attempts === 'number' && opponentAtSolve.attempts >= getMaxGuesses());
+                 setIsSecondSolver(!!opponentFinished);
+               } catch (_) {
+                 setIsSecondSolver(false);
+               }
+
                // Player solved the word - show congratulations popup
                setShowCongratulationsPopup(true);
                await playSound('congratulations').catch(() => {});
@@ -1047,7 +1066,14 @@ const PvPGameScreen = () => {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
-      <Text style={styles.soloheader}>Guess {opponentUsername}'s Word</Text>
+      <Text
+        style={[
+          styles.soloheader,
+          { marginTop: Math.max((styles.soloheader?.marginTop || 0), (insets?.top || 0) + 60) }
+        ]}
+      >
+        Guess {opponentUsername}'s Word
+      </Text>
       
 
       
@@ -1153,9 +1179,9 @@ const PvPGameScreen = () => {
         ))}
       </ScrollView>
       
-      {/* FAB */}
+      {/* FAB - respect safe area so it doesn't overlap status bar */}
       <TouchableOpacity 
-        style={styles.fabTop} 
+        style={[styles.fabTop, { top: (styles.fabTop?.top || 0) + (insets?.top || 0) + 4 }]} 
         onPress={() => setShowMenuPopup(true)}
       >
         <Text style={styles.fabText}>☰</Text>
@@ -1218,14 +1244,14 @@ const PvPGameScreen = () => {
              {/* Congratulations Popup - Individual Word Solved */}
       <Modal visible={showCongratulationsPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.winPopup, styles.modalShadow]}>
-            <Text style={styles.winTitle}>Congratulations!</Text>
-            <Text style={styles.winMessage}>
-              You solved the word in {guesses.length} guesses!
-            </Text>
-            <Text style={styles.waitingMessage}>
-              You've completed your part of the game! Your opponent is still playing.
-            </Text>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>You solved the word in {guesses.length} guesses!</Text>
+            {isSecondSolver ? (
+              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>You completed your part of the game!</Text>
+            ) : (
+              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>You've completed your part of the game! Your opponent is still playing.</Text>
+            )}
             <TouchableOpacity
               style={styles.winButtonContainer}
               onPress={() => {
@@ -1252,8 +1278,10 @@ const PvPGameScreen = () => {
                   setPendingResultData(null);
                 } else {
                   playSound('chime').catch(() => {});
-                  // First solver: return to main menu while waiting for opponent
-                  navigation.navigate('Home');
+                  // First solver: return to home. Second solver: stay and await results via snapshot
+                  if (!isSecondSolver) {
+                    navigation.navigate('Home');
+                  }
                 }
               }}
             >
@@ -1266,12 +1294,12 @@ const PvPGameScreen = () => {
       {/* Game Over Popup - Final Result */}
       <Modal visible={showGameOverPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.winPopup, styles.modalShadow]}>
-            <Text style={styles.winTitle}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>
               {gameOverData?.tie ? "It's a Tie!" : 
                gameOverData?.winnerId === currentUser?.uid ? "You Won!" : "You Lost!"}
             </Text>
-            <Text style={styles.winMessage}>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
               {gameOverData?.tie ? 
                 "Both players solved their words in the same number of attempts!" :
                 gameOverData?.winnerId === currentUser?.uid ?
@@ -1311,9 +1339,9 @@ const PvPGameScreen = () => {
       {/* Old Win Popup - Keeping for compatibility but not used in new flow */}
       <Modal visible={showWinPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.winPopup, styles.modalShadow]}>
-            <Text style={styles.winTitle}>Congratulations!</Text>
-            <Text style={styles.winMessage}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}> 
               You solved the word in {guesses.length} guesses!
             </Text>
             <TouchableOpacity
@@ -1333,9 +1361,9 @@ const PvPGameScreen = () => {
       {/* Max Guesses Popup */}
       <Modal visible={showMaxGuessesPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.maxGuessesPopup, styles.modalShadow]}>
-            <Text style={styles.maxGuessesTitle}>Max Guesses Reached!</Text>
-            <Text style={styles.maxGuessesMessage}>
+          <View style={[styles.maxGuessesPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
+            <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}> 
                              You've reached the maximum of {getMaxGuesses()} guesses. Waiting for {opponentUsername} to finish.
             </Text>
             <TouchableOpacity
@@ -1355,9 +1383,9 @@ const PvPGameScreen = () => {
       {/* Tie Popup */}
       <Modal visible={showTiePopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.tiePopup, styles.modalShadow]}>
-            <Text style={styles.tieTitle}>It's a Tie!</Text>
-            <Text style={styles.tieMessage}>
+          <View style={[styles.tiePopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.tieTitle, { color: colors.textPrimary }]}>It's a Tie!</Text>
+            <Text style={[styles.tieMessage, { color: colors.textSecondary }]}> 
               Both players reached the maximum attempts without solving. The game ends in a tie!
             </Text>
             <TouchableOpacity
@@ -1377,9 +1405,9 @@ const PvPGameScreen = () => {
       {/* Quit Confirmation Modal */}
       <Modal visible={showQuitConfirmPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, styles.modalShadow]}>
-            <Text style={styles.header}>Quit Game?</Text>
-            <Text style={styles.modalText}>
+          <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.header, { color: colors.textPrimary }]}>Quit Game?</Text>
+            <Text style={[styles.modalText, { color: colors.textSecondary }]}> 
               Are you sure you want to quit this game? This will count as a forfeit and {opponentUsername} will win.
             </Text>
             <View style={styles.modalActionsVertical}>

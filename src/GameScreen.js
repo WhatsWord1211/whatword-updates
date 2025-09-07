@@ -651,16 +651,19 @@ const GameScreen = () => {
       console.log('GameScreen: Toggling letter', { index, letter: String.fromCharCode(65 + index) });
       setAlphabet((prev) => {
         const updated = [...prev];
-        if (updated[index] === 'unknown') {
+        const prevState = updated[index];
+        if (prevState === 'unknown') {
           updated[index] = 'absent';
-        } else if (updated[index] === 'absent') {
+          playSound('toggleLetter').catch(() => {});
+        } else if (prevState === 'absent') {
           updated[index] = 'present';
-        } else if (updated[index] === 'present') {
+          playSound('toggleLetterSecond').catch(() => {});
+        } else if (prevState === 'present') {
           updated[index] = 'unknown';
+          playSound('toggleLetter').catch(() => {});
         }
         return updated;
       });
-      playSound('toggleLetter').catch(() => {});
     }
   };
 

@@ -11,6 +11,7 @@ const soundFiles = {
   startGame: require('../assets/sounds/let-the-games-begin.mp3'),
   tie: require('../assets/sounds/tie.mp3'),
   toggleLetter: require('../assets/sounds/toggle-letter.mp3'),
+  toggleLetterSecond: require('../assets/sounds/toggle-letter-second.mp3'),
   victory: require('../assets/sounds/victory.mp3'),
   lose: require('../assets/sounds/you-lost.mp3'),
   congratulations: require('../assets/sounds/congratulations.mp3'),
@@ -55,22 +56,55 @@ export const loadSounds = async () => {
 
 export const playSound = async (key, options = {}) => {
   if (!sounds[key]) {
-    console.error(`soundsUtil: Sound ${key} not loaded`);
-    throw new Error(`Sound ${key} not loaded`);
+    // Attempt a lazy load if not preloaded
+    try {
+      const file = soundFiles[key];
+      if (file) {
+        const { sound } = await Audio.Sound.createAsync(file, { shouldPlay: false });
+        sounds[key] = sound;
+      } else {
+        console.error(`soundsUtil: Sound ${key} not loaded`);
+        throw new Error(`Sound ${key} not loaded`);
+      }
+    } catch (e) {
+      console.error(`soundsUtil: Failed lazy-load for ${key}`);
+      throw e;
+    }
   }
   try {
     const sound = sounds[key];
-    const status = await sound.getStatusAsync();
-    // console.log(`soundsUtil: Playing sound ${key}`); // Reduced logging
+    let status = await sound.getStatusAsync();
     if (!status.isLoaded) {
-      console.warn(`soundsUtil: Reloading sound ${key}`);
-      await sound.loadAsync(soundFiles[key], { shouldPlay: false });
+      try {
+        await sound.unloadAsync();
+      } catch (_) {}
+      try {
+        await sound.loadAsync(soundFiles[key], { shouldPlay: false });
+      } catch (reloadErr) {
+        // Ignore benign race condition where sound is already loaded
+        if (!String(reloadErr?.message || reloadErr).includes('already loaded')) {
+          throw reloadErr;
+        }
+      }
+      status = await sound.getStatusAsync();
     }
     if (options.volume !== undefined) {
       await sound.setVolumeAsync(options.volume);
     }
     
-    await sound.replayAsync();
+    try {
+      await sound.replayAsync();
+    } catch (playErr) {
+      // If replayAsync fails due to load state, try a single recover attempt
+      if (String(playErr?.message || playErr).includes('already loaded')) {
+        try {
+          await sound.stopAsync();
+        } catch (_) {}
+        await sound.replayAsync();
+      } else {
+        throw playErr;
+      }
+    }
     
     if (options.volume !== undefined) {
       await sound.setVolumeAsync(1);

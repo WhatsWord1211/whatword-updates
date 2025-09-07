@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Alert, Linking } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // import { getMessaging, getToken, onMessage, onTokenRefresh, onBackgroundMessage } from 'firebase/messaging';
 import { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
@@ -9,7 +10,10 @@ import { playSound } from './soundsUtil';
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // iOS-specific fields
+    shouldShowBanner: true,
+    shouldShowList: true,
+    // Modern fields only; avoid deprecated shouldShowAlert
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -801,7 +805,8 @@ class NotificationService {
         data,
         sound,
         priority,
-        badge,
+        // Avoid passing undefined/null badge to iOS; only include if it's a valid number
+        ...(typeof badge === 'number' ? { badge } : {}),
         categoryIdentifier
       };
 
@@ -818,7 +823,8 @@ class NotificationService {
       } else if (Platform.OS === 'ios') {
         notificationContent.ios = {
           sound: sound,
-          badge: badge,
+          // Only include badge if number
+          ...(typeof badge === 'number' ? { badge } : {}),
           categoryIdentifier,
           threadIdentifier: 'default'
         };
@@ -1020,15 +1026,12 @@ class NotificationService {
    * Handle background game invite
    * @param {Object} data - Game invite data
    */
-  handleBackgroundGameInvite(data) {
+  async handleBackgroundGameInvite(data) {
     try {
-      // Store in local storage for when app becomes active
-      const gameInvites = JSON.parse(localStorage.getItem('pendingGameInvites') || '[]');
-      gameInvites.push({
-        ...data,
-        receivedAt: new Date().toISOString()
-      });
-      localStorage.setItem('pendingGameInvites', JSON.stringify(gameInvites));
+      const raw = (await AsyncStorage.getItem('pendingGameInvites')) || '[]';
+      const gameInvites = JSON.parse(raw);
+      gameInvites.push({ ...data, receivedAt: new Date().toISOString() });
+      await AsyncStorage.setItem('pendingGameInvites', JSON.stringify(gameInvites));
       
       console.log('NotificationService: Background game invite stored');
     } catch (error) {
@@ -1040,15 +1043,12 @@ class NotificationService {
    * Handle background friend request
    * @param {Object} data - Friend request data
    */
-  handleBackgroundFriendRequest(data) {
+  async handleBackgroundFriendRequest(data) {
     try {
-      // Store in local storage for when app becomes active
-      const friendRequests = JSON.parse(localStorage.getItem('pendingFriendRequests') || '[]');
-      friendRequests.push({
-        ...data,
-        receivedAt: new Date().toISOString()
-      });
-      localStorage.setItem('pendingFriendRequests', JSON.stringify(friendRequests));
+      const raw = (await AsyncStorage.getItem('pendingFriendRequests')) || '[]';
+      const friendRequests = JSON.parse(raw);
+      friendRequests.push({ ...data, receivedAt: new Date().toISOString() });
+      await AsyncStorage.setItem('pendingFriendRequests', JSON.stringify(friendRequests));
       
       console.log('NotificationService: Background friend request stored');
     } catch (error) {
@@ -1060,10 +1060,12 @@ class NotificationService {
    * Get pending notifications from background
    * @returns {Object} Object containing pending notifications
    */
-  getPendingBackgroundNotifications() {
+  async getPendingBackgroundNotifications() {
     try {
-      const gameInvites = JSON.parse(localStorage.getItem('pendingGameInvites') || '[]');
-      const friendRequests = JSON.parse(localStorage.getItem('pendingFriendRequests') || '[]');
+      const rawInvites = (await AsyncStorage.getItem('pendingGameInvites')) || '[]';
+      const rawFriends = (await AsyncStorage.getItem('pendingFriendRequests')) || '[]';
+      const gameInvites = JSON.parse(rawInvites);
+      const friendRequests = JSON.parse(rawFriends);
       
       return {
         gameInvites,
@@ -1079,10 +1081,10 @@ class NotificationService {
   /**
    * Clear pending background notifications
    */
-  clearPendingBackgroundNotifications() {
+  async clearPendingBackgroundNotifications() {
     try {
-      localStorage.removeItem('pendingGameInvites');
-      localStorage.removeItem('pendingFriendRequests');
+      await AsyncStorage.removeItem('pendingGameInvites');
+      await AsyncStorage.removeItem('pendingFriendRequests');
       console.log('NotificationService: Pending background notifications cleared');
     } catch (error) {
       console.error('NotificationService: Error clearing pending background notifications:', error);

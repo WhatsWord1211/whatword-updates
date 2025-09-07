@@ -30,17 +30,23 @@ service cloud.firestore {
       allow read: if request.auth != null;
 
       // Allow participants to add/remove game IDs in another user's activeGames list
-      // Only activeGames can be changed; and any added/removed game must involve both users
+      // Only activeGames can be changed; allow adding the first entry as well
       allow update: if request.auth != null &&
         request.auth.uid != userId &&
-        // Only the activeGames field may change
         request.resource.data.keys().hasOnly(['activeGames']) &&
-        request.resource.data.activeGames is list && resource.data.activeGames is list &&
-        // For all gameIds present after update: either existed before, or is a game between both users
-        request.resource.data.activeGames.size() > 0 &&
-        request.resource.data.activeGames.every(gid => (gid in resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId)) &&
-        // For all gameIds present before update: either remain, or (if removed) must also be a game between both users
-        resource.data.activeGames.every(gid => (gid in request.resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId));
+        request.resource.data.activeGames is list &&
+        // If the field previously existed, enforce per-game relationship
+        (
+          (resource.data.activeGames is list &&
+            request.resource.data.activeGames.every(gid => (gid in resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId)) &&
+            resource.data.activeGames.every(gid => (gid in request.resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId))
+          ) ||
+          // If the field didn't exist before, allow creation with games involving both users
+          (!(resource.data.activeGames is list) &&
+            request.resource.data.activeGames.size() > 0 &&
+            request.resource.data.activeGames.every(gid => isGameBetween(gid, request.auth.uid, userId))
+          )
+        );
     }
     
     // Games - only participants can access

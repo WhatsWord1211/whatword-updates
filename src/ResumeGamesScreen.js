@@ -293,11 +293,21 @@ const ResumeGamesScreen = () => {
             gameStatus: gameData.status,
             currentPlayerSolved: !!currentPlayerSolved,
             opponentSolved: !!opponentSolved,
-            isMyTurn: gameData.status === 'waiting_for_opponent' ? false : !currentPlayerSolved
+            // If status is waiting_for_opponent and I haven't solved, it's still my turn to play
+            isMyTurn: gameData.status === 'waiting_for_opponent' ? !currentPlayerSolved : !currentPlayerSolved
           };
 
-          if (gameData.status === 'waiting_for_opponent' && currentPlayerSolved && !opponentSolved) {
-            waitingGames.push({ ...base, gameType: 'waiting_for_opponent' });
+          if (gameData.status === 'waiting_for_opponent') {
+            if (currentPlayerSolved && !opponentSolved) {
+              waitingGames.push({ ...base, gameType: 'waiting_for_opponent' });
+            } else {
+              // Opponent solved or neither solved: show as active for me (I can still play)
+              activeGames.push({
+                ...base,
+                gameType: 'active_game',
+                message: base.isMyTurn ? 'Your turn' : 'Waiting'
+              });
+            }
           } else if (gameData.status === 'active' || gameData.status === 'ready') {
             activeGames.push({
               ...base,
