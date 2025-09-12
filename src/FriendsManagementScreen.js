@@ -1,0 +1,907 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { db, auth } from './firebase';
+import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, getDocs, addDoc, getDoc } from 'firebase/firestore';
+import { playSound } from './soundsUtil';
+import styles from './styles';
+import logger from './logger';
+import { useTheme } from './ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const FriendsManagementScreen = () => {
+  const navigation = useNavigation();
+  const { colors } = useTheme();
+  
+  // State for different tabs
+  const [activeTab, setActiveTab] = useState('friends'); // 'friends', 'requests', 'add'
+  
+  // Friends list
+  const [friends, setFriends] = useState([]);
+  const [loadingFriends, setLoadingFriends] = useState(true);
+  
+  // Friend requests
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  
+  // Add friends
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  
+  // Requests tab badge - start as false so badge shows by default when there are requests
+  const [requestsTabBadgeCleared, setRequestsTabBadgeCleared] = useState(false);
+  const [badgeStateLoaded, setBadgeStateLoaded] = useState(false);
+
+  // Load requests tab badge cleared state from AsyncStorage
+  useEffect(() => {
+    loadRequestsTabBadgeState();
+  }, []);
+
+  const loadRequestsTabBadgeState = async () => {
+    try {
+      const storedBadgeCleared = await AsyncStorage.getItem('requestsTabBadgeCleared');
+      if (storedBadgeCleared) {
+        const wasCleared = JSON.parse(storedBadgeCleared);
+        setRequestsTabBadgeCleared(wasCleared);
+      }
+      setBadgeStateLoaded(true);
+    } catch (error) {
+      logger.error('Failed to load requests tab badge state:', error);
+      setBadgeStateLoaded(true);
+    }
+  };
+
+  const saveRequestsTabBadgeCleared = async (cleared) => {
+    try {
+      await AsyncStorage.setItem('requestsTabBadgeCleared', JSON.stringify(cleared));
+    } catch (error) {
+      logger.error('Failed to save requests tab badge cleared state:', error);
+    }
+  };
+
+  const clearRequestsTabBadge = () => {
+    setRequestsTabBadgeCleared(true);
+    saveRequestsTabBadgeCleared(true);
+  };
+
+  const getRequestsTabBadgeCount = () => {
+    // Show badge if there are pending requests
+    // Only hide the badge if it has been explicitly cleared by the user
+    if (pendingRequests.length === 0) return 0;
+    
+    // If badge state hasn't loaded yet, show the badge (default behavior)
+    if (!badgeStateLoaded) return pendingRequests.length;
+    
+    // If badge state has loaded, respect the cleared state
+    const count = requestsTabBadgeCleared ? 0 : pendingRequests.length;
+    
+        return count;
+  };
+
+  // Load friends list
+  useEffect(() => {
+    if (activeTab === 'friends') {
+      loadFriends();
+    }
+  }, [activeTab]);
+
+  // Load friend requests immediately when component mounts
+  useEffect(() => {
+    const unsubscribe = loadFriendRequests();
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []); // Empty dependency array - load once on mount
+
+  const loadFriends = async () => {
+    try {
+      setLoadingFriends(true);
+      
+      // Get friends from user's friends array
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const friendIds = userData.friends || [];
+        
+        if (friendIds.length > 0) {
+          // Get friend profiles
+          const friendPromises = friendIds.map(friendId => 
+            getDoc(doc(db, 'users', friendId))
+          );
+          const friendDocs = await Promise.all(friendPromises);
+          
+          const friendsList = friendDocs
+            .filter(doc => doc.exists())
+            .map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+          
+          setFriends(friendsList);
+        } else {
+          setFriends([]);
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to load friends:', error);
+      Alert.alert('Error', 'Failed to load friends list');
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
+  const loadFriendRequests = () => {
+    try {
+      // Check if user is still authenticated
+      if (!auth.currentUser) {
+        setPendingRequests([]);
+        setSentRequests([]);
+        setLoadingRequests(false);
+        return;
+      }
+      
+      setLoadingRequests(true);
+      
+      // Load incoming requests with real-time listener
+      const incomingQuery = query(
+        collection(db, 'friendRequests'),
+        where('to', '==', auth.currentUser.uid),
+        where('status', '==', 'pending')
+      );
+      
+      // Load outgoing requests with real-time listener
+      const outgoingQuery = query(
+        collection(db, 'friendRequests'),
+        where('from', '==', auth.currentUser.uid),
+        where('status', '==', 'pending')
+      );
+      
+      // Set up real-time listeners
+      const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
+        // Check if user is still authenticated before processing
+        if (!auth.currentUser) return;
+        
+        const incoming = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Fetch usernames for incoming requests
+        const requestsWithUsernames = await Promise.all(
+          incoming.map(async (request) => {
+            try {
+              const userDoc = await getDoc(doc(db, 'users', request.from));
+              if (userDoc.exists()) {
+                const userData = userDoc.data();
+                return {
+                  ...request,
+                  fromUsername: userData.username || userData.displayName || 'Unknown User'
+                };
+              }
+              return { ...request, fromUsername: 'Unknown User' };
+            } catch (error) {
+              logger.error('Failed to fetch username for request:', error);
+              return { ...request, fromUsername: 'Unknown User' };
+            }
+          })
+        );
+        
+        setPendingRequests(requestsWithUsernames);
+        setLoadingRequests(false);
+        
+        // Reset requests tab badge when new requests arrive
+        if (requestsWithUsernames.length > 0) {
+          setRequestsTabBadgeCleared(false);
+          saveRequestsTabBadgeCleared(false);
+        }
+      }, (error) => {
+        // Only log error if user is still authenticated
+        if (auth.currentUser) {
+          logger.error('Failed to load incoming friend requests:', error);
+        }
+        setLoadingRequests(false);
+      });
+      
+      const unsubscribeOutgoing = onSnapshot(outgoingQuery, async (snapshot) => {
+        // Check if user is still authenticated before processing
+        if (!auth.currentUser) return;
+        
+        const outgoing = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Fetch usernames for outgoing requests
+        const requestsWithUsernames = await Promise.all(
+          outgoing.map(async (request) => {
+            try {
+              const userDoc = await getDoc(doc(db, 'users', request.to));
+              if (userDoc.exists()) {
+                const userData = userDoc.data();
+                return {
+                  ...request,
+                  toUsername: userData.username || userData.displayName || 'Unknown User'
+                };
+              }
+              return { ...request, toUsername: 'Unknown User' };
+            } catch (error) {
+              logger.error('Failed to fetch username for outgoing request:', error);
+              return { ...request, toUsername: 'Unknown User' };
+            }
+          })
+        );
+        
+        setSentRequests(requestsWithUsernames);
+        setLoadingRequests(false);
+      }, (error) => {
+        // Only log error if user is still authenticated
+        if (auth.currentUser) {
+          logger.error('Failed to load outgoing friend requests:', error);
+        }
+        setLoadingRequests(false);
+      });
+      
+      // Store unsubscribe functions for cleanup
+      return () => {
+        unsubscribeIncoming();
+        unsubscribeOutgoing();
+      };
+    } catch (error) {
+      logger.error('Failed to set up friend requests listeners:', error);
+      Alert.alert('Error', 'Failed to load friend requests');
+      setLoadingRequests(false);
+    }
+  };
+
+  const searchUsers = async () => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    try {
+      setSearching(true);
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('username', '>=', searchQuery.toLowerCase()),
+        where('username', '<=', searchQuery.toLowerCase() + '\uf8ff')
+      );
+      
+      const snapshot = await getDocs(usersQuery);
+      const results = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(user => user.uid !== auth.currentUser.uid);
+      
+      setSearchResults(results);
+    } catch (error) {
+      logger.error('Failed to search users:', error);
+      Alert.alert('Error', 'Failed to search users');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const sendFriendRequest = async (user) => {
+    try {
+      console.log('🔍 [FriendsManagementScreen] Starting friend request process');
+      console.log('🔍 [FriendsManagementScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
+      console.log('🔍 [FriendsManagementScreen] Target user:', user.uid, user.username || user.displayName);
+      
+      // Check if a request already exists
+      console.log('🔍 [FriendsManagementScreen] Checking for existing friend request...');
+      const existingRequestQuery = query(
+        collection(db, 'friendRequests'),
+        where('from', '==', auth.currentUser.uid),
+        where('to', '==', user.uid),
+        where('status', '==', 'pending')
+      );
+      
+      const existingRequestSnapshot = await getDocs(existingRequestQuery);
+      console.log('🔍 [FriendsManagementScreen] Existing request query results:', existingRequestSnapshot.docs.length, 'documents found');
+      
+      if (!existingRequestSnapshot.empty) {
+        console.log('🔍 [FriendsManagementScreen] Duplicate request detected - preventing send');
+        Alert.alert('Request Already Sent', `You have already sent a friend request to ${user.username || user.displayName}.`);
+        return;
+      }
+      
+      console.log('🔍 [FriendsManagementScreen] No existing request found - proceeding with new request');
+
+      const requestData = {
+        from: auth.currentUser.uid,
+        fromUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
+        to: user.uid,
+        toUsername: user.username || user.displayName || 'Unknown',
+        status: 'pending',
+        timestamp: new Date()
+      };
+
+      console.log('🔍 [FriendsManagementScreen] Request data to be saved:', requestData);
+      console.log('🔍 [FriendsManagementScreen] Using OLD friendRequests collection system');
+
+      const docRef = await addDoc(collection(db, 'friendRequests'), requestData);
+      console.log('🔍 [FriendsManagementScreen] Friend request document created with ID:', docRef.id);
+      
+      Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
+      playSound('chime');
+      
+      // Clear search
+      setSearchQuery('');
+      setSearchResults([]);
+    } catch (error) {
+      console.error('❌ [FriendsManagementScreen] Failed to send friend request:', error);
+      logger.error('Failed to send friend request:', error);
+      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+    }
+  };
+
+  const acceptFriendRequest = async (request) => {
+    try {
+      console.log('🔍 [FriendsManagementScreen] Accepting friend request from:', request.fromUid || request.from);
+      
+      // Update both users' friends lists
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+        friends: arrayUnion(request.fromUid || request.from)
+      });
+      console.log('🔍 [FriendsManagementScreen] Updated current user friends list');
+      
+      await updateDoc(doc(db, 'users', request.fromUid || request.from), {
+        friends: arrayUnion(auth.currentUser.uid)
+      });
+      console.log('🔍 [FriendsManagementScreen] Updated other user friends list');
+
+      // Clear any redundant friend requests between these two users
+      console.log('🔍 [FriendsManagementScreen] Clearing redundant friend requests...');
+      const redundantRequestsQuery = query(
+        collection(db, 'friendRequests'),
+        where('from', '==', auth.currentUser.uid),
+        where('to', '==', request.fromUid || request.from),
+        where('status', '==', 'pending')
+      );
+      
+      const redundantSnapshot = await getDocs(redundantRequestsQuery);
+      console.log('🔍 [FriendsManagementScreen] Found', redundantSnapshot.docs.length, 'redundant requests to clear');
+      
+      // Delete all redundant requests
+      const deletePromises = redundantSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+      console.log('🔍 [FriendsManagementScreen] Cleared', redundantSnapshot.docs.length, 'redundant requests');
+
+      // Delete the friend request since it's now accepted
+      await deleteDoc(doc(db, 'friendRequests', request.id));
+      console.log('🔍 [FriendsManagementScreen] Deleted accepted request');
+
+      Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
+      playSound('chime');
+      
+      // Reload requests
+      loadFriendRequests();
+    } catch (error) {
+      console.error('❌ [FriendsManagementScreen] Failed to accept friend request:', error);
+      logger.error('Failed to accept friend request:', error);
+      Alert.alert('Error', 'Failed to accept friend request. Please try again.');
+    }
+  };
+
+  const declineFriendRequest = async (request) => {
+    try {
+      await deleteDoc(doc(db, 'friendRequests', request.id));
+      Alert.alert('Declined', 'Friend request declined.');
+      playSound('chime');
+      
+      // Reload requests
+      loadFriendRequests();
+    } catch (error) {
+      logger.error('Failed to decline friend request:', error);
+      Alert.alert('Error', 'Failed to decline friend request. Please try again.');
+    }
+  };
+
+  const cancelFriendRequest = async (request) => {
+    try {
+      await deleteDoc(doc(db, 'friendRequests', request.id));
+      Alert.alert('Cancelled', 'Friend request cancelled.');
+      playSound('chime');
+      
+      // Reload requests
+      loadFriendRequests();
+    } catch (error) {
+      logger.error('Failed to cancel friend request:', error);
+      Alert.alert('Error', 'Failed to cancel friend request. Please try again.');
+    }
+  };
+
+  const removeFriend = async (friend) => {
+    Alert.alert(
+      'Remove Friend',
+      `Are you sure you want to remove ${friend.username || friend.displayName} from your friends list?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Remove from both users' friends lists
+              await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+                friends: arrayRemove(friend.id)
+              });
+              
+              await updateDoc(doc(db, 'users', friend.id), {
+                friends: arrayRemove(auth.currentUser.uid)
+              });
+
+              Alert.alert('Removed', `${friend.username || friend.displayName} has been removed from your friends list.`);
+              playSound('chime');
+              
+              // Reload friends
+              loadFriends();
+            } catch (error) {
+              logger.error('Failed to remove friend:', error);
+              Alert.alert('Error', 'Failed to remove friend. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderFriend = ({ item }) => (
+    <View style={[styles.friendItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.friendInfo}>
+        <Text style={styles.friendUsername}>
+          {item.username || item.displayName || 'Unknown User'}
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.removeButton, 
+            { 
+              backgroundColor: colors.error,
+              borderColor: colors.error,
+            }
+          ]}
+          onPress={() => removeFriend(item)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.removeButtonText}>Remove</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderSearchResult = ({ item }) => (
+    <View style={[styles.searchResultItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.searchResultInfo}>
+        <Text style={[styles.searchResultUsername, { color: colors.primary }]}>
+          {item.username || item.displayName || 'Unknown User'}
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={[
+          styles.addButton, 
+          { 
+            backgroundColor: colors.primary,
+            borderColor: colors.primary,
+          }
+        ]}
+        onPress={() => sendFriendRequest(item)}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.buttonText, { color: '#FFFFFF', fontWeight: '600' }]}>
+          Add
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.friendsHeader, { backgroundColor: colors.background }]}>
+        <Text style={styles.headerTitle}>
+          Friends Management
+        </Text>
+      </View>
+
+      {/* Tab Navigation */}
+      <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'friends' && styles.activeTab,
+            { backgroundColor: activeTab === 'friends' ? colors.primary : colors.surface }
+          ]}
+          onPress={async () => {
+            setActiveTab('friends');
+            try {
+              await playSound('toggleTab');
+            } catch (error) {
+              // Ignore sound errors
+            }
+          }}
+        >
+          <Text 
+            style={[
+              styles.tabText,
+              { color: activeTab === 'friends' ? '#FFFFFF' : '#FFFFFF' }
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit={true}
+          >
+            Friends
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'requests' && styles.activeTab,
+            { backgroundColor: activeTab === 'requests' ? colors.primary : colors.surface }
+          ]}
+          onPress={async () => {
+            setActiveTab('requests');
+            // Clear the requests tab badge when clicked
+            clearRequestsTabBadge();
+            try {
+              await playSound('toggleTab');
+            } catch (error) {
+              // Ignore sound errors
+            }
+          }}
+        >
+          <View style={{ position: 'relative', flexDirection: 'row', alignItems: 'center' }}>
+            <Text 
+              style={[
+                styles.tabText,
+                { color: activeTab === 'requests' ? '#FFFFFF' : '#FFFFFF' }
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit={true}
+            >
+              Requests
+            </Text>
+            {/* Notification badge for requests tab */}
+            {getRequestsTabBadgeCount() > 0 && (
+              <View style={{
+                position: 'absolute',
+                top: -8,
+                right: -8,
+                backgroundColor: '#EF4444',
+                borderRadius: 10,
+                minWidth: 20,
+                height: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 2,
+                borderColor: colors.background,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 3.84,
+                elevation: 5,
+              }}>
+                <Text style={{
+                  color: 'white',
+                  fontSize: 10,
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                }}>
+                  {getRequestsTabBadgeCount() > 99 ? '99+' : getRequestsTabBadgeCount()}
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            activeTab === 'add' && styles.activeTab,
+            { backgroundColor: activeTab === 'add' ? colors.primary : colors.surface }
+          ]}
+          onPress={async () => {
+            setActiveTab('add');
+            try {
+              await playSound('toggleTab');
+            } catch (error) {
+              // Ignore sound errors
+            }
+          }}
+        >
+          <Text 
+            style={[
+              styles.tabText,
+              { color: activeTab === 'add' ? '#FFFFFF' : '#FFFFFF' }
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit={true}
+          >
+            Add Friends
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Search Bar - Only visible when Add Friends tab is active */}
+      {activeTab === 'add' && (
+        <View style={{ marginTop: 10, marginHorizontal: 20, alignItems: 'center' }}>
+          <TextInput
+            style={{
+              width: '100%',
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              borderRadius: 6,
+              borderWidth: 1,
+              fontSize: 16,
+              color: 'white',
+              fontFamily: 'Roboto-Regular',
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              marginBottom: 10,
+            }}
+            placeholder="username"
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={searchUsers}
+            selectionColor="#FFFFFF"
+            cursorColor="#FFFFFF"
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={{
+              backgroundColor: colors.primary,
+              paddingVertical: 10,
+              paddingHorizontal: 20,
+              borderRadius: 6,
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 120,
+            }}
+            onPress={searchUsers}
+            disabled={searching}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+              {searching ? 'Searching...' : 'Search'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Content */}
+      <View style={styles.content}>
+        {activeTab === 'friends' && (
+          <View style={styles.tabContent}>
+            {loadingFriends ? (
+              <Text style={styles.loadingText}>
+                Loading friends...
+              </Text>
+            ) : friends.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>
+                  No friends yet. Add some friends to get started!
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={friends}
+                keyExtractor={(item) => item.id}
+                renderItem={renderFriend}
+                style={styles.list}
+              />
+            )}
+          </View>
+        )}
+
+        {activeTab === 'requests' && (
+          <View style={styles.tabContent}>
+            {loadingRequests ? (
+              <Text style={styles.loadingText}>
+                Loading requests...
+              </Text>
+            ) : (
+              <View>
+                {pendingRequests.length > 0 && (
+                  <View>
+                    <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 16 }]}>
+                      Incoming Requests ({pendingRequests.length})
+                    </Text>
+                    <View>
+                      {pendingRequests.map((item) => (
+                        <View key={item.id} style={{
+                          padding: 20,
+                          marginBottom: 16,
+                          borderRadius: 12,
+                          borderWidth: 2,
+                          borderColor: '#10B981',
+                          backgroundColor: '#1F2937',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 4,
+                          elevation: 5,
+                        }}>
+                          <View style={{ marginBottom: 16 }}>
+                            <Text style={{
+                              fontSize: 20,
+                              fontWeight: '700',
+                              marginBottom: 8,
+                              color: '#FFFFFF',
+                            }}>
+                              {item.fromUsername || 'Unknown User'}
+                            </Text>
+                            <Text style={{
+                              fontSize: 16,
+                              color: '#D1D5DB',
+                              lineHeight: 22,
+                            }}>
+                              wants to be your friend
+                            </Text>
+                          </View>
+                          <View style={{ 
+                            flexDirection: 'row', 
+                            gap: 12,
+                            justifyContent: 'flex-end'
+                          }}>
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: '#10B981',
+                                paddingHorizontal: 20,
+                                paddingVertical: 12,
+                                borderRadius: 8,
+                                minWidth: 90,
+                                alignItems: 'center',
+                              }}
+                              onPress={() => acceptFriendRequest(item)}
+                            >
+                              <Text style={{
+                                color: '#FFFFFF',
+                                fontSize: 16,
+                                fontWeight: '700',
+                              }}>Accept</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: '#EF4444',
+                                paddingHorizontal: 20,
+                                paddingVertical: 12,
+                                borderRadius: 8,
+                                minWidth: 90,
+                                alignItems: 'center',
+                              }}
+                              onPress={() => declineFriendRequest(item)}
+                            >
+                              <Text style={{
+                                color: '#FFFFFF',
+                                fontSize: 16,
+                                fontWeight: '700',
+                              }}>Decline</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+                
+                {sentRequests.length > 0 && (
+                  <View style={{ marginTop: 24 }}>
+                    <View style={{ marginBottom: 16, alignItems: 'center' }}>
+                      <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700' }]}>
+                        Sent Requests
+                      </Text>
+                    </View>
+                    <View>
+                      {sentRequests.map((item) => (
+                        <View key={item.id} style={{
+                          padding: 20,
+                          marginBottom: 16,
+                          borderRadius: 12,
+                          borderWidth: 2,
+                          borderColor: '#F59E0B',
+                          backgroundColor: '#1F2937',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 4,
+                          elevation: 5,
+                        }}>
+                          <View style={{ marginBottom: 16 }}>
+                            <Text style={{
+                              fontSize: 20,
+                              fontWeight: '700',
+                              marginBottom: 8,
+                              color: '#FFFFFF',
+                            }}>
+                              {item.toUsername || 'Unknown User'}
+                            </Text>
+                            <Text style={{
+                              fontSize: 16,
+                              color: '#D1D5DB',
+                              lineHeight: 22,
+                            }}>
+                              Friend request sent
+                            </Text>
+                          </View>
+                          <View style={{ 
+                            flexDirection: 'row', 
+                            gap: 12,
+                            justifyContent: 'center'
+                          }}>
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: '#EF4444',
+                                paddingHorizontal: 20,
+                                paddingVertical: 12,
+                                borderRadius: 8,
+                                minWidth: 90,
+                                alignItems: 'center',
+                              }}
+                              onPress={() => cancelFriendRequest(item)}
+                            >
+                              <Text style={{
+                                color: '#FFFFFF',
+                                fontSize: 16,
+                                fontWeight: '700',
+                              }}>Cancel</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+                
+                {pendingRequests.length === 0 && sentRequests.length === 0 && (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>
+                      No friend requests
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {activeTab === 'add' && (
+          <View style={styles.tabContent}>
+            
+            {searching && (
+              <Text style={styles.loadingText}>
+                Searching...
+              </Text>
+            )}
+            
+            {searchResults.length > 0 && (
+              <View style={{ marginTop: 20 }}>
+                <Text style={[styles.resultsTitle, { color: '#FFFFFF', marginBottom: 16 }]}>
+                  Search Results
+                </Text>
+                <FlatList
+                  data={searchResults}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderSearchResult}
+                  style={styles.list}
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            )}
+            
+            {searchQuery && !searching && searchResults.length === 0 && (
+              <View style={[styles.emptyState, { marginTop: 40 }]}>
+                <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+                  No users found with username "{searchQuery}"
+                </Text>
+                <Text style={[styles.emptyStateText, { color: colors.textSecondary, fontSize: 14, marginTop: 8 }]}>
+                  Try a different username or check the spelling
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+};
+
+export default FriendsManagementScreen;

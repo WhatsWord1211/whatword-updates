@@ -7,7 +7,6 @@ export const initializeGameService = async () => {
     const currentUser = authService.getCurrentUser();
     if (currentUser) {
       gameService.setCurrentUser(currentUser);
-      console.log('GameService initialized for user:', currentUser.uid);
     }
   } catch (error) {
     console.error('Failed to initialize GameService:', error);
@@ -19,10 +18,8 @@ export const setupGameListener = (gameId, onGameUpdate) => {
   try {
     const unsubscribe = gameService.listenToGame(gameId, (gameData) => {
       if (gameData) {
-        console.log('Game updated:', gameData);
         onGameUpdate(gameData);
       } else {
-        console.log('Game not found or access denied');
       }
     });
     
@@ -36,7 +33,6 @@ export const setupGameListener = (gameId, onGameUpdate) => {
 export const setupActiveGamesListener = (onGamesUpdate) => {
   try {
     const unsubscribe = gameService.listenToActivePvPGames((games) => {
-      console.log('Active games updated:', games);
       onGamesUpdate(games);
     });
     
@@ -50,7 +46,6 @@ export const setupActiveGamesListener = (onGamesUpdate) => {
 export const setWordForGame = async (gameId, word) => {
   try {
     await gameService.setPlayerWord(gameId, word);
-    console.log('Word set successfully:', word);
     return true;
   } catch (error) {
     console.error('Failed to set word:', error);
@@ -69,7 +64,6 @@ export const makeGuess = async (gameId, word, feedback = null) => {
     };
     
     const result = await gameService.addGuess(gameId, guess);
-    console.log('Guess added successfully:', result);
     return result;
   } catch (error) {
     console.error('Failed to make guess:', error);
@@ -81,7 +75,6 @@ export const makeGuess = async (gameId, word, feedback = null) => {
 export const getCurrentGame = async (gameId) => {
   try {
     const game = await gameService.getGame(gameId);
-    console.log('Current game state:', game);
     return game;
   } catch (error) {
     console.error('Failed to get game:', error);
@@ -93,7 +86,6 @@ export const getCurrentGame = async (gameId) => {
 export const getMyActiveGames = async () => {
   try {
     const games = await gameService.getActivePvPGames();
-    console.log('Active games:', games);
     return games;
   } catch (error) {
     console.error('Failed to get active games:', error);
@@ -105,7 +97,6 @@ export const getMyActiveGames = async () => {
 export const getMyCompletedGames = async (limit = 10) => {
   try {
     const games = await gameService.getCompletedPvPGames(limit);
-    console.log('Completed games:', games);
     return games;
   } catch (error) {
     console.error('Failed to get completed games:', error);
@@ -117,7 +108,6 @@ export const getMyCompletedGames = async (limit = 10) => {
 export const updateGameStatus = async (gameId, status, additionalData = {}) => {
   try {
     await gameService.updateGameStatus(gameId, status, additionalData);
-    console.log('Game status updated to:', status);
     return true;
   } catch (error) {
     console.error('Failed to update game status:', error);
@@ -129,7 +119,6 @@ export const updateGameStatus = async (gameId, status, additionalData = {}) => {
 export const forfeitGame = async (gameId) => {
   try {
     await gameService.forfeitGame(gameId);
-    console.log('Game forfeited successfully');
     return true;
   } catch (error) {
     console.error('Failed to forfeit game:', error);
@@ -142,23 +131,18 @@ export const completeGameFlow = async (gameId) => {
   try {
     // 1. Get current game state
     const game = await gameService.getGame(gameId);
-    console.log('Starting game flow for:', gameId);
     
     // 2. Set up real-time listener
     const unsubscribe = gameService.listenToGame(gameId, (gameData) => {
       if (gameData) {
-        console.log('Game state changed:', gameData.status);
         
         // Handle different game states
         switch (gameData.status) {
           case 'ready':
-            console.log('Game is ready - waiting for both players to set words');
             break;
           case 'active':
-            console.log('Game is active - players can start guessing');
             break;
           case 'completed':
-            console.log('Game completed! Winner:', gameData.winnerId);
             break;
         }
       }
@@ -177,17 +161,14 @@ export const handleTurnBasedGameplay = async (gameId) => {
     const game = await gameService.getGame(gameId);
     
     if (game.status !== 'active') {
-      console.log('Game is not active yet');
       return;
     }
     
     // Check if it's the current user's turn
     if (game.currentTurn === authService.getCurrentUser()?.uid) {
-      console.log('It\'s your turn!');
       // Enable input for making guesses
       return true;
     } else {
-      console.log('Waiting for opponent\'s turn');
       // Disable input, show waiting message
       return false;
     }
@@ -214,7 +195,6 @@ export const getGameStats = async (gameId) => {
       status: game.status
     };
     
-    console.log('Game statistics:', stats);
     return stats;
   } catch (error) {
     console.error('Failed to get game stats:', error);
@@ -226,7 +206,6 @@ export const getGameStats = async (gameId) => {
 export const cleanupGame = () => {
   try {
     gameService.cleanup();
-    console.log('Game service cleaned up');
   } catch (error) {
     console.error('Failed to cleanup game service:', error);
   }

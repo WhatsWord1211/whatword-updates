@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc } from 'firebase/firestore';
+import { playSound } from './soundsUtil';
 import styles from './styles';
 
 const LeaderboardScreen = () => {
@@ -63,7 +64,7 @@ const LeaderboardScreen = () => {
   };
 
   // Handle difficulty tab selection
-  const handleDifficultyChange = (difficulty) => {
+  const handleDifficultyChange = async (difficulty) => {
     if (difficulty === 'hard' && !hardModeUnlocked) {
       // Show alert that hard mode is locked
       Alert.alert(
@@ -74,17 +75,20 @@ const LeaderboardScreen = () => {
       return;
     }
     setActiveDifficulty(difficulty);
+    try {
+      await playSound('toggleTab');
+    } catch (error) {
+      // Ignore sound errors
+    }
   };
 
 
   const loadUserFriends = async (currentUser) => {
     try {
       setIsLoading(true);
-      console.log('LeaderboardScreen: Loading user friends for:', currentUser.uid);
       // Get user's friends from the main user document
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (!userDoc.exists()) {
-        console.log('LeaderboardScreen: User document not found');
         setUserFriends([]);
         setIsLoading(false);
         return;
@@ -93,7 +97,6 @@ const LeaderboardScreen = () => {
       const userData = userDoc.data();
       const friendIds = userData.friends || [];
       
-      console.log('LeaderboardScreen: Found friend IDs:', friendIds);
       
       const friends = [];
       for (const friendId of friendIds) {
@@ -104,7 +107,6 @@ const LeaderboardScreen = () => {
               uid: friendId,
               ...friendUserDoc.data()
             });
-            console.log('LeaderboardScreen: Added friend:', friendId, friendUserDoc.data().username);
           }
         } catch (error) {
           console.error('LeaderboardScreen: Failed to load friend:', friendId, error);
@@ -120,15 +122,9 @@ const LeaderboardScreen = () => {
             uid: currentUser.uid,
             ...currentUserData
           });
-          console.log('LeaderboardScreen: Added current user to friends list:', {
-            uid: currentUser.uid,
-            username: currentUserData.username,
-            gamesPlayed: currentUserData.gamesPlayed
-          });
         }
       }
       
-      console.log('LeaderboardScreen: Total friends loaded:', friends.length);
       setUserFriends(friends);
     } catch (error) {
       console.error('Failed to load user friends:', error);
@@ -149,13 +145,11 @@ const LeaderboardScreen = () => {
 
   const loadSoloLeaderboard = async (currentUser) => {
     try {
-      console.log('LeaderboardScreen: Loading solo leaderboard for user:', currentUser.uid, 'difficulty:', activeDifficulty);
       const leaderboardData = [];
       
       // Get solo games for all friends (including current user) for the selected difficulty
       for (const friend of userFriends) {
         try {
-          console.log('LeaderboardScreen: Checking leaderboard for friend:', friend.uid, friend.username, 'difficulty:', activeDifficulty);
           
           // Use simple query without orderBy to avoid index requirements
           let leaderboardQuery;
@@ -185,7 +179,6 @@ const LeaderboardScreen = () => {
           
           const gamesSnapshot = await getDocs(leaderboardQuery);
           const recentGames = gamesSnapshot.docs.map(doc => doc.data());
-          console.log('LeaderboardScreen: Found', recentGames.length, 'solo games for friend:', friend.uid);
           
           if (recentGames.length > 0) {
             // Sort manually and take last 15 games
@@ -202,13 +195,6 @@ const LeaderboardScreen = () => {
               totalGames: friend.gamesPlayed || 0
             });
             
-            console.log('LeaderboardScreen: Added friend to leaderboard:', {
-              uid: friend.uid,
-              username: friend.username,
-              runningAverage,
-              gamesCount: sortedGames.length,
-              totalGames: friend.gamesPlayed || 0
-            });
           }
         } catch (error) {
           console.error(`Failed to get solo games for user ${friend.uid}:`, error);
@@ -216,7 +202,6 @@ const LeaderboardScreen = () => {
         }
       }
       
-      console.log('LeaderboardScreen: Total leaderboard entries:', leaderboardData.length);
       
       // Sort by running average (lowest is best)
       leaderboardData.sort((a, b) => a.runningAverage - b.runningAverage);
@@ -227,7 +212,6 @@ const LeaderboardScreen = () => {
         rank: index + 1
       }));
       
-      console.log('LeaderboardScreen: Final ranked data:', rankedData);
       setSoloLeaderboard(rankedData);
 
       // Find current user's rank
@@ -235,9 +219,7 @@ const LeaderboardScreen = () => {
         const userRank = rankedData.find(player => player.uid === currentUser.uid);
         if (userRank) {
           setUserSoloRank(userRank);
-          console.log('LeaderboardScreen: Current user rank:', userRank);
         } else {
-          console.log('LeaderboardScreen: Current user not found in leaderboard');
         }
       }
     } catch (error) {
@@ -247,15 +229,12 @@ const LeaderboardScreen = () => {
 
   const loadPvpLeaderboard = async (currentUser) => {
     try {
-      console.log('LeaderboardScreen: Loading PvP leaderboard for user:', currentUser.uid, 'difficulty:', activeDifficulty);
       
       // Debug: Check if gameStats collection has any documents
       try {
         const allStatsQuery = query(collection(db, 'gameStats'));
         const allStatsSnapshot = await getDocs(allStatsQuery);
-        console.log('LeaderboardScreen: Total gameStats documents:', allStatsSnapshot.size);
         if (allStatsSnapshot.size > 0) {
-          console.log('LeaderboardScreen: Sample gameStats document:', allStatsSnapshot.docs[0].data());
         }
       } catch (error) {
         console.error('LeaderboardScreen: Failed to check gameStats collection:', error);
@@ -266,7 +245,6 @@ const LeaderboardScreen = () => {
       // Get PvP game statistics for all friends (including current user)
       for (const friend of userFriends) {
         try {
-          console.log('LeaderboardScreen: Checking PvP leaderboard for friend:', friend.uid, friend.username, 'difficulty:', activeDifficulty);
           
           // Get all PvP game stats where this user participated (all difficulties)
           const pvpStatsQuery = query(
@@ -278,9 +256,7 @@ const LeaderboardScreen = () => {
           const pvpStatsSnapshot = await getDocs(pvpStatsQuery);
           const pvpStats = pvpStatsSnapshot.docs.map(doc => doc.data());
           
-          console.log('LeaderboardScreen: Found PvP stats for friend:', friend.uid, 'count:', pvpStats.length);
           if (pvpStats.length > 0) {
-            console.log('LeaderboardScreen: Sample PvP stat:', pvpStats[0]);
           }
           
           // Filter by selected difficulty, then sort by completion time and take last 15 games
@@ -327,21 +303,12 @@ const LeaderboardScreen = () => {
             gamesCount: totalGames
           });
 
-          console.log('LeaderboardScreen: Added PvP friend to leaderboard:', {
-            uid: friend.uid,
-            username: friend.username,
-            winPercentage,
-            wins,
-            totalGames,
-            difficulty: activeDifficulty
-          });
         } catch (error) {
           console.error(`Failed to get PvP game stats for user ${friend.uid}:`, error);
           // Continue with other users even if one fails
         }
       }
       
-      console.log('LeaderboardScreen: Total PvP leaderboard entries:', leaderboardData.length);
       
       // Sort by win percentage (highest is best). If tie, prefer more games.
       leaderboardData.sort((a, b) => {
@@ -355,7 +322,6 @@ const LeaderboardScreen = () => {
         rank: index + 1
       }));
       
-      console.log('LeaderboardScreen: Final PvP ranked data:', rankedData);
       setPvpLeaderboard(rankedData);
 
       // Find current user's rank
@@ -363,9 +329,7 @@ const LeaderboardScreen = () => {
         const userRank = rankedData.find(player => player.uid === currentUser.uid);
         if (userRank) {
           setUserPvpRank(userRank);
-          console.log('LeaderboardScreen: Current user PvP rank:', userRank);
         } else {
-          console.log('LeaderboardScreen: Current user not found in PvP leaderboard');
         }
       }
     } catch (error) {
@@ -410,21 +374,8 @@ const LeaderboardScreen = () => {
         ]}>
           {item.username || item.displayName || 'Unknown Player'}
         </Text>
-        <Text style={styles.playerStats}>
-          Total Games: {item.totalGames || 0}
-        </Text>
-      </View>
-      
-      <View style={styles.scoreContainer}>
-        <Text style={[
-          styles.scoreText,
-          index < 3 ? styles.topScoreText : null
-        ]}>
-          {item.runningAverage ? item.runningAverage.toFixed(1) : 'N/A'}
-        </Text>
-        <Text style={styles.scoreLabel}>Avg Attempts</Text>
-        <Text style={styles.gamesCountText}>
-          (Last {item.gamesCount || 0} games)
+        <Text style={styles.difficultyScoreText}>
+          {activeDifficulty === 'easy' ? '🟢' : activeDifficulty === 'hard' ? '🔴' : '🟡'} {activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} <Text style={styles.scoreHighlight}>{item.runningAverage ? item.runningAverage.toFixed(2) : 'N/A'}</Text> Avg Attempts
         </Text>
       </View>
     </View>
@@ -456,21 +407,8 @@ const LeaderboardScreen = () => {
         ]}>
           {item.username || item.displayName || 'Unknown Player'}
         </Text>
-        <Text style={styles.playerStats}>
-          Games: {item.totalGames || 0}
-        </Text>
-      </View>
-      
-      <View style={styles.scoreContainer}>
-        <Text style={[
-          styles.scoreText,
-          index < 3 ? styles.topScoreText : null
-        ]}>
-          {item.winPercentage ? item.winPercentage.toFixed(1) : 'N/A'}%
-        </Text>
-        <Text style={styles.scoreLabel}>Win Rate</Text>
-        <Text style={styles.gamesCountText}>
-          ({item.wins || 0}W / {item.totalGames || 0}G)
+        <Text style={styles.difficultyScoreText}>
+          {activeDifficulty === 'easy' ? '🟢' : activeDifficulty === 'hard' ? '🔴' : '🟡'} {activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} <Text style={styles.scoreHighlight}>{item.winPercentage ? item.winPercentage.toFixed(1) : 'N/A'}%</Text> Win Rate
         </Text>
       </View>
     </View>
@@ -525,19 +463,22 @@ const LeaderboardScreen = () => {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
-      <ScrollView 
-        style={{ flex: 1, width: '100%' }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-
+      <ScrollView style={{ flex: 1, width: '100%' }} refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }>
         
         {/* Tab Navigation */}
         <View style={styles.tabContainer}>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'solo' && styles.activeTab]}
-            onPress={() => setActiveTab('solo')}
+            onPress={async () => {
+              setActiveTab('solo');
+              try {
+                await playSound('toggleTab');
+              } catch (error) {
+                // Ignore sound errors
+              }
+            }}
           >
             <Text style={[styles.tabText, activeTab === 'solo' && styles.activeTabText]}>
               🎯 Solo Mode
@@ -545,7 +486,14 @@ const LeaderboardScreen = () => {
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'pvp' && styles.activeTab]}
-            onPress={() => setActiveTab('pvp')}
+            onPress={async () => {
+              setActiveTab('pvp');
+              try {
+                await playSound('toggleTab');
+              } catch (error) {
+                // Ignore sound errors
+              }
+            }}
           >
             <Text style={[styles.tabText, activeTab === 'pvp' && styles.activeTabText]}>
               ⚔️ PvP Mode
@@ -560,7 +508,7 @@ const LeaderboardScreen = () => {
             onPress={() => handleDifficultyChange('easy')}
           >
             <Text style={[styles.difficultyTabText, activeDifficulty === 'easy' && styles.activeDifficultyTabText]}>
-              🟢 Easy (4)
+              🟢 Easy
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -568,7 +516,7 @@ const LeaderboardScreen = () => {
             onPress={() => handleDifficultyChange('regular')}
           >
             <Text style={[styles.difficultyTabText, activeDifficulty === 'regular' && styles.activeDifficultyTabText]}>
-              🟡 Regular (5)
+              🟡 Regular
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -585,7 +533,7 @@ const LeaderboardScreen = () => {
               activeDifficulty === 'hard' && styles.activeDifficultyTabText,
               !hardModeUnlocked && styles.lockedDifficultyTabText
             ]}>
-              {!hardModeUnlocked ? '🔒' : '🔴'} Hard (6)
+              {!hardModeUnlocked ? '🔒' : '🔴'} Hard
             </Text>
             {!hardModeUnlocked && (
               <Text style={styles.lockedDifficultySubtext}>
@@ -612,7 +560,8 @@ const LeaderboardScreen = () => {
               renderItem={activeTab === 'solo' ? renderSoloLeaderboardItem : renderPvpLeaderboardItem}
               keyExtractor={item => item.uid}
               scrollEnabled={false}
-              style={{ maxHeight: 400 }}
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 800 }}
             />
           ) : (
             <View style={styles.emptyContainer}>

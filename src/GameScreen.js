@@ -7,8 +7,8 @@ import { db, auth } from './firebase'; // Added auth import
 import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { isValidWord, getFeedback, selectRandomWord } from './gameLogic';
 import styles from './styles';
-import { loadSounds, playSound } from './soundsUtil';
-import { Audio } from 'expo-av';
+import { playSound } from './soundsUtil';
+// Audio mode is now handled in soundsUtil.js
 import ThreeDGreenDot from './ThreeDGreenDot';
 import ThreeDPurpleRing from './ThreeDPurpleRing';
 import playerProfileService from './playerProfileService';
@@ -56,24 +56,6 @@ const GameScreen = () => {
   const [gameState, setGameState] = useState(savedGameState || (showDifficulty ? 'selectDifficulty' : gameMode === 'pvp' ? 'selectDifficulty' : 'playing'));
 
   
-  // Debug logging for game state changes
-  useEffect(() => {
-    console.log('GameScreen: Game state changed', { gameState, gameMode, showDifficulty, isCreator });
-  }, [gameState, gameMode, showDifficulty, isCreator]);
-
-  // Debug logging for component mount and params
-  useEffect(() => {
-    console.log('GameScreen: Component mounted with params', { 
-      gameMode, 
-      gameId: initialGameId, 
-      showDifficulty, 
-      isCreator, 
-      gameState: savedGameState,
-      wordLength,
-      hasParams: !!route.params,
-      paramKeys: route.params ? Object.keys(route.params) : []
-    });
-  }, [route.params]);
 
   const [alphabet, setAlphabet] = useState(savedAlphabet || Array(26).fill('unknown'));
   const [hintCount, setHintCount] = useState(savedHintCount || 0);
@@ -181,7 +163,6 @@ const GameScreen = () => {
   }, [gameMode]);
 
   const handleHint = useCallback(async () => {
-    console.log('GameScreen: handleHint called', { hintCount });
     if (hintCount >= 3) {
       setShowHintLimitPopup(true);
       await playSound('invalidWord').catch(() => {});
@@ -193,7 +174,6 @@ const GameScreen = () => {
       // Show rewarded ad for hint
       const adWatched = await adService.showRewardedAdForHint();
       if (!adWatched) {
-        console.log('GameScreen: Ad not watched, hint not given');
         return;
       }
       
@@ -212,7 +192,6 @@ const GameScreen = () => {
       });
 
       if (availableLetters.length === 0) {
-        console.log('GameScreen: No available hint letters remaining');
         setShowHintLimitPopup(true);
         await playSound('invalidWord').catch(() => {});
         setTimeout(() => setShowHintLimitPopup(false), 2000);
@@ -246,34 +225,14 @@ const GameScreen = () => {
     }
   }, [hintCount, targetWord, gameMode, usedHintLetters]);
 
+  // Audio mode is now handled in soundsUtil.js
   useEffect(() => {
-    const initializeAudio = async () => {
-      if (soundsInitialized.current) return;
-      try {
-        console.log('GameScreen: Configuring audio session');
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        console.log('GameScreen: Audio session configured');
-        await loadSounds();
-        await playSound('backspace', { volume: 0 }); // Pre-play backspace sound silently
-        soundsInitialized.current = true;
-        setSoundsLoaded(true);
-      } catch (error) {
-        console.error('GameScreen: Failed to initialize audio or load sounds', error);
-        soundsInitialized.current = true;
-        setSoundsLoaded(true);
-      }
-    };
-    initializeAudio();
+    // Sounds are now preloaded in App.js
+    soundsInitialized.current = true;
+    setSoundsLoaded(true);
 
     if ((gameMode === 'solo' && savedTargetWord) || soloWord) {
       const upperWord = (savedTargetWord || soloWord).toUpperCase();
-      console.log('GameScreen: Setting targetWord', { gameId, targetWord: upperWord });
       setTargetWord(upperWord);
     }
   }, [gameMode, savedTargetWord, soloWord]);
@@ -283,7 +242,6 @@ const GameScreen = () => {
     if (gameMode === 'solo' && !difficulty) {
       // Set default difficulty for solo games if none is set
       const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
-      console.log('GameScreen: Setting default difficulty for solo game', { wordLength, defaultDifficulty });
       setDifficulty(defaultDifficulty);
     }
   }, [gameMode, difficulty, wordLength]);
@@ -292,63 +250,28 @@ const GameScreen = () => {
   useEffect(() => {
     // Early return if not PvP or no gameId
     if (gameMode !== 'pvp' || !gameId) {
-      console.log('GameScreen: Skipping Firebase subscription - not PvP or no gameId', { gameMode, gameId });
       return;
     }
 
     // Early return if creator is still selecting difficulty
     if (isCreator && gameState === 'selectDifficulty') {
-      console.log('GameScreen: Skipping Firebase subscription - creator waiting for difficulty selection', { gameId, gameState });
       return;
     }
 
     // For joining players, add a longer delay to ensure they're properly added to the game document
     const delay = isCreator ? 500 : 3000; // 3 seconds for joining players to ensure they're added
 
-    console.log('GameScreen: Setting up Firebase listener with delay', { gameId, isCreator, gameState, delay });
 
     // Add a delay to ensure the document is created/accessible before setting up the listener
     const setupListener = (retryCount = 0) => {
-      console.log('GameScreen: Setting up Firebase listener for gameId', { 
-        gameId, 
-        isCreator, 
-        playerId, 
-        gameState, 
-        delay, 
-        retryCount,
-        currentUid: auth.currentUser?.uid,
-        timestamp: new Date().toISOString()
-      });
       const gameRef = doc(db, 'games', gameId);
       
       const unsubscribe = onSnapshot(gameRef, (docSnapshot) => {
         if (docSnapshot.exists()) {
           const data = docSnapshot.data();
-          console.log('GameScreen: Snapshot received', { 
-            gameId, 
-            isCreator, 
-            currentUid: auth.currentUser?.uid,
-            data: { 
-              playerWord: data.playerWord, 
-              opponentWord: data.opponentWord, 
-              status: data.status, 
-              playerGuesses: data.playerGuesses?.length, 
-              opponentGuesses: data.opponentGuesses?.length,
-              players: data.players,
-              playerId: data.playerId,
-              opponentId: data.opponentId
-            } 
-          });
           
           // For joining players, verify they have access to this game
           if (!isCreator && data.players && !data.players.includes(auth.currentUser?.uid)) {
-            console.log('GameScreen: Joining player not in players array yet', { 
-              gameId, 
-              currentUid: auth.currentUser?.uid, 
-              players: data.players,
-              playerId: data.playerId,
-              opponentId: data.opponentId
-            });
             // Wait a bit more for the player to be added
             return;
           }
@@ -357,13 +280,11 @@ const GameScreen = () => {
           setOpponentGuesses(isCreator ? data.opponentGuesses || [] : data.playerGuesses || []);
           // Check if game is ready and both players can start setting words
           if (data.status === 'ready' && gameState === 'setWord') {
-            console.log('GameScreen: Game is ready, both players can set words', { status: data.status });
             // Game is ready, both players can now set their words
           }
           
           // Check if both words are set to start the game
           if (data.playerWord && data.opponentWord && gameState !== 'playing' && gameState !== 'gameOver' && gameState !== 'maxGuesses') {
-            console.log('GameScreen: Both words set', { playerWord: data.playerWord, opponentWord: data.opponentWord });
             const target = isCreator ? data.opponentWord.toUpperCase() : data.playerWord.toUpperCase();
             setOpponentWord(target);
             setTargetWord(target);
@@ -383,15 +304,12 @@ const GameScreen = () => {
             setOpponentGuessCountOnSolve(data.playerGuesses.length);
           }
         } else {
-          console.log('GameScreen: Game document does not exist', { gameId });
           // Don't show invalid word popup for missing game documents in PvP mode
           // This could mean the game is still being created by the first player
           if (gameMode === 'pvp' && isCreator) {
             // Creator is waiting for difficulty selection, this is normal
-            console.log('GameScreen: Game document not yet created, waiting for difficulty selection');
           } else if (gameMode === 'pvp' && !isCreator) {
             // Second player trying to join a game that doesn't exist yet
-            console.log('GameScreen: Game document not found for joining player, game may not be ready yet');
             // Don't show an alert immediately - this might be a timing issue
             // The document could be created shortly after
           } else {
@@ -405,37 +323,13 @@ const GameScreen = () => {
         if (gameMode === 'pvp') {
           // Only show connection error if it's not a permission issue
           if (error.code === 'permission-denied') {
-            console.log('GameScreen: Permission denied - this is expected for joining players until they are added to the game', {
-              gameId,
-              isCreator,
-              currentUid: auth.currentUser?.uid,
-              retryCount,
-              error: error.message
-            });
             // For joining players, show a more helpful message and retry after a delay
             if (!isCreator && retryCount < 5) { // Increased retry count
-              console.log('GameScreen: Permission denied for joining player, retrying...', { 
-                retryCount, 
-                gameId, 
-                currentUid: auth.currentUser?.uid,
-                willRetryIn: '5 seconds'
-              });
               // Retry after a longer delay for permission issues
               setTimeout(() => {
-                console.log('GameScreen: Retrying Firebase connection after permission error', { 
-                  retryCount: retryCount + 1,
-                  gameId,
-                  currentUid: auth.currentUser?.uid
-                });
                 setupListener(retryCount + 1);
               }, 5000); // Wait 5 seconds before retry (increased delay)
             } else if (retryCount >= 5) {
-              console.log('GameScreen: Max retries reached for joining player, showing error', {
-                gameId,
-                currentUid: auth.currentUser?.uid,
-                totalRetries: retryCount,
-                finalError: error.message
-              });
               Alert.alert('Game Access Error', 'Unable to access the game after multiple attempts. Please check with your friend to ensure the challenge was sent correctly.');
             }
           } else if (error.code === 'unavailable') {
@@ -454,25 +348,11 @@ const GameScreen = () => {
 
     // Add a delay to ensure the document is created/accessible before setting up the listener
     const timer = setTimeout(() => {
-      console.log('GameScreen: Timer expired, setting up Firebase listener', { 
-        gameId, 
-        gameState, 
-        isCreator, 
-        delay,
-        currentUid: auth.currentUser?.uid,
-        timestamp: new Date().toISOString()
-      });
       
       // Store the unsubscribe function for cleanup
       let unsubscribeRef = null;
       
       const cleanup = () => {
-        console.log('GameScreen: Unsubscribing from gameId', { 
-          gameId, 
-          isCreator, 
-          currentUid: auth.currentUser?.uid,
-          timestamp: new Date().toISOString()
-        });
         clearTimeout(timer);
         if (unsubscribeRef && typeof unsubscribeRef === 'function') {
           unsubscribeRef();
@@ -485,22 +365,8 @@ const GameScreen = () => {
       return cleanup;
     }, delay);
 
-    console.log('GameScreen: Setting up timer for Firebase listener', { 
-      gameId, 
-      delay, 
-      gameState, 
-      isCreator, 
-      currentUid: auth.currentUser?.uid,
-      willSetupIn: `${delay}ms`
-    });
 
     return () => {
-      console.log('GameScreen: Cleaning up Firebase listener setup', { 
-        gameId, 
-        isCreator, 
-        currentUid: auth.currentUser?.uid,
-        timestamp: new Date().toISOString()
-      });
       clearTimeout(timer);
     };
   }, [gameMode, gameId, isCreator, playerId, gameState, auth.currentUser?.uid]);
@@ -513,7 +379,6 @@ const GameScreen = () => {
     const playerHasCorrect = guesses.some(g => g.isCorrect);
 
     if (opponentHasCorrect && !playerHasCorrect && opponentGuessCountOnSolve !== null && !hasShownOpponentSolved) {
-      console.log('GameScreen: Opponent solved', { opponentGuessCountOnSolve });
       setShowOpponentSolvedPopup(true);
       setHasShownOpponentSolved(true);
       playSound('opponentSolved').catch(() => {});
@@ -523,7 +388,6 @@ const GameScreen = () => {
       setGameState('gameOver');
       const playerGuessCount = guesses.length;
       const opponentGuessCount = opponentGuessCountOnSolve || opponentGuesses.length;
-      console.log('GameScreen: Game over, comparing guesses', { playerGuessCount, opponentGuessCount });
       if (playerHasCorrect && opponentHasCorrect) {
         if (playerGuessCount < opponentGuessCount) {
           setShowWinPopup(true);
@@ -578,7 +442,6 @@ const GameScreen = () => {
           opponentGuessCountOnSolve,
           timestamp: new Date().toISOString(),
         };
-        console.log('GameScreen: Saving game state', { gameId, targetWord, gameState });
         let games = [];
         const savedGames = await AsyncStorage.getItem('savedGames');
         games = savedGames ? JSON.parse(savedGames) : [];
@@ -624,31 +487,15 @@ const GameScreen = () => {
     }
   };
 
-  const handleBackspace = async () => {
-    if (inputWord.length > 0 && !isLoading && soundsLoaded && gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
+  const handleBackspace = () => {
+    if (inputWord.length > 0 && !isLoading && gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
       setInputWord(inputWord.slice(0, -1));
-      try {
-        let attempts = 0;
-        const maxAttempts = 3;
-        while (attempts < maxAttempts) {
-          try {
-            await playSound('backspace');
-            return;
-          } catch (error) {
-            console.error('GameScreen: Backspace sound attempt failed', { attempt: attempts + 1, error });
-            attempts++;
-            if (attempts < maxAttempts) await new Promise(resolve => setTimeout(resolve, 200));
-          }
-        }
-      } catch (error) {
-        console.error('GameScreen: Failed to play backspace sound after retries', error);
-      }
+      playSound('backspace').catch(() => {});
     }
   };
 
   const toggleLetter = (index) => {
     if (gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
-      console.log('GameScreen: Toggling letter', { index, letter: String.fromCharCode(65 + index) });
       setAlphabet((prev) => {
         const updated = [...prev];
         const prevState = updated[index];
@@ -669,7 +516,6 @@ const GameScreen = () => {
 
   const handleSubmit = async () => {
     if (isLoading || inputWord.length !== (wordLength || 5) || gameState === 'maxGuesses' || gameState === 'gameOver' || guesses.some(g => g.isCorrect)) {
-      console.log('GameScreen: Invalid submission', { inputWord, wordLength, gameState });
       setShowInvalidPopup(true);
       await playSound('invalidWord').catch(() => {});
       setTimeout(() => setShowInvalidPopup(false), 2000);
@@ -687,10 +533,8 @@ const GameScreen = () => {
 
             await playSound('guess').catch(() => {});
       const upperInput = inputWord.toUpperCase();
-      console.log('GameScreen: Submitting', { inputWord: upperInput, gameState });
 
       if (gameState === 'setWord') {
-        console.log('GameScreen: Submitting word for PvP', { gameId, isCreator, inputWord: upperInput });
         setGameState('waiting');
         setInputWord('');
         if (gameMode === 'pvp' && gameId) {
@@ -699,7 +543,6 @@ const GameScreen = () => {
               ? { playerWord: upperInput, playerGuesses: [], wordLength: wordLength || 5, playerGuessCountOnSolve: null }
               : { opponentWord: upperInput, opponentGuesses: [], wordLength: wordLength || 5, opponentGuessCountOnSolve: null };
             await setDoc(doc(db, 'games', gameId), updateData, { merge: true });
-            console.log('GameScreen: Firestore updated with word', { inputWord: upperInput });
           } catch (error) {
             console.error('GameScreen: Failed to update Firestore with word', error);
             setShowInvalidPopup(true);
@@ -707,7 +550,6 @@ const GameScreen = () => {
           }
         }
       } else if (gameState === 'playing') {
-        console.log('GameScreen: Submitting guess', { inputWord: upperInput, targetWord });
         const { dots, circles, feedback } = getFeedback(upperInput, targetWord);
         const newGuess = { word: upperInput, dots, circles, feedback, isCorrect: dots === (wordLength || 5) };
         setGuesses(guesses => [...guesses, newGuess]);
@@ -741,7 +583,6 @@ const GameScreen = () => {
             // Ensure difficulty is set for solo games
             if (!difficulty) {
               const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
-              console.log('GameScreen: Setting default difficulty for solo game completion', { wordLength, defaultDifficulty });
               setDifficulty(defaultDifficulty);
             }
             
@@ -767,7 +608,6 @@ const GameScreen = () => {
               if (auth.currentUser?.uid) {
                 // Double-check authentication state
                 if (!auth.currentUser || !auth.currentUser.uid) {
-                  console.log('GameScreen: User authentication lost, skipping Firebase update');
                   return;
                 }
                 
@@ -782,16 +622,11 @@ const GameScreen = () => {
                     timestamp: new Date().toISOString(), 
                     userId: auth.currentUser.uid,
                   };
-                console.log('GameScreen: Saving to leaderboard:', leaderboardData);
-                console.log('GameScreen: Current user UID:', auth.currentUser.uid);
-                console.log('GameScreen: Auth state:', auth.currentUser);
                 
                 try {
                   const docId = `score_${auth.currentUser.uid}_${Date.now()}`;
-                  console.log('GameScreen: Creating document with ID:', docId);
                   
                   await setDoc(doc(db, 'leaderboard', docId), leaderboardData, { merge: true });
-                  console.log('GameScreen: Successfully saved to leaderboard collection');
                   
                   // Update user profile with game stats
                   await playerProfileService.updateGameStats(auth.currentUser.uid, {
@@ -800,7 +635,6 @@ const GameScreen = () => {
                     bestScore: 0, // Will be updated by the service if it's better
                     difficulty: gameDifficulty // Pass difficulty for rolling average calculation
                   });
-                  console.log('GameScreen: Successfully updated user profile');
                 } catch (firebaseError) {
                   console.error('GameScreen: Firebase error details:', {
                     code: firebaseError.code,
@@ -810,7 +644,6 @@ const GameScreen = () => {
                   
                   // Fallback: Save to local storage if Firebase fails
                   try {
-                    console.log('GameScreen: Attempting fallback to local storage');
                     const localLeaderboard = await AsyncStorage.getItem('leaderboard') || '[]';
                     const localData = JSON.parse(localLeaderboard);
                     localData.push({
@@ -820,7 +653,6 @@ const GameScreen = () => {
                     });
                     if (localData.length > 15) localData.shift();
                     await AsyncStorage.setItem('leaderboard', JSON.stringify(localData));
-                    console.log('GameScreen: Successfully saved to local storage as fallback');
                   } catch (fallbackError) {
                     console.error('GameScreen: Fallback to local storage also failed:', fallbackError);
                   }
@@ -829,7 +661,6 @@ const GameScreen = () => {
                   // This prevents the game from crashing due to leaderboard issues
                 }
               } else {
-                console.log('GameScreen: No authenticated user, skipping Firebase leaderboard update');
               }
             } catch (error) {
               console.error('GameScreen: Failed to update leaderboard', error);
@@ -849,7 +680,6 @@ const GameScreen = () => {
           // Ensure difficulty is set for solo games
           if (!difficulty) {
             const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
-            console.log('GameScreen: Setting default difficulty for solo game loss', { wordLength, defaultDifficulty });
             setDifficulty(defaultDifficulty);
           }
           
@@ -891,7 +721,6 @@ const GameScreen = () => {
   };
 
   const handleQuit = async () => {
-    console.log('GameScreen: Quit triggered');
     setShowMenuPopup(false);
     setShowQuitConfirmPopup(true);
     await playSound('chime').catch(() => {});
@@ -899,7 +728,6 @@ const GameScreen = () => {
 
   const handleConfirmQuit = async () => {
     try {
-      console.log('GameScreen: Confirm quit', { gameMode, targetWord });
       if (gameMode === 'solo' && (!targetWord || typeof targetWord !== 'string')) {
         console.error('GameScreen: Invalid targetWord on quit', { targetWord });
         setTargetWord('UNKNOWN');
@@ -911,7 +739,6 @@ const GameScreen = () => {
       if (gameMode === 'pvp' && gameId) {
         await setDoc(doc(db, 'games', gameId), { status: 'quit', quitBy: playerId }, { merge: true });
       }
-      console.log('GameScreen: Revealing word on quit', { revealWord: targetWord });
       setShowWordRevealPopup(true);
       await playSound('chime').catch(() => {});
       setTimeout(async () => {
@@ -926,7 +753,6 @@ const GameScreen = () => {
   };
 
   const handleSave = async () => {
-    console.log('GameScreen: Save triggered');
     try {
       await saveGameState();
       setShowMenuPopup(false);
@@ -957,7 +783,6 @@ const GameScreen = () => {
     }
 
     const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
-    console.log('GameScreen: Difficulty selected', { difficulty: diff, wordLength: length });
     await playSound('chime').catch(() => {});
     setGameState(gameMode === 'pvp' ? 'setWord' : 'playing');
     setDifficulty(diff);
@@ -971,7 +796,6 @@ const GameScreen = () => {
           throw new Error('Failed to select random word');
         }
         const upperWord = word.toUpperCase();
-        console.log('GameScreen: Setting targetWord for solo', { gameId, targetWord: upperWord, difficulty: diff });
         setTargetWord(upperWord);
         navigation.setParams({ wordLength: length, showDifficulty: false });
       } catch (error) {
@@ -985,16 +809,13 @@ const GameScreen = () => {
       }
     } else if (gameMode === 'pvp' && gameId) {
       try {
-        console.log('GameScreen: Updating PvP game document', { gameId, wordLength: length, uid: auth.currentUser?.uid });
         // Update the existing game document with word length
         await setDoc(doc(db, 'games', gameId), {
           wordLength: length,
           lastUpdated: new Date().toISOString(),
         }, { merge: true });
-        console.log('GameScreen: Successfully updated PvP game document', { gameId, wordLength: length });
         navigation.setParams({ wordLength: length, showDifficulty: false, gameId });
         // Set game state to 'setWord' to trigger Firebase subscription
-        console.log('GameScreen: Setting game state to setWord to trigger Firebase subscription');
         setGameState('setWord');
       } catch (error) {
         console.error('GameScreen: Failed to update PvP game document', error);
@@ -1102,7 +923,10 @@ const GameScreen = () => {
           </Text>
           <TouchableOpacity 
             style={[styles.button, { marginTop: 20 }]} 
-            onPress={() => navigation.navigate('Home')}
+            onPress={() => {
+              playSound('backspace').catch(() => {});
+              navigation.navigate('Home');
+            }}
           >
             <Text style={styles.buttonText}>Back to Home</Text>
           </TouchableOpacity>
@@ -1321,7 +1145,6 @@ const GameScreen = () => {
                       try {
                         const word = await selectRandomWord(wordLength || 5);
                         const upperWord = word.toUpperCase();
-                        console.log('GameScreen: Setting new targetWord for play again', { gameId, targetWord: upperWord });
                         setTargetWord(upperWord);
                       } catch (error) {
                         console.error('GameScreen: Failed to select random word for play again', error);

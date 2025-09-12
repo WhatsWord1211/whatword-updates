@@ -74,7 +74,6 @@ export const checkBadgeConditions = async ({ guesses, completedGames, gameMode, 
         for (const badgeId of newBadges) {
           try {
             await setDoc(doc(db, `users/${playerId}/badges`, badgeId), { earned: true, earnedAt: new Date().toISOString() });
-            console.log('badges.js: Saved badge to Firestore', { badgeId });
           } catch (error) {
             console.warn('badges.js: Failed to save badge to Firestore', { badgeId, error });
           }

@@ -63,7 +63,6 @@ class GameService {
       };
 
       await setDoc(doc(db, 'games', gameId), gameData);
-      console.log('GameService: PvP game created successfully', { gameId, players: gameData.playerIds });
       
       return gameId;
     } catch (error) {
@@ -133,7 +132,6 @@ class GameService {
       }
       
       await updateDoc(doc(db, 'games', gameId), updates);
-      console.log('GameService: Player word set successfully', { gameId, word, updateField });
       
       // Send notification to opponent when word is set
       const opponentId = gameData.playerIds.find(id => id !== this.getCurrentUser().uid);
@@ -153,7 +151,6 @@ class GameService {
               senderName: currentUserData.username 
             }
           );
-          console.log('GameService: Notification sent to opponent about word being set');
         } catch (notificationError) {
           console.error('GameService: Failed to send notification to opponent:', notificationError);
           // Don't throw error - word setting should still succeed even if notification fails
@@ -260,51 +257,8 @@ class GameService {
             const currentUserId = this.getCurrentUser().uid;
             const opponentId = gameData.playerIds.find(id => id !== currentUserId);
             
-            // Get opponent's username for the notification
-            const opponentDoc = await getDoc(doc(db, 'users', opponentId));
-            const opponentUsername = opponentDoc.exists() ? opponentDoc.data().username || 'Opponent' : 'Opponent';
-            
-            // Send notification to current player
-            if (updates.winnerId === currentUserId) {
-              await getNotificationService().sendGameCompletionNotification(
-                currentUserId, 
-                gameId, 
-                `Congratulations! You won against ${opponentUsername}!`
-              );
-            } else if (updates.tie) {
-              await getNotificationService().sendGameCompletionNotification(
-                currentUserId, 
-                gameId, 
-                `It's a tie! Both players reached the same number of attempts.`
-              );
-            } else {
-              await getNotificationService().sendGameCompletionNotification(
-                currentUserId, 
-                gameId, 
-                `Game over! ${opponentUsername} won the game.`
-              );
-            }
-            
-            // Send notification to opponent
-            if (updates.winnerId === opponentId) {
-              await getNotificationService().sendGameCompletionNotification(
-                opponentId, 
-                gameId, 
-                `Congratulations! You won against ${this.getCurrentUser().displayName || 'Opponent'}!`
-              );
-            } else if (updates.tie) {
-              await getNotificationService().sendGameCompletionNotification(
-                opponentId, 
-                gameId, 
-                `It's a tie! Both players reached the same number of attempts.`
-              );
-            } else {
-              await getNotificationService().sendGameCompletionNotification(
-                opponentId, 
-                gameId, 
-                `Game over! ${this.getCurrentUser().displayName || 'Opponent'} won the game.`
-              );
-            }
+            // Notifications are handled by PvPGameScreen.js to avoid duplicates
+            // The PvPGameScreen has more sophisticated logic with firstFinisher tracking
           } catch (notificationError) {
             console.error('GameService: Failed to send game completion notifications:', notificationError);
             // Don't fail the game completion if notifications fail
@@ -358,7 +312,6 @@ class GameService {
       }
       
       await updateDoc(doc(db, 'games', gameId), updates);
-      console.log('GameService: Guess added successfully', { gameId, guess: processedGuess.word });
       
       return processedGuess;
     } catch (error) {
@@ -493,7 +446,6 @@ class GameService {
       };
       
       await updateDoc(doc(db, 'games', gameId), updates);
-      console.log('GameService: Game status updated successfully', { gameId, status });
       
       return true;
     } catch (error) {
@@ -642,7 +594,6 @@ class GameService {
       };
       
       await updateDoc(doc(db, 'games', gameId), updates);
-      console.log('GameService: Game forfeited successfully', { gameId, forfeitedBy: this.getCurrentUser().uid });
       
       // Send game completion notification only to the opponent (winner)
       try {
@@ -787,7 +738,6 @@ class GameService {
   // Delete completed game and preserve only statistics
   async deleteCompletedGame(gameId, gameData) {
     try {
-      console.log('🗑️ GameService: Deleting completed game:', gameId);
       
       // Attempt to remove this game from both players' activeGames arrays (best-effort)
       try {
@@ -830,11 +780,9 @@ class GameService {
       // Save statistics to a separate collection for leaderboard purposes
       const statsRef = doc(db, 'gameStats', gameId);
       await setDoc(statsRef, gameStats);
-      console.log('📊 GameService: Game statistics preserved for leaderboard');
       
       // Delete the actual game document
       await deleteDoc(doc(db, 'games', gameId));
-      console.log('🗑️ GameService: Game document deleted successfully');
       
       return true;
     } catch (error) {

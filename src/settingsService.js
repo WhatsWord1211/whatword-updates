@@ -224,16 +224,6 @@ class SettingsService {
       const sizeInMB = totalSize / (1024 * 1024);
       const roundedSize = Math.round(sizeInMB * 100) / 100;
       
-      console.log('SettingsService: Cache size calculation:', {
-        totalKeys: keys.length,
-        cacheKeysFound: keys.filter(key => 
-          ['savedGames', 'leaderboard', 'earnedBadges', 'dismissedNotifications', 
-           'notificationsSeen', 'hasLaunched', 'gameSettings', 'offlineWordLists'].includes(key) ||
-          key.startsWith('game_') || key.startsWith('cache_') || key.startsWith('temp_')
-        ).length,
-        totalSizeBytes: totalSize,
-        sizeInMB: roundedSize
-      });
       
       return roundedSize;
     } catch (error) {

@@ -1311,6 +1311,7 @@ export default StyleSheet.create({
     width: '100%',
     borderBottomWidth: 1,
     borderBottomColor: '#4B5563',
+    justifyContent: 'space-between',
   },
   tabButton: {
     flex: 1,
@@ -2518,6 +2519,18 @@ export default StyleSheet.create({
     color: '#9CA3AF',
     fontFamily: 'Roboto-Regular',
   },
+  scoreHighlight: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+  },
+  difficultyScoreText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginTop: 4,
+  },
   gamesCountText: {
     fontSize: 10,
     color: '#6B7280',
@@ -2689,8 +2702,10 @@ export default StyleSheet.create({
     elevation: 2,
   },
   friendInfo: {
-    marginBottom: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 15,
   },
   friendUsername: {
     fontSize: 18, // Increased font size
@@ -2698,6 +2713,26 @@ export default StyleSheet.create({
     color: '#E5E7EB',
     fontFamily: 'Roboto-Bold',
     marginBottom: 0, // Removed bottom margin since no email below
+    flex: 1, // Allow username to take available space
+  },
+  removeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    backgroundColor: '#DC2626',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  removeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
     textAlign: 'center',
   },
   // friendEmail style removed since we no longer display emails
@@ -3215,6 +3250,38 @@ export default StyleSheet.create({
   searchResults: {
     marginTop: 15,
   },
+  searchResultItem: {
+    backgroundColor: '#1F2937',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  searchResultInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  searchResultUsername: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 4,
+  },
+  searchResultEmail: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+  },
   resultsTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -3247,7 +3314,19 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Regular',
   },
   addButton: {
-    backgroundColor: '#3B82F6',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    backgroundColor: '#10B981',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    minWidth: 80,
+    alignItems: 'center',
   },
   requestItem: {
     backgroundColor: '#1F2937',
@@ -3273,8 +3352,7 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Regular',
   },
   requestActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
     gap: 10,
   },
   acceptButton: {
@@ -3372,10 +3450,11 @@ export default StyleSheet.create({
   tab: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     borderRadius: 8,
     alignItems: 'center',
     marginHorizontal: 2,
+    minWidth: 0, // Allow flex to shrink
   },
   activeTab: {
     backgroundColor: '#F59E0B',

@@ -23,7 +23,6 @@ Notifications.setNotificationHandler({
 if (Platform.OS === 'android') {
   // This will be called when the app is in the background
   // onBackgroundMessage(getMessaging(), async (remoteMessage) => {
-  //   console.log('NotificationService: Background message received:', remoteMessage);
   //   // Handle background notification here
   //   // Note: This only works on Android when the app is in background
   // });
@@ -85,7 +84,6 @@ class NotificationService {
       // Set up token refresh listener
       this.setupTokenRefreshListener();
       
-      console.log('NotificationService: Initialized successfully');
       return true;
     } catch (error) {
       console.error('NotificationService: Initialization failed:', error);
@@ -113,7 +111,6 @@ class NotificationService {
     // if (!this.messaging) return;
     
     // this.onTokenRefreshUnsubscribe = onTokenRefresh(this.messaging, async (token) => {
-    //   console.log('NotificationService: FCM token refreshed:', token);
       
     //   // Update current token
     //   this.currentToken = token;
@@ -163,7 +160,6 @@ class NotificationService {
         });
       }
       
-      console.log('NotificationService: Token saved to Firestore for user:', userId);
       return true;
     } catch (error) {
       console.error('NotificationService: Failed to save token to Firestore:', error);
@@ -248,12 +244,10 @@ class NotificationService {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       
       if (existingStatus === 'granted') {
-        console.log('NotificationService: iOS permission already granted');
         return 'granted';
       }
 
       if (existingStatus === 'denied') {
-        console.log('NotificationService: iOS permission denied by user');
         
         if (showExplanation) {
           // Show explanation and guide user to Settings
@@ -292,9 +286,7 @@ class NotificationService {
       if (status === 'granted') {
         // Register for remote notifications (required for FCM on iOS)
         await Notifications.registerForRemoteNotificationsAsync();
-        console.log('NotificationService: iOS permission granted and remote notifications registered');
       } else {
-        console.log('NotificationService: iOS permission denied by user');
       }
 
       this.permissionStatus = status;
@@ -316,12 +308,10 @@ class NotificationService {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       
       if (existingStatus === 'granted') {
-        console.log('NotificationService: Android permission already granted');
         return 'granted';
       }
 
       if (existingStatus === 'denied') {
-        console.log('NotificationService: Android permission denied by user');
         
         if (showExplanation) {
           // Show explanation and guide user to Settings
@@ -349,9 +339,7 @@ class NotificationService {
       const { status } = await Notifications.requestPermissionsAsync();
       
       if (status === 'granted') {
-        console.log('NotificationService: Android permission granted');
       } else {
-        console.log('NotificationService: Android permission denied by user');
       }
 
       this.permissionStatus = status;
@@ -633,13 +621,11 @@ class NotificationService {
   setupNotificationListeners() {
     // Foreground message listener (when app is open and active)
     // this.foregroundListener = onMessage(this.messaging, (remoteMessage) => {
-    //   console.log('NotificationService: Foreground message received:', remoteMessage);
     //   this.handleForegroundNotification(remoteMessage);
     // });
 
     // Notification response listener (when user taps notification)
     this.notificationResponseListener = Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log('NotificationService: Notification response received:', response);
       this.handleNotificationResponse(response);
     });
 
@@ -653,7 +639,6 @@ class NotificationService {
   setupAppStateListener() {
     // Note: This would typically use AppState from react-native
     // For now, we'll handle it through the existing listeners
-    console.log('NotificationService: App state listener set up');
   }
 
   /**
@@ -681,7 +666,6 @@ class NotificationService {
       // Emit event for UI updates (if using event system)
       this.emitNotificationEvent('foreground', remoteMessage);
       
-      console.log('NotificationService: Foreground notification handled');
     } catch (error) {
       console.error('NotificationService: Error handling foreground notification:', error);
     }
@@ -696,7 +680,6 @@ class NotificationService {
       const { notification, actionIdentifier } = response;
       const data = notification.request.content.data;
       
-      console.log('NotificationService: Handling notification response:', { actionIdentifier, data });
       
       // Handle different action types
       if (actionIdentifier === 'default') {
@@ -742,7 +725,6 @@ class NotificationService {
    * @param {Object} data - Game invite data
    */
   handleGameInviteNotification(data) {
-    console.log('NotificationService: Handling game invite:', data);
     // Navigate to game screen or show game invite modal
     // This would typically use navigation or state management
   }
@@ -752,7 +734,6 @@ class NotificationService {
    * @param {Object} data - Friend request data
    */
   handleFriendRequestNotification(data) {
-    console.log('NotificationService: Handling friend request:', data);
     // Navigate to friends screen or show friend request modal
   }
 
@@ -761,7 +742,6 @@ class NotificationService {
    * @param {Object} data - Game result data
    */
   handleGameResultNotification(data) {
-    console.log('NotificationService: Handling game result:', data);
     // Show game result modal or navigate to results screen
   }
 
@@ -770,7 +750,6 @@ class NotificationService {
    * @param {Object} data - Generic notification data
    */
   handleGenericNotification(data) {
-    console.log('NotificationService: Handling generic notification:', data);
     // Handle generic notifications
   }
 
@@ -779,7 +758,6 @@ class NotificationService {
    * @param {Object} data - Notification data
    */
   handleReplyAction(data) {
-    console.log('NotificationService: Handling reply action:', data);
     // Handle reply functionality
   }
 
@@ -807,7 +785,8 @@ class NotificationService {
         priority,
         // Avoid passing undefined/null badge to iOS; only include if it's a valid number
         ...(typeof badge === 'number' ? { badge } : {}),
-        categoryIdentifier
+        // Only include categoryIdentifier if it's a valid string
+        ...(categoryIdentifier && typeof categoryIdentifier === 'string' ? { categoryIdentifier } : {})
       };
 
       // Add platform-specific options
@@ -825,7 +804,8 @@ class NotificationService {
           sound: sound,
           // Only include badge if number
           ...(typeof badge === 'number' ? { badge } : {}),
-          categoryIdentifier,
+          // Only include categoryIdentifier if it's a valid string
+          ...(categoryIdentifier && typeof categoryIdentifier === 'string' ? { categoryIdentifier } : {}),
           threadIdentifier: 'default'
         };
       }
@@ -835,7 +815,6 @@ class NotificationService {
         trigger: null // Show immediately
       });
 
-      console.log('NotificationService: Local notification scheduled');
     } catch (error) {
       console.error('NotificationService: Error showing local notification:', error);
     }
@@ -870,7 +849,6 @@ class NotificationService {
         trigger
       });
 
-      console.log('NotificationService: Notification scheduled with ID:', notificationId);
       return notificationId;
     } catch (error) {
       console.error('NotificationService: Error scheduling notification:', error);
@@ -885,7 +863,6 @@ class NotificationService {
   async cancelNotification(notificationId) {
     try {
       await Notifications.cancelScheduledNotificationAsync(notificationId);
-      console.log('NotificationService: Notification cancelled:', notificationId);
       return true;
     } catch (error) {
       console.error('NotificationService: Error cancelling notification:', error);
@@ -899,7 +876,6 @@ class NotificationService {
   async cancelAllNotifications() {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('NotificationService: All notifications cancelled');
       return true;
     } catch (error) {
       console.error('NotificationService: Error cancelling all notifications:', error);
@@ -929,7 +905,6 @@ class NotificationService {
       ...this.notificationSettings,
       ...settings
     };
-    console.log('NotificationService: Settings updated:', this.notificationSettings);
   }
 
   /**
@@ -946,7 +921,6 @@ class NotificationService {
    */
   emitNotificationEvent(type, data) {
     // This would typically use an event emitter or state management system
-    console.log('NotificationService: Event emitted:', type, data);
     
     // Example: You could integrate with React Navigation, Redux, or other state management
     // NavigationService.navigate('NotificationScreen', { notification: data });
@@ -986,7 +960,6 @@ class NotificationService {
         priority: 'high'
       });
 
-      console.log('NotificationService: Test notification sent');
       return true;
     } catch (error) {
       console.error('NotificationService: Error sending test notification:', error);
@@ -1000,7 +973,6 @@ class NotificationService {
    */
   handleBackgroundNotification(remoteMessage) {
     try {
-      console.log('NotificationService: Background notification received:', remoteMessage);
       
       // Store notification for when app becomes active
       this.lastNotification = remoteMessage;
@@ -1033,7 +1005,6 @@ class NotificationService {
       gameInvites.push({ ...data, receivedAt: new Date().toISOString() });
       await AsyncStorage.setItem('pendingGameInvites', JSON.stringify(gameInvites));
       
-      console.log('NotificationService: Background game invite stored');
     } catch (error) {
       console.error('NotificationService: Error storing background game invite:', error);
     }
@@ -1050,7 +1021,6 @@ class NotificationService {
       friendRequests.push({ ...data, receivedAt: new Date().toISOString() });
       await AsyncStorage.setItem('pendingFriendRequests', JSON.stringify(friendRequests));
       
-      console.log('NotificationService: Background friend request stored');
     } catch (error) {
       console.error('NotificationService: Error storing background friend request:', error);
     }
@@ -1085,7 +1055,6 @@ class NotificationService {
     try {
       await AsyncStorage.removeItem('pendingGameInvites');
       await AsyncStorage.removeItem('pendingFriendRequests');
-      console.log('NotificationService: Pending background notifications cleared');
     } catch (error) {
       console.error('NotificationService: Error clearing pending background notifications:', error);
     }
@@ -1134,7 +1103,6 @@ class NotificationService {
         await Notifications.setNotificationCategoryAsync('game_invite', categories[0].actions);
         await Notifications.setNotificationCategoryAsync('friend_request', categories[1].actions);
         
-        console.log('NotificationService: iOS notification categories set up');
       }
     } catch (error) {
       console.error('NotificationService: Error setting up notification categories:', error);
@@ -1148,7 +1116,6 @@ class NotificationService {
    */
   async handleNotificationAction(actionIdentifier, data) {
     try {
-      console.log('NotificationService: Handling notification action:', actionIdentifier, data);
       
       if (actionIdentifier === 'accept') {
         if (data.type === 'game_invite') {
@@ -1175,7 +1142,6 @@ class NotificationService {
    */
   async handleGameInviteAccept(data) {
     try {
-      console.log('NotificationService: Accepting game invite:', data);
       // Implement game invite acceptance logic
       // This would typically call your game service
     } catch (error) {
@@ -1189,7 +1155,6 @@ class NotificationService {
    */
   async handleGameInviteDecline(data) {
     try {
-      console.log('NotificationService: Declining game invite:', data);
       // Implement game invite decline logic
     } catch (error) {
       console.error('NotificationService: Error declining game invite:', error);
@@ -1202,7 +1167,6 @@ class NotificationService {
    */
   async handleFriendRequestAccept(data) {
     try {
-      console.log('NotificationService: Accepting friend request:', data);
       // Implement friend request acceptance logic
     } catch (error) {
       console.error('NotificationService: Error accepting friend request:', error);
@@ -1215,7 +1179,6 @@ class NotificationService {
    */
   async handleFriendRequestDecline(data) {
     try {
-      console.log('NotificationService: Declining friend request:', data);
       // Implement friend request decline logic
     } catch (error) {
       console.error('NotificationService: Error declining friend request:', error);
@@ -1261,7 +1224,6 @@ class NotificationService {
           await this.saveTokenToFirestore(userId, newToken);
         }
         
-        console.log('NotificationService: Token refreshed and updated');
         return newToken;
       }
       return this.currentToken;
@@ -1292,9 +1254,7 @@ class NotificationService {
       });
       
       if (pushToken) {
-        console.log('NotificationService: Push notification queued for Cloud Function');
       } else {
-        console.log('NotificationService: Created in-app notification (no push token) for user:', toUserId);
       }
       return notificationId;
     } catch (error) {
@@ -1412,7 +1372,6 @@ class NotificationService {
         read: true,
         readAt: new Date().toISOString()
       });
-      console.log('NotificationService: Notification marked as read');
       return true;
     } catch (error) {
       console.error('NotificationService: Failed to mark notification as read:', error);
@@ -1440,22 +1399,18 @@ class NotificationService {
   // Navigation helpers (these would integrate with your navigation system)
   navigateToChallenge(challengeId) {
     // Implement navigation to challenge screen
-    console.log('NotificationService: Navigate to challenge:', challengeId);
   }
 
   navigateToGame(gameId) {
     // Implement navigation to game screen
-    console.log('NotificationService: Navigate to game:', gameId);
   }
 
   navigateToFriends() {
     // Implement navigation to friends screen
-    console.log('NotificationService: Navigate to friends');
   }
 
   handleBackgroundChallenge(data) {
     // Handle background challenge logic
-    console.log('NotificationService: Handle background challenge:', data);
   }
 
   // Get current FCM token
@@ -1484,7 +1439,6 @@ class NotificationService {
     } = options;
 
     try {
-      console.log('NotificationService: Handling notification permissions...');
       
       // Set current user if provided
       if (userId) {
@@ -1495,7 +1449,6 @@ class NotificationService {
       const currentStatus = await this.checkPermissionStatus();
       
       if (currentStatus === 'granted') {
-        console.log('NotificationService: Permissions already granted');
         const token = await this.getFCMToken();
         
         // Save token to Firestore if requested and user ID is available
@@ -1535,7 +1488,6 @@ class NotificationService {
       if (finalStatus === 'granted') {
         // Get FCM token
         const token = await this.getFCMToken();
-        console.log('NotificationService: Permission granted, FCM token obtained');
         
         // Save token to Firestore if requested and user ID is available
         let tokenSaved = false;
@@ -1551,7 +1503,6 @@ class NotificationService {
           tokenSaved
         };
       } else {
-        console.log('NotificationService: Permission denied by user');
         return {
           success: false,
           status: finalStatus,
@@ -1624,14 +1575,12 @@ class NotificationService {
    */
   async handleUserLogin(userId, options = {}) {
     try {
-      console.log('NotificationService: Handling user login for:', userId);
       
       // Set current user
       this.setCurrentUser(userId);
       
       // Check if we already have a valid token
       if (this.currentToken && this.isValidToken(this.currentToken)) {
-        console.log('NotificationService: Valid token already exists, saving to Firestore');
         await this.saveTokenToFirestore(userId, this.currentToken);
         
         return {

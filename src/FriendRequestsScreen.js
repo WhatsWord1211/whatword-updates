@@ -3,9 +3,15 @@ import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, getDoc, setDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
+
+// ⚠️ SYSTEM MISMATCH WARNING ⚠️
+// This file uses the NEW subcollection system (users/{userId}/friends/{friendId})
+// Other files (AddFriendsScreen.js, CustomTabNavigator.js) use the OLD friendRequests collection system
+// This mismatch is causing friend requests to not appear properly
+console.warn('🚨 [FriendRequestsScreen] Using NEW subcollection system - this may cause issues with other screens');
 
 const FriendRequestsScreen = () => {
   const navigation = useNavigation();
@@ -13,55 +19,114 @@ const FriendRequestsScreen = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('🔍 [FriendRequestsScreen] Setting up friend request listener');
+    console.log('🔍 [FriendRequestsScreen] Current user ID:', auth.currentUser?.uid);
+    
     const requestsQuery = query(
-      collection(db, 'friendRequests'),
-      where('toUid', '==', auth.currentUser.uid),
+      collection(db, 'users', auth.currentUser.uid, 'friends'),
       where('status', '==', 'pending')
     );
 
-    const unsubscribe = onSnapshot(requestsQuery, (snapshot) => {
-      const requests = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    console.log('🔍 [FriendRequestsScreen] Querying NEW subcollection system for user:', auth.currentUser?.uid);
+
+    const unsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
+      console.log('🔍 [FriendRequestsScreen] Friend request listener triggered');
+      console.log('🔍 [FriendRequestsScreen] Snapshot size:', snapshot.docs.length);
+      console.log('🔍 [FriendRequestsScreen] Raw snapshot docs:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+      const requests = [];
+      for (const requestDocSnapshot of snapshot.docs) {
+        const requestData = requestDocSnapshot.data();
+        console.log('🔍 [FriendRequestsScreen] Processing request from:', requestDocSnapshot.id, 'with data:', requestData);
+        
+        // Get the sender's user profile
+        const userDocRef = await getDoc(doc(db, 'users', requestDocSnapshot.id));
+        if (userDocRef.exists()) {
+          const userData = userDocRef.data();
+          console.log('🔍 [FriendRequestsScreen] Found user profile for:', requestDocSnapshot.id, userData);
+          
+          const requestItem = {
+            id: requestDocSnapshot.id,
+            username: userData.username,
+            displayName: userData.displayName,
+            photoURL: userData.photoURL,
+            status: requestData.status,
+            createdAt: requestData.createdAt,
+            senderUsername: requestData.senderUsername,
+            from: requestDocSnapshot.id, // For compatibility with existing code
+            to: auth.currentUser.uid
+          };
+          
+          console.log('🔍 [FriendRequestsScreen] Created request item:', requestItem);
+          requests.push(requestItem);
+        } else {
+          console.log('❌ [FriendRequestsScreen] User profile not found for:', requestDocSnapshot.id);
+        }
+      }
+      
+      console.log('🔍 [FriendRequestsScreen] Final processed requests:', requests);
       setPendingRequests(requests);
       setLoading(false);
+    }, (error) => {
+      console.error('❌ [FriendRequestsScreen] Friend request listener error:', error);
     });
 
-    return () => unsubscribe();
+    return () => {
+      console.log('🔍 [FriendRequestsScreen] Cleaning up friend request listener');
+      unsubscribe();
+    };
   }, []);
 
   const acceptFriendRequest = async (request) => {
     try {
-      // Update request status
-      await updateDoc(doc(db, 'friendRequests', request.id), {
+      console.log('🔍 [FriendRequestsScreen] Accepting friend request from:', request.id);
+      
+      // Update request status in current user's friends subcollection
+      await updateDoc(doc(db, 'users', auth.currentUser.uid, 'friends', request.id), {
         status: 'accepted',
-        acceptedAt: new Date()
+        acceptedAt: new Date().toISOString()
       });
+      console.log('🔍 [FriendRequestsScreen] Updated request status to accepted');
 
-      // Update current user's friends list
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-        friends: arrayUnion(request.from)
+      // Clear any redundant friend requests between these two users
+      console.log('🔍 [FriendRequestsScreen] Clearing redundant friend requests...');
+      
+      // Check for redundant requests from current user to the sender
+      const redundantRequestDoc = doc(db, 'users', request.id, 'friends', auth.currentUser.uid);
+      const redundantRequestSnapshot = await getDoc(redundantRequestDoc);
+      
+      if (redundantRequestSnapshot.exists()) {
+        const redundantData = redundantRequestSnapshot.data();
+        if (redundantData.status === 'pending') {
+          console.log('🔍 [FriendRequestsScreen] Found redundant request to clear');
+          await deleteDoc(redundantRequestDoc);
+          console.log('🔍 [FriendRequestsScreen] Cleared redundant request');
+        }
+      }
+
+      // Create mutual friendship in sender's friends subcollection
+      await setDoc(doc(db, 'users', request.id, 'friends', auth.currentUser.uid), {
+        status: 'accepted',
+        createdAt: request.createdAt,
+        acceptedAt: new Date().toISOString(),
+        senderUsername: auth.currentUser.displayName || 'Unknown',
+        senderId: auth.currentUser.uid
       });
+      console.log('🔍 [FriendRequestsScreen] Created mutual friendship');
 
-      // Also update the other user's friends list for mutual friendship
-      await updateDoc(doc(db, 'users', request.from), {
-        friends: arrayUnion(auth.currentUser.uid)
-      });
-
-      Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
+      Alert.alert('Success', `You are now friends with ${request.username || request.senderUsername}!`);
       playSound('chime');
     } catch (error) {
-      console.error('Failed to accept friend request:', error);
+      console.error('❌ [FriendRequestsScreen] Failed to accept friend request:', error);
       Alert.alert('Error', 'Failed to accept friend request. Please try again.');
     }
   };
 
   const declineFriendRequest = async (request) => {
     try {
-      await deleteDoc(doc(db, 'friendRequests', request.id));
+      await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'friends', request.id));
       Alert.alert('Declined', 'Friend request declined.');
-      playSound('chime');
+      playSound('backspace').catch(() => {});
     } catch (error) {
       console.error('Failed to decline friend request:', error);
       Alert.alert('Error', 'Failed to decline friend request. Please try again.');

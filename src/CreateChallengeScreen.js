@@ -78,9 +78,6 @@ const CreateChallengeScreen = () => {
 
 
   const challengeFriend = (friend) => {
-    console.log('🔧 DEBUG: challengeFriend called with:', friend);
-    console.log('🔧 DEBUG: Current user:', user);
-    console.log('🔧 DEBUG: Navigation object:', navigation);
     
     try {
       // Navigate to SetWordGameScreen to create the challenge
@@ -93,9 +90,8 @@ const CreateChallengeScreen = () => {
         },
         isAccepting: false
       });
-      console.log('🔧 DEBUG: Navigation successful');
     } catch (error) {
-      console.error('🔧 DEBUG: Navigation error:', error);
+      console.error('Navigation error:', error);
       Alert.alert('Navigation Error', 'Failed to navigate to challenge screen. Please try again.');
     }
   };

@@ -37,7 +37,6 @@ class PushNotificationService {
         type,
       });
       
-      console.log('Custom notification sent successfully:', result.data);
       return result.data;
     } catch (error) {
       console.error('Error sending custom notification:', error);
@@ -64,7 +63,6 @@ class PushNotificationService {
         type,
       });
       
-      console.log('Bulk notifications sent successfully:', result.data);
       return result.data;
     } catch (error) {
       console.error('Error sending bulk notifications:', error);
@@ -83,7 +81,6 @@ class PushNotificationService {
   async getNotificationStats(options = {}) {
     try {
       const result = await this.getNotificationStats(options);
-      console.log('Notification stats retrieved:', result.data);
       return result.data;
     } catch (error) {
       console.error('Error getting notification stats:', error);

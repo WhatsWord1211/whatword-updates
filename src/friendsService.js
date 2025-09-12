@@ -32,37 +32,73 @@ class FriendsService {
   // Friend Requests using subcollections
   async sendFriendRequest(toUserId) {
     try {
+      console.log('🔍 [FriendsService] Starting sendFriendRequest');
+      console.log('🔍 [FriendsService] Current user:', this.currentUser?.uid, this.currentUser?.displayName);
+      console.log('🔍 [FriendsService] Target user ID:', toUserId);
+      
       if (!this.currentUser) throw new Error('User not authenticated');
+      
+      // Check if a request already exists
+      console.log('🔍 [FriendsService] Checking for existing friend request...');
+      const existingRequestDoc = await getDoc(doc(db, 'users', toUserId, 'friends', this.currentUser.uid));
+      
+      if (existingRequestDoc.exists()) {
+        const existingData = existingRequestDoc.data();
+        console.log('🔍 [FriendsService] Existing request found:', existingData);
+        
+        if (existingData.status === 'pending') {
+          console.log('🔍 [FriendsService] Duplicate request detected - preventing send');
+          throw new Error('Friend request already pending');
+        } else if (existingData.status === 'accepted') {
+          console.log('🔍 [FriendsService] Already friends - preventing send');
+          throw new Error('Already friends');
+        } else if (existingData.status === 'blocked') {
+          console.log('🔍 [FriendsService] User is blocked - preventing send');
+          throw new Error('User is blocked');
+        }
+      }
+      
+      console.log('🔍 [FriendsService] No existing request found - proceeding with new request');
       
       const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
       const userData = userDoc.data();
+      console.log('🔍 [FriendsService] Current user data:', userData);
       
-      // Create friend document in recipient's friends subcollection with "pending" status
-      await setDoc(doc(db, 'users', toUserId, 'friends', this.currentUser.uid), {
+      const friendRequestData = {
         status: 'pending',
         createdAt: new Date().toISOString(),
         senderUsername: userData.username || 'Unknown',
         senderId: this.currentUser.uid
-      });
+      };
+      
+      console.log('🔍 [FriendsService] Friend request data to be saved:', friendRequestData);
+      console.log('🔍 [FriendsService] Using NEW subcollection system: users/', toUserId, '/friends/', this.currentUser.uid);
+      
+      // Create friend document in recipient's friends subcollection with "pending" status
+      await setDoc(doc(db, 'users', toUserId, 'friends', this.currentUser.uid), friendRequestData);
+      console.log('🔍 [FriendsService] Friend request document created successfully');
 
       // Send push notification
+      console.log('🔍 [FriendsService] Sending push notification to:', toUserId);
       await getNotificationService().sendPushNotification(
         toUserId,
         'New Friend Request',
         `${userData.username || 'Someone'} sent you a friend request`,
         { type: 'friend_request', senderId: this.currentUser.uid, senderName: userData.username }
       );
+      console.log('🔍 [FriendsService] Push notification sent successfully');
 
-      console.log('FriendsService: Friend request sent successfully');
       return true;
     } catch (error) {
-      console.error('FriendsService: Failed to send friend request:', error);
+      console.error('❌ [FriendsService] Failed to send friend request:', error);
       throw error;
     }
   }
 
   async acceptFriendRequest(fromUserId) {
     try {
+      console.log('🔍 [FriendsService] Accepting friend request from:', fromUserId);
+      
       if (!this.currentUser) throw new Error('User not authenticated');
       
       // Update the friend document status to "accepted" in recipient's subcollection
@@ -70,6 +106,23 @@ class FriendsService {
         status: 'accepted',
         acceptedAt: new Date().toISOString()
       });
+      console.log('🔍 [FriendsService] Updated request status to accepted');
+
+      // Clear any redundant friend requests between these two users
+      console.log('🔍 [FriendsService] Clearing redundant friend requests...');
+      
+      // Check for redundant requests from current user to the sender
+      const redundantRequestDoc = doc(db, 'users', fromUserId, 'friends', this.currentUser.uid);
+      const redundantRequestSnapshot = await getDoc(redundantRequestDoc);
+      
+      if (redundantRequestSnapshot.exists()) {
+        const redundantData = redundantRequestSnapshot.data();
+        if (redundantData.status === 'pending') {
+          console.log('🔍 [FriendsService] Found redundant request to clear');
+          await deleteDoc(redundantRequestDoc);
+          console.log('🔍 [FriendsService] Cleared redundant request');
+        }
+      }
 
       // Create friend document in sender's friends subcollection with "accepted" status
       const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
@@ -82,6 +135,7 @@ class FriendsService {
         friendUsername: userData.username || 'Unknown',
         friendId: this.currentUser.uid
       });
+      console.log('🔍 [FriendsService] Created mutual friendship');
 
       // Send push notification
       await getNotificationService().sendPushNotification(
@@ -90,11 +144,11 @@ class FriendsService {
         `${userData.username || 'Someone'} accepted your friend request`,
         { type: 'friend_request_accepted', senderId: this.currentUser.uid, senderName: userData.username }
       );
+      console.log('🔍 [FriendsService] Sent push notification');
 
-      console.log('FriendsService: Friend request accepted successfully');
       return true;
     } catch (error) {
-      console.error('FriendsService: Failed to accept friend request:', error);
+      console.error('❌ [FriendsService] Failed to accept friend request:', error);
       throw error;
     }
   }
@@ -106,7 +160,6 @@ class FriendsService {
       // Delete the friend document from recipient's subcollection
       await deleteDoc(doc(db, 'users', this.currentUser.uid, 'friends', fromUserId));
 
-      console.log('FriendsService: Friend request declined successfully');
       return true;
     } catch (error) {
       console.error('FriendsService: Failed to decline friend request:', error);
@@ -124,7 +177,6 @@ class FriendsService {
         blockedAt: new Date().toISOString()
       });
 
-      console.log('FriendsService: Friend blocked successfully');
       return true;
     } catch (error) {
       console.error('FriendsService: Failed to block friend:', error);
@@ -140,7 +192,6 @@ class FriendsService {
       await deleteDoc(doc(db, 'users', this.currentUser.uid, 'friends', friendUserId));
       await deleteDoc(doc(db, 'users', friendUserId, 'friends', this.currentUser.uid));
 
-      console.log('FriendsService: Friend removed successfully');
       return true;
     } catch (error) {
       console.error('FriendsService: Failed to remove friend:', error);
@@ -316,7 +367,6 @@ class FriendsService {
         }
       );
 
-      console.log('FriendsService: Challenge sent successfully');
       return challengeId;
     } catch (error) {
       console.error('FriendsService: Failed to send challenge:', error);
@@ -378,7 +428,6 @@ class FriendsService {
         }
       );
 
-      console.log('FriendsService: Challenge accepted successfully');
       return gameId;
     } catch (error) {
       console.error('FriendsService: Failed to accept challenge:', error);
@@ -421,7 +470,6 @@ class FriendsService {
         }
       );
 
-      console.log('FriendsService: Challenge declined successfully');
       return true;
     } catch (error) {
       console.error('FriendsService: Failed to decline challenge:', error);
@@ -433,15 +481,10 @@ class FriendsService {
   listenToFriends(callback) {
     if (!this.currentUser) return null;
     
-    // TEMPORARILY DISABLED TO TEST PERMISSION ISSUE
-    console.log('FriendsService: listenToFriends DISABLED for testing');
-    callback([]);
-    return () => {};
+    const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
+    const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
     
-    // const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-    // const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
-    
-    // this.friendsUnsubscribe = onSnapshot(friendsQuery, async (snapshot) => {
+    this.friendsUnsubscribe = onSnapshot(friendsQuery, async (snapshot) => {
       const friends = [];
       for (const friendDocSnapshot of snapshot.docs) {
         const friendData = friendDocSnapshot.data();
@@ -467,25 +510,36 @@ class FriendsService {
   }
 
   listenToFriendRequests(callback) {
-    if (!this.currentUser) return null;
+    if (!this.currentUser) {
+      console.log('❌ [FriendsService] No current user for listenToFriendRequests');
+      return null;
+    }
     
-    // TEMPORARILY DISABLED TO TEST PERMISSION ISSUE
-    console.log('FriendsService: listenToFriendRequests DISABLED for testing');
-    callback([]);
-    return () => {};
+    console.log('🔍 [FriendsService] Setting up listenToFriendRequests');
+    console.log('🔍 [FriendsService] Current user ID:', this.currentUser.uid);
     
-    // const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
-    // const requestsQuery = query(friendsRef, where('status', '==', 'pending'));
+    const friendsRef = collection(db, 'users', this.currentUser.uid, 'friends');
+    const requestsQuery = query(friendsRef, where('status', '==', 'pending'));
     
-    // this.requestsUnsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
+    console.log('🔍 [FriendsService] Querying NEW subcollection system for user:', this.currentUser.uid);
+    
+    this.requestsUnsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
+      console.log('🔍 [FriendsService] Friend request listener triggered');
+      console.log('🔍 [FriendsService] Snapshot size:', snapshot.docs.length);
+      console.log('🔍 [FriendsService] Raw snapshot docs:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
       const requests = [];
       for (const requestDocSnapshot of snapshot.docs) {
         const requestData = requestDocSnapshot.data();
+        console.log('🔍 [FriendsService] Processing request from:', requestDocSnapshot.id, 'with data:', requestData);
+        
         // Get the sender's user profile
         const userDocRef = await getDoc(doc(db, 'users', requestDocSnapshot.id));
         if (userDocRef.exists()) {
           const userData = userDocRef.data();
-          requests.push({
+          console.log('🔍 [FriendsService] Found user profile for:', requestDocSnapshot.id, userData);
+          
+          const requestItem = {
             id: requestDocSnapshot.id,
             username: userData.username,
             displayName: userData.displayName,
@@ -493,10 +547,19 @@ class FriendsService {
             status: requestData.status,
             createdAt: requestData.createdAt,
             senderUsername: requestData.senderUsername
-          });
+          };
+          
+          console.log('🔍 [FriendsService] Created request item:', requestItem);
+          requests.push(requestItem);
+        } else {
+          console.log('❌ [FriendsService] User profile not found for:', requestDocSnapshot.id);
         }
       }
+      
+      console.log('🔍 [FriendsService] Final processed requests:', requests);
       callback(requests);
+    }, (error) => {
+      console.error('❌ [FriendsService] Friend request listener error:', error);
     });
     
     return this.requestsUnsubscribe;
@@ -537,5 +600,11 @@ class FriendsService {
     }
   }
 }
+
+// ⚠️ SYSTEM MISMATCH WARNING ⚠️
+// This service uses the NEW subcollection system (users/{userId}/friends/{friendId})
+// Other files (AddFriendsScreen.js, CustomTabNavigator.js) use the OLD friendRequests collection system
+// This mismatch is causing friend requests to not appear properly
+console.warn('🚨 [FriendsService] Using NEW subcollection system - this may cause issues with other screens');
 
 export default new FriendsService();

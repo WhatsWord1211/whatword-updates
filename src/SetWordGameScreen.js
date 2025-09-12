@@ -129,7 +129,6 @@ const SetWordGameScreen = () => {
   };
 
   const handleSubmit = async () => {
-    console.log('🔍 handleSubmit called with:', { word, difficulty, isAccepting, challenge });
     
     if (!word || word.trim().length < 3) {
       Alert.alert('Invalid Word', 'Please enter a word with at least 3 letters.');
@@ -155,8 +154,7 @@ const SetWordGameScreen = () => {
     setLoading(true);
     try {
                       if (isAccepting) {
-           // Player 2 is accepting the challenge and setting their word
-           console.log('🔍 Challenge object for Player 2:', challenge);
+            // Player 2 is accepting the challenge and setting their word
            
            // Validate challenge object has required properties
            if (!challenge.from || !challenge.to || !challenge.player1Word) {
@@ -200,16 +198,9 @@ const SetWordGameScreen = () => {
               maxAttempts: 25
             };
 
-         console.log('🔍 About to create game with data:', gameData);
-         console.log('🔍 Current user UID:', auth.currentUser?.uid);
-         console.log('🔍 Games collection path:', collection(db, 'games').path);
          
          const gameRef = await addDoc(collection(db, 'games'), gameData);
-         console.log('🔍 Game created successfully:', gameRef.id);
-         
          // Update challenge status and link to game
-         console.log('🔍 About to update challenge:', challenge.id);
-         console.log('🔍 Challenge document path:', doc(db, 'challenges', challenge.id).path);
          
          await updateDoc(doc(db, 'challenges', challenge.id), {
            status: 'accepted',
@@ -217,23 +208,14 @@ const SetWordGameScreen = () => {
            gameId: gameRef.id,
            acceptedAt: new Date()
          });
-         console.log('🔍 Challenge updated successfully');
          
-         // Update both players' activeGames arrays
+         // Update only Player 2's activeGames array (Player 1 will update theirs when they enter the game)
          try {
-           // Update Player 1's activeGames array
-           await updateDoc(doc(db, 'users', challenge.from), {
-             activeGames: arrayUnion(gameRef.id)
-           });
-           
-           // Update Player 2's activeGames array  
            await updateDoc(doc(db, 'users', auth.currentUser.uid), {
              activeGames: arrayUnion(gameRef.id)
            });
-           
-           console.log('🔍 Both players\' activeGames arrays updated successfully');
          } catch (updateError) {
-           console.error('🔍 Failed to update players\' activeGames arrays:', updateError);
+           console.error('🔍 Failed to update Player 2\'s activeGames array:', updateError);
          }
          
          // Send notification to Player 1 that the game has started
@@ -246,7 +228,6 @@ const SetWordGameScreen = () => {
              challenge.id,
              true // accepted = true
            );
-           console.log('🔍 Game start notification sent to Player 1 via notification service');
          } catch (notificationError) {
            console.error('🔍 Failed to send game start notification:', notificationError);
          }
@@ -276,16 +257,9 @@ const SetWordGameScreen = () => {
           gameId: null
         };
 
-        console.log('🔍 About to create challenge with data:', challengeData);
-        console.log('🔍 Current user UID:', auth.currentUser?.uid);
-        console.log('🔍 Challenge collection path:', collection(db, 'challenges').path);
         
         const challengeRef = await addDoc(collection(db, 'challenges'), challengeData);
         
-        console.log('🔍 Challenge created successfully:', challengeRef.id);
-        console.log('🔍 Challenge data:', challengeData);
-        console.log('🔍 Challenge document path:', challengeRef.path);
-        console.log('🔍 Challenge should be visible to user:', challengeData.to);
         
         playSound('chime');
         
@@ -305,15 +279,10 @@ const SetWordGameScreen = () => {
           navigation.navigate('CreateChallenge');
         }, 500);
       }
-    } catch (error) {
-      console.error('🔍 Failed to submit word:', error);
-      console.error('🔍 Error details:', {
-        message: error.message,
-        code: error.code,
-        stack: error.stack
-      });
-      Alert.alert('Error', `Failed to submit word: ${error.message}`);
-    } finally {
+     } catch (error) {
+       console.error('Failed to submit word:', error);
+       Alert.alert('Error', `Failed to submit word: ${error.message}`);
+     } finally {
       setLoading(false);
     }
   };
@@ -371,7 +340,7 @@ const SetWordGameScreen = () => {
         <TouchableOpacity
           style={[styles.backButton, { alignSelf: 'flex-start', marginLeft: 20, marginTop: 20 }]}
           onPress={() => {
-            playSound('chime');
+            playSound('backspace').catch(() => {});
             navigation.goBack();
           }}
         >
@@ -536,7 +505,10 @@ const SetWordGameScreen = () => {
         {/* Back Button */}
         <TouchableOpacity
           style={styles.textButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            playSound('backspace').catch(() => {});
+            navigation.goBack();
+          }}
         >
                    <Text style={styles.textButtonText}>Cancel</Text>
        </TouchableOpacity>
@@ -549,8 +521,13 @@ const SetWordGameScreen = () => {
            
            <TouchableOpacity
              style={styles.button}
-             onPress={() => {
+             onPress={async () => {
                setShowMenuPopup(false);
+               try {
+                 playSound('backspace').catch(() => {});
+               } catch (error) {
+                 // Ignore sound errors
+               }
                navigation.navigate('Home');
              }}
            >
@@ -559,8 +536,13 @@ const SetWordGameScreen = () => {
            
            <TouchableOpacity
              style={styles.button}
-             onPress={() => {
+             onPress={async () => {
                setShowMenuPopup(false);
+               try {
+                 playSound('backspace').catch(() => {});
+               } catch (error) {
+                 // Ignore sound errors
+               }
                navigation.goBack();
              }}
            >

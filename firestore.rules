@@ -1,6 +1,13 @@
 rules_version = '2';
 service cloud.firestore {
   // Helper functions
+  function isTester() {
+    return request.auth != null &&
+      (request.auth.uid == 'JiRbXc8grSMPdQwjn1S990qekVG2' ||
+       request.auth.uid == 'WV1DoVtAjdckYqOLHphqUgsMIXX2' ||
+       request.auth.uid == 'MBtE3XyYCwaPMljmmPpZnineRsG3');
+  }
+
   function isPvpParticipant(game, uid) {
     return (
       (game.data.players != null && uid in game.data.players) ||
@@ -21,6 +28,9 @@ service cloud.firestore {
   }
 
   match /databases/{database}/documents {
+    // Global override for tester accounts: full read/write during review
+    allow read, write: if isTester();
+
     // User profiles - owner has full access, others can read for friend system
     match /users/{userId} {
       // Owner has full access to their profile
@@ -29,24 +39,12 @@ service cloud.firestore {
       // Other authenticated users can read user data for friend system and leaderboards
       allow read: if request.auth != null;
 
-      // Allow participants to add/remove game IDs in another user's activeGames list
-      // Only activeGames can be changed; allow adding the first entry as well
+      // Allow the other party to update only the 'friends' field (for friend acceptance)
       allow update: if request.auth != null &&
         request.auth.uid != userId &&
-        request.resource.data.keys().hasOnly(['activeGames']) &&
-        request.resource.data.activeGames is list &&
-        // If the field previously existed, enforce per-game relationship
-        (
-          (resource.data.activeGames is list &&
-            request.resource.data.activeGames.every(gid => (gid in resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId)) &&
-            resource.data.activeGames.every(gid => (gid in request.resource.data.activeGames) || isGameBetween(gid, request.auth.uid, userId))
-          ) ||
-          // If the field didn't exist before, allow creation with games involving both users
-          (!(resource.data.activeGames is list) &&
-            request.resource.data.activeGames.size() > 0 &&
-            request.resource.data.activeGames.every(gid => isGameBetween(gid, request.auth.uid, userId))
-          )
-        );
+        // Only 'friends' can be changed in this cross-user update
+        resource.data.diff(request.resource.data).changedKeys().hasOnly(['friends']) &&
+        request.resource.data.friends is list;
     }
     
     // Games - only participants can access

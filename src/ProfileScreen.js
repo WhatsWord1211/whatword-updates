@@ -341,55 +341,25 @@ const ProfileScreen = () => {
         <View style={styles.statsContainer}>
           <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>🎯 Solo Mode Stats</Text>
           
-          {/* Easy Mode (4 letters) */}
+          {/* Easy Mode */}
           <View style={styles.difficultySection}>
-            <Text style={styles.difficultyTitle}>🟢 Easy 4 letters</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.easyGamesPlayed || 0}</Text>
-                <Text style={styles.statLabel}>Games</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {userProfile?.easyAverageScore ? userProfile.easyAverageScore.toFixed(2) : 'N/A'}
-                </Text>
-                <Text style={styles.statLabel}>Avg Attempts</Text>
-              </View>
-            </View>
+            <Text style={styles.difficultyTitle}>
+              🟢 Easy <Text style={styles.scoreHighlight}>{userProfile?.easyAverageScore ? userProfile.easyAverageScore.toFixed(2) : 'N/A'}</Text> Avg Attempts
+            </Text>
           </View>
 
-          {/* Regular Mode (5 letters) */}
+          {/* Regular Mode */}
           <View style={styles.difficultySection}>
-            <Text style={styles.difficultyTitle}>🟡 Regular 5 letters</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.regularGamesPlayed || 0}</Text>
-                <Text style={styles.statLabel}>Games</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {userProfile?.regularAverageScore ? userProfile.regularAverageScore.toFixed(2) : 'N/A'}
-                </Text>
-                <Text style={styles.statLabel}>Avg Attempts</Text>
-              </View>
-            </View>
+            <Text style={styles.difficultyTitle}>
+              🟡 Regular <Text style={styles.scoreHighlight}>{userProfile?.regularAverageScore ? userProfile.regularAverageScore.toFixed(2) : 'N/A'}</Text> Avg Attempts
+            </Text>
           </View>
 
-          {/* Hard Mode (6 letters) */}
+          {/* Hard Mode */}
           <View style={styles.difficultySection}>
-            <Text style={styles.difficultyTitle}>🔴 Hard 6 letters</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.hardGamesPlayed || 0}</Text>
-                <Text style={styles.statLabel}>Games</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {userProfile?.hardAverageScore ? userProfile.hardAverageScore.toFixed(2) : 'N/A'}
-                </Text>
-                <Text style={styles.statLabel}>Avg Attempts</Text>
-              </View>
-            </View>
+            <Text style={styles.difficultyTitle}>
+              🔴 Hard <Text style={styles.scoreHighlight}>{userProfile?.hardAverageScore ? userProfile.hardAverageScore.toFixed(2) : 'N/A'}</Text> Avg Attempts
+            </Text>
           </View>
         </View>
 
@@ -399,67 +369,31 @@ const ProfileScreen = () => {
           
           {/* Easy Difficulty PvP Stats */}
           <View style={styles.difficultyStatsContainer}>
-            <Text style={styles.difficultyTitle}>🟢 Easy 4 Letters</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.easyPvpGamesCount || 0}</Text>
-                <Text style={styles.statLabel}>Games</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.easyPvpWinPercentage ? userProfile.easyPvpWinPercentage.toFixed(1) : 0}%</Text>
-                <Text style={styles.statLabel}>Win Rate</Text>
-              </View>
-            </View>
+            <Text style={styles.difficultyTitle}>
+              🟢 Easy <Text style={styles.scoreHighlight}>{userProfile?.easyPvpWinPercentage ? userProfile.easyPvpWinPercentage.toFixed(1) : 0}%</Text> Win Rate
+            </Text>
           </View>
 
           {/* Regular Difficulty PvP Stats */}
           <View style={styles.difficultyStatsContainer}>
-            <Text style={styles.difficultyTitle}>🟡 Regular 5 Letters</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.regularPvpGamesCount || 0}</Text>
-                <Text style={styles.statLabel}>Games</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.regularPvpWinPercentage ? userProfile.regularPvpWinPercentage.toFixed(1) : 0}%</Text>
-                <Text style={styles.statLabel}>Win Rate</Text>
-              </View>
-            </View>
+            <Text style={styles.difficultyTitle}>
+              🟡 Regular <Text style={styles.scoreHighlight}>{userProfile?.regularPvpWinPercentage ? userProfile.regularPvpWinPercentage.toFixed(1) : 0}%</Text> Win Rate
+            </Text>
           </View>
 
           {/* Hard Difficulty PvP Stats */}
           <View style={styles.difficultyStatsContainer}>
-            <Text style={styles.difficultyTitle}>🔴 Hard 6 Letters</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.hardPvpGamesCount || 0}</Text>
-                <Text style={styles.statLabel}>Games</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{userProfile?.hardPvpWinPercentage ? userProfile.hardPvpWinPercentage.toFixed(1) : 0}%</Text>
-                <Text style={styles.statLabel}>Win Rate</Text>
-              </View>
-            </View>
+            <Text style={styles.difficultyTitle}>
+              🔴 Hard <Text style={styles.scoreHighlight}>{userProfile?.hardPvpWinPercentage ? userProfile.hardPvpWinPercentage.toFixed(1) : 0}%</Text> Win Rate
+            </Text>
           </View>
 
           {/* Overall PvP Stats (if available) */}
           {userProfile?.pvpGamesPlayed > 0 && (
             <View style={styles.difficultyStatsContainer}>
-              <Text style={styles.difficultyTitle}>Overall PvP</Text>
-              <View style={styles.statsGrid}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{userProfile?.pvpGamesPlayed || 0}</Text>
-                  <Text style={styles.statLabel}>Games</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{userProfile?.pvpGamesWon || 0}</Text>
-                  <Text style={styles.statLabel}>Wins</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{userProfile?.pvpWinRate || 0}%</Text>
-                  <Text style={styles.statLabel}>Win Rate</Text>
-                </View>
-              </View>
+              <Text style={styles.difficultyTitle}>
+                Overall PvP <Text style={styles.scoreHighlight}>{userProfile?.pvpWinRate || 0}%</Text> Win Rate
+              </Text>
             </View>
           )}
         </View>
@@ -540,7 +474,14 @@ const ProfileScreen = () => {
           
           <TouchableOpacity
             style={styles.button}
-            onPress={() => navigation.navigate('Settings')}
+            onPress={async () => {
+              navigation.navigate('Settings');
+              try {
+                await playSound('toggleTab');
+              } catch (error) {
+                // Ignore sound errors
+              }
+            }}
           >
             <Text style={styles.buttonText}>Open Settings</Text>
           </TouchableOpacity>

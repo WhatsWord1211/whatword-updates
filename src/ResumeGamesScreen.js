@@ -257,7 +257,6 @@ const ResumeGamesScreen = () => {
 
       const handleActiveSnapshot = (docs1, docs2) => {
         const totalDocs = (docs1 ? docs1.length : 0) + (docs2 ? docs2.length : 0);
-        console.log('ResumeGamesScreen: onSnapshot triggered with', totalDocs, 'games');
         const activeGames = [];
         const waitingGames = [];
 
@@ -764,7 +763,10 @@ const ResumeGamesScreen = () => {
         <View style={styles.headerContainer}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              playSound('backspace').catch(() => {});
+              navigation.goBack();
+            }}
           >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
@@ -786,7 +788,10 @@ const ResumeGamesScreen = () => {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            playSound('backspace').catch(() => {});
+            navigation.goBack();
+          }}
         >
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
@@ -802,7 +807,10 @@ const ResumeGamesScreen = () => {
             </Text>
             <TouchableOpacity
               style={styles.addFriendsButton}
-              onPress={() => navigation.navigate('Home')}
+              onPress={() => {
+                playSound('backspace').catch(() => {});
+                navigation.navigate('Home');
+              }}
             >
               <Text style={styles.addFriendsButtonText}>Go Home</Text>
             </TouchableOpacity>

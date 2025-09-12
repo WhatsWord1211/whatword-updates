@@ -4,8 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from './firebase';
 import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
-import { Audio } from 'expo-av';
-import { loadSounds, playSound } from './soundsUtil';
+// Audio mode is now handled in soundsUtil.js
+import { playSound } from './soundsUtil';
 import styles from './styles';
 
 const SetWordScreen = () => {
@@ -26,22 +26,7 @@ const SetWordScreen = () => {
     }
   }, [isAccepting, challenge]);
 
-  // Ensure sounds are loaded before we try to play chime on submission
-  useEffect(() => {
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        await loadSounds();
-        try { await playSound('chime', { volume: 0 }); } catch (_) {}
-      } catch (_) {}
-    })();
-  }, []);
+  // Audio mode is now handled in soundsUtil.js
 
   const handleSubmit = async () => {
     if (!word || word.trim().length < 3) {
@@ -119,8 +104,6 @@ const SetWordScreen = () => {
 
         const challengeRef = await addDoc(collection(db, 'challenges'), challengeData);
         
-        console.log('🔍 Challenge created successfully:', challengeRef.id);
-        console.log('🔍 Challenge data:', challengeData);
         
         Alert.alert('Challenge Sent!', `Challenge sent to ${challenge.toUsername}!`, [
           {
@@ -139,10 +122,8 @@ const SetWordScreen = () => {
   };
 
   const selectDifficulty = (selectedDifficulty) => {
-    console.log('SetWordScreen: Difficulty selected:', selectedDifficulty);
     setDifficulty(selectedDifficulty);
     setShowDifficultySelection(false);
-    console.log('SetWordScreen: Playing chime sound');
     playSound('chime');
   };
 
@@ -219,7 +200,10 @@ const SetWordScreen = () => {
 
         <TouchableOpacity
           style={styles.textButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            playSound('backspace').catch(() => {});
+            navigation.goBack();
+          }}
         >
           <Text style={styles.textButtonText}>Cancel</Text>
         </TouchableOpacity>

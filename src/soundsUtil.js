@@ -18,114 +18,78 @@ const soundFiles = {
   hint: require('../assets/sounds/hint.mp3'),
   opponentSolved: require('../assets/sounds/opponentSolved.mp3'),
   maxGuesses: require('../assets/sounds/maxGuesses.mp3'),
+  customTab: require('../assets/sounds/custom-tab.mp3'),
+  toggleTab: require('../assets/sounds/toggle-tab.mp3'),
 };
 
-const sounds = {};
-let isLoading = false;
+// Preloaded sounds for better performance
+const loadedSounds = {};
+let soundsLoaded = false;
 
+// Load all sounds on app start
 export const loadSounds = async () => {
-  if (isLoading || Object.keys(sounds).length > 0) return;
-  isLoading = true;
-  const failed = [];
-  const loaded = [];
-
+  if (soundsLoaded) return;
+  
   try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: false,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+
     for (const [key, soundFile] of Object.entries(soundFiles)) {
       try {
-        const { sound } = await Audio.Sound.createAsync(soundFile, { shouldPlay: false });
-        sounds[key] = sound;
-        const status = await sound.getStatusAsync();
-        if (status.isLoaded) {
-          loaded.push(key);
-        } else {
-          console.error(`soundsUtil: Sound ${key} loaded but not ready`, status);
-          failed.push(key);
-        }
+        const { sound } = await Audio.Sound.createAsync(soundFile);
+        loadedSounds[key] = sound;
       } catch (error) {
         console.error(`soundsUtil: Failed to load sound ${key}`, error);
-        failed.push(key);
       }
     }
-    if (failed.length > 0) {
-      console.log('soundsUtil: Some sounds failed to load:', { failed, loaded });
-    }
-  } finally {
-    isLoading = false;
+    soundsLoaded = true;
+    console.log('soundsUtil: All sounds loaded successfully');
+  } catch (error) {
+    console.error('soundsUtil: Failed to set audio mode', error);
   }
 };
 
+// Check if sounds are ready
+export const areSoundsReady = () => soundsLoaded;
+
+// Play a preloaded sound
 export const playSound = async (key, options = {}) => {
-  if (!sounds[key]) {
-    // Attempt a lazy load if not preloaded
-    try {
-      const file = soundFiles[key];
-      if (file) {
-        const { sound } = await Audio.Sound.createAsync(file, { shouldPlay: false });
-        sounds[key] = sound;
-      } else {
-        console.error(`soundsUtil: Sound ${key} not loaded`);
-        throw new Error(`Sound ${key} not loaded`);
-      }
-    } catch (e) {
-      console.error(`soundsUtil: Failed lazy-load for ${key}`);
-      throw e;
-    }
-  }
   try {
-    const sound = sounds[key];
-    let status = await sound.getStatusAsync();
-    if (!status.isLoaded) {
-      try {
-        await sound.unloadAsync();
-      } catch (_) {}
-      try {
-        await sound.loadAsync(soundFiles[key], { shouldPlay: false });
-      } catch (reloadErr) {
-        // Ignore benign race condition where sound is already loaded
-        if (!String(reloadErr?.message || reloadErr).includes('already loaded')) {
-          throw reloadErr;
-        }
-      }
-      status = await sound.getStatusAsync();
+    // Wait for sounds to be loaded if they're not ready yet
+    if (!soundsLoaded) {
+      await loadSounds();
     }
+
+    const sound = loadedSounds[key];
+    if (!sound) {
+      console.error(`soundsUtil: Sound ${key} not loaded`);
+      return;
+    }
+
     if (options.volume !== undefined) {
       await sound.setVolumeAsync(options.volume);
     }
     
-    try {
-      await sound.replayAsync();
-    } catch (playErr) {
-      // If replayAsync fails due to load state, try a single recover attempt
-      if (String(playErr?.message || playErr).includes('already loaded')) {
-        try {
-          await sound.stopAsync();
-        } catch (_) {}
-        await sound.replayAsync();
-      } else {
-        throw playErr;
-      }
-    }
-    
-    if (options.volume !== undefined) {
-      await sound.setVolumeAsync(1);
-    }
-    // console.log(`soundsUtil: Sound ${key} played successfully`); // Reduced logging
+    await sound.replayAsync();
   } catch (error) {
     console.error(`soundsUtil: Failed to play sound ${key}`, error);
-    throw error;
+    // Don't throw - just log and continue
   }
 };
 
+// Cleanup sounds when app closes
 export const unloadSounds = async () => {
-  for (const key of Object.keys(sounds)) {
-    if (sounds[key]) {
-      try {
-        await sounds[key].unloadAsync();
-        console.log(`soundsUtil: Unloaded sound ${key}`);
-      } catch (error) {
-        console.error(`soundsUtil: Failed to unload sound ${key}`, error);
-      }
+  try {
+    for (const sound of Object.values(loadedSounds)) {
+      await sound.unloadAsync();
     }
+    Object.keys(loadedSounds).forEach(key => delete loadedSounds[key]);
+  } catch (error) {
+    console.error('soundsUtil: Failed to unload sounds', error);
   }
-  Object.keys(sounds).forEach(key => delete sounds[key]);
 };

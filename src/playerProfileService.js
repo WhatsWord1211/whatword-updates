@@ -314,7 +314,6 @@ class PlayerProfileService {
   // Calculate and update rolling averages for the last 15 games per difficulty level
   async updateDifficultyRollingAverages(uid, difficulty, newScore) {
     try {
-      console.log(`PlayerProfileService: Updating rolling averages for ${difficulty} difficulty, score: ${newScore}`);
       
       // Use a simpler query that doesn't require a composite index
       // Get all games for this user and difficulty, then filter and sort in memory
@@ -347,7 +346,6 @@ class PlayerProfileService {
       const totalAttempts = last15Games.reduce((sum, game) => sum + game.guesses, 0);
       const rollingAverage = totalAttempts / last15Games.length;
       
-      console.log(`PlayerProfileService: ${difficulty} difficulty - ${last15Games.length} games, total attempts: ${totalAttempts}, rolling average: ${rollingAverage.toFixed(2)}`);
       
       // Update the user profile with the new rolling average
       const difficultyField = `${difficulty}AverageScore`;
@@ -357,7 +355,6 @@ class PlayerProfileService {
         lastUpdated: new Date().toISOString()
       });
       
-      console.log(`PlayerProfileService: Successfully updated ${difficultyField} to ${rollingAverage.toFixed(2)}`);
       
       return rollingAverage;
     } catch (error) {
@@ -365,7 +362,6 @@ class PlayerProfileService {
       
       // If the query fails due to index issues, try a fallback approach
       if (error.message && error.message.includes('requires an index')) {
-        console.log(`PlayerProfileService: Index required, using fallback approach for ${difficulty} difficulty`);
         try {
           // Fallback: Just update the user profile with a basic average
           // This won't be a rolling average but will prevent the error
@@ -375,7 +371,6 @@ class PlayerProfileService {
             [`${difficulty}GamesCount`]: 1, // Mark as 1 game
             lastUpdated: new Date().toISOString()
           });
-          console.log(`PlayerProfileService: Fallback update successful for ${difficultyField}`);
           return newScore;
         } catch (fallbackError) {
           console.error(`PlayerProfileService: Fallback also failed for ${difficulty} difficulty:`, fallbackError);
@@ -390,7 +385,6 @@ class PlayerProfileService {
   // Calculate and update PvP rolling averages for the last 15 games per difficulty level
   async updatePvpDifficultyRollingAverages(uid, difficulty, isWin) {
     try {
-      console.log(`PlayerProfileService: Updating PvP rolling averages for ${difficulty} difficulty, win: ${isWin}`);
       
       // Use a simpler query that doesn't require a composite index
       const gameStatsQuery = query(
@@ -422,7 +416,6 @@ class PlayerProfileService {
       const wins = last15Games.filter(game => game.isWin).length;
       const winPercentage = (wins / last15Games.length) * 100;
       
-      console.log(`PlayerProfileService: PvP ${difficulty} difficulty - ${last15Games.length} games, wins: ${wins}, win percentage: ${winPercentage.toFixed(2)}%`);
       
       // Update the user profile with the new rolling win percentage
       const difficultyField = `${difficulty}PvpWinPercentage`;
@@ -432,7 +425,6 @@ class PlayerProfileService {
         lastUpdated: new Date().toISOString()
       });
       
-      console.log(`PlayerProfileService: Successfully updated ${difficultyField} to ${winPercentage.toFixed(2)}%`);
       
       return winPercentage;
     } catch (error) {
@@ -440,7 +432,6 @@ class PlayerProfileService {
       
       // If the query fails due to index issues, try a fallback approach
       if (error.message && error.message.includes('requires an index')) {
-        console.log(`PlayerProfileService: Index required, using fallback approach for PvP ${difficulty} difficulty`);
         try {
           // Fallback: Just update the user profile with a basic win percentage
           const difficultyField = `${difficulty}PvpWinPercentage`;
@@ -450,7 +441,6 @@ class PlayerProfileService {
             [`${difficulty}PvpGamesCount`]: 1,
             lastUpdated: new Date().toISOString()
           });
-          console.log(`PlayerProfileService: Fallback update successful for PvP ${difficultyField}`);
           return winPercentage;
         } catch (fallbackError) {
           console.error(`PlayerProfileService: Fallback also failed for PvP ${difficulty} difficulty:`, fallbackError);

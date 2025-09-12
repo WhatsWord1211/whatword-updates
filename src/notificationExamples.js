@@ -16,7 +16,6 @@ export default function NotificationExamples() {
       
       if (result.success) {
         Alert.alert('Success', result.message);
-        console.log('FCM Token:', result.token);
       } else {
         Alert.alert('Permission Denied', result.message);
       }
@@ -34,7 +33,6 @@ export default function NotificationExamples() {
       });
       
       Alert.alert('Permission Status', result.message);
-      console.log('Current status:', result.status);
     } catch (error) {
       console.error('Error checking permissions:', error);
     }
@@ -95,7 +93,6 @@ export default function NotificationExamples() {
       const token = notificationService.getCurrentToken();
       if (token) {
         Alert.alert('FCM Token', token);
-        console.log('Current FCM Token:', token);
       } else {
         Alert.alert('No Token', 'No FCM token available. Please request permissions first.');
       }
@@ -117,7 +114,6 @@ export default function NotificationExamples() {
           'Login Success', 
           `Token: ${result.token ? 'Obtained' : 'None'}\nSaved to Firestore: ${result.tokenSaved ? 'Yes' : 'No'}`
         );
-        console.log('Login result:', result);
       } else {
         Alert.alert('Login Issue', result.message);
       }
@@ -150,7 +146,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
       `.trim();
       
       Alert.alert('Token Information', infoText);
-      console.log('Token info:', tokenInfo);
     } catch (error) {
       console.error('Error getting token info:', error);
       Alert.alert('Error', 'Failed to get token information');
@@ -175,7 +170,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
           'Success', 
           `${result.message}\nToken: ${result.token ? 'Obtained' : 'None'}\nSaved to Firestore: ${result.tokenSaved ? 'Yes' : 'No'}`
         );
-        console.log('Permission result with token save:', result);
       } else {
         Alert.alert('Permission Denied', result.message);
       }
@@ -194,7 +188,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
       
       if (newToken) {
         Alert.alert('Token Refreshed', `New token: ${newToken}`);
-        console.log('Token refreshed:', newToken);
       } else {
         Alert.alert('No Change', 'Token is already current');
       }
@@ -209,7 +202,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
     try {
       const result = await notificationService.testNotificationReception();
       Alert.alert('Test Notification Reception', result.message);
-      console.log('Test result:', result);
     } catch (error) {
       console.error('Error testing notification reception:', error);
       Alert.alert('Error', 'Failed to test notification reception');
@@ -263,7 +255,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
         ? `Found ${notifications.length} pending notification(s)`
         : 'No pending notifications';
       Alert.alert('Pending Notifications', message);
-      console.log('Pending notifications:', notifications);
     } catch (error) {
       console.error('Error getting pending notifications:', error);
       Alert.alert('Error', 'Failed to get pending notifications');
@@ -293,7 +284,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
         ? `Found pending notifications:\nGame Invites: ${pendingNotifications.gameInvites.length}\nFriend Requests: ${pendingNotifications.friendRequests.length}`
         : 'No pending background notifications';
       Alert.alert('Background Notifications', message);
-      console.log('Background notifications:', pendingNotifications);
     } catch (error) {
       console.error('Error getting background notifications:', error);
       Alert.alert('Error', 'Failed to get background notifications');
@@ -333,7 +323,6 @@ Token Current: ${tokenInfo.isCurrent ? 'Yes' : 'No'}
       const settings = notificationService.getNotificationSettings();
       const message = `Sound: ${settings.sound}\nVibration: ${settings.vibration}\nBadge: ${settings.badge}\nPriority: ${settings.priority}`;
       Alert.alert('Current Notification Settings', message);
-      console.log('Current notification settings:', settings);
     } catch (error) {
       console.error('Error getting notification settings:', error);
       Alert.alert('Error', 'Failed to get notification settings');
@@ -497,11 +486,9 @@ useEffect(() => {
     });
     
     if (result.success) {
-      console.log('Notifications enabled:', result.token);
       // Update user's push token in your backend
       await updateUserPushToken(result.token);
     } else {
-      console.log('Notifications not enabled:', result.message);
     }
   };
   
@@ -516,10 +503,8 @@ const handleUserLogin = async (user) => {
   const notificationResult = await notificationService.handleUserLogin(user.uid);
   
   if (notificationResult.success) {
-    console.log('User login successful, token saved:', notificationResult.tokenSaved);
     // Token is automatically saved to Firestore in users/{userId}/pushToken
   } else {
-    console.log('Notification setup incomplete:', notificationResult.message);
   }
 };
 
@@ -532,7 +517,6 @@ const sendNotification = async (userId, message) => {
     await notificationService.sendPushNotification(userId, 'New Message', message);
   } else {
     // Show in-app notification or handle differently
-    console.log('Notifications disabled, showing in-app notification');
   }
 };
 
@@ -546,7 +530,6 @@ const getUserToken = async (userId) => {
 const refreshUserToken = async (userId) => {
   const newToken = await notificationService.refreshAndUpdateToken(userId);
   if (newToken) {
-    console.log('Token refreshed and updated in Firestore');
   }
   return newToken;
 };
@@ -554,7 +537,6 @@ const refreshUserToken = async (userId) => {
 // Get comprehensive token information for debugging
 const debugTokenInfo = async (userId) => {
   const tokenInfo = await notificationService.getTokenInfo(userId);
-  console.log('Token debug info:', tokenInfo);
   return tokenInfo;
 };
 */

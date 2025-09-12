@@ -11,7 +11,6 @@ export const initializeFriendService = async () => {
     const currentUser = authService.getCurrentUser();
     if (currentUser) {
       friendsService.setCurrentUser(currentUser);
-      console.log('FriendService initialized for user:', currentUser.uid);
     }
   } catch (error) {
     console.error('Failed to initialize FriendService:', error);
@@ -26,7 +25,6 @@ export const initializeFriendService = async () => {
 export const sendFriendRequestExample = async (targetUserId) => {
   try {
     const result = await friendsService.sendFriendRequest(targetUserId);
-    console.log('Friend request sent successfully');
     return result;
   } catch (error) {
     console.error('Failed to send friend request:', error);
@@ -38,7 +36,6 @@ export const sendFriendRequestExample = async (targetUserId) => {
 export const acceptFriendRequestExample = async (senderUserId) => {
   try {
     const result = await friendsService.acceptFriendRequest(senderUserId);
-    console.log('Friend request accepted successfully');
     return result;
   } catch (error) {
     console.error('Failed to accept friend request:', error);
@@ -50,7 +47,6 @@ export const acceptFriendRequestExample = async (senderUserId) => {
 export const declineFriendRequestExample = async (senderUserId) => {
   try {
     const result = await friendsService.declineFriendRequest(senderUserId);
-    console.log('Friend request declined successfully');
     return result;
   } catch (error) {
     console.error('Failed to decline friend request:', error);
@@ -66,7 +62,6 @@ export const declineFriendRequestExample = async (senderUserId) => {
 export const blockFriendExample = async (friendUserId) => {
   try {
     const result = await friendsService.blockFriend(friendUserId);
-    console.log('Friend blocked successfully');
     return result;
   } catch (error) {
     console.error('Failed to block friend:', error);
@@ -78,7 +73,6 @@ export const blockFriendExample = async (friendUserId) => {
 export const removeFriendExample = async (friendUserId) => {
   try {
     const result = await friendsService.removeFriend(friendUserId);
-    console.log('Friend removed successfully');
     return result;
   } catch (error) {
     console.error('Failed to remove friend:', error);
@@ -94,7 +88,6 @@ export const removeFriendExample = async (friendUserId) => {
 export const getFriendsExample = async () => {
   try {
     const friends = await friendsService.getFriends();
-    console.log('Friends retrieved:', friends);
     return friends;
   } catch (error) {
     console.error('Failed to get friends:', error);
@@ -106,7 +99,6 @@ export const getFriendsExample = async () => {
 export const getPendingRequestsExample = async () => {
   try {
     const requests = await friendsService.getPendingFriendRequests();
-    console.log('Pending requests retrieved:', requests);
     return requests;
   } catch (error) {
     console.error('Failed to get pending requests:', error);
@@ -118,7 +110,6 @@ export const getPendingRequestsExample = async () => {
 export const checkFriendshipExample = async (userId1, userId2) => {
   try {
     const areFriends = await friendsService.areFriends(userId1, userId2);
-    console.log(`Users ${userId1} and ${userId2} are friends:`, areFriends);
     return areFriends;
   } catch (error) {
     console.error('Failed to check friendship:', error);
@@ -130,7 +121,6 @@ export const checkFriendshipExample = async (userId1, userId2) => {
 export const getFriendshipStatusExample = async (userId1, userId2) => {
   try {
     const status = await friendsService.getFriendshipStatus(userId1, userId2);
-    console.log(`Friendship status between ${userId1} and ${userId2}:`, status);
     return status; // Returns: 'pending', 'accepted', 'blocked', or null
   } catch (error) {
     console.error('Failed to get friendship status:', error);
@@ -146,11 +136,9 @@ export const getFriendshipStatusExample = async (userId1, userId2) => {
 export const searchUsersExample = async (searchQuery) => {
   try {
     const results = await friendsService.searchUsers(searchQuery);
-    console.log('Search results:', results);
     
     // Each result includes friendship status
     results.forEach(user => {
-      console.log(`User: ${user.username}, Friendship Status: ${user.friendshipStatus}`);
     });
     
     return results;
@@ -168,7 +156,6 @@ export const searchUsersExample = async (searchQuery) => {
 export const sendChallengeExample = async (friendUserId, wordLength = 5) => {
   try {
     const challengeId = await friendsService.sendChallenge(friendUserId, wordLength);
-    console.log('Challenge sent successfully, ID:', challengeId);
     return challengeId;
   } catch (error) {
     console.error('Failed to send challenge:', error);
@@ -180,7 +167,6 @@ export const sendChallengeExample = async (friendUserId, wordLength = 5) => {
 export const acceptChallengeExample = async (challengeId) => {
   try {
     const gameId = await friendsService.acceptChallenge(challengeId);
-    console.log('Challenge accepted, game created with ID:', gameId);
     return gameId;
   } catch (error) {
     console.error('Failed to accept challenge:', error);
@@ -192,7 +178,6 @@ export const acceptChallengeExample = async (challengeId) => {
 export const declineChallengeExample = async (challengeId) => {
   try {
     const result = await friendsService.declineChallenge(challengeId);
-    console.log('Challenge declined successfully');
     return result;
   } catch (error) {
     console.error('Failed to decline challenge:', error);
@@ -208,7 +193,6 @@ export const declineChallengeExample = async (challengeId) => {
 export const listenToFriendsExample = (callback) => {
   try {
     const unsubscribe = friendsService.listenToFriends(callback);
-    console.log('Listening to friends list changes');
     return unsubscribe;
   } catch (error) {
     console.error('Failed to listen to friends:', error);
@@ -220,7 +204,6 @@ export const listenToFriendsExample = (callback) => {
 export const listenToFriendRequestsExample = (callback) => {
   try {
     const unsubscribe = friendsService.listenToFriendRequests(callback);
-    console.log('Listening to friend request changes');
     return unsubscribe;
   } catch (error) {
     console.error('Failed to listen to friend requests:', error);
@@ -232,7 +215,6 @@ export const listenToFriendRequestsExample = (callback) => {
 export const listenToChallengesExample = (callback) => {
   try {
     const unsubscribe = friendsService.listenToChallenges(callback);
-    console.log('Listening to incoming challenges');
     return unsubscribe;
   } catch (error) {
     console.error('Failed to listen to challenges:', error);
@@ -247,7 +229,6 @@ export const listenToChallengesExample = (callback) => {
 // Complete flow: Search, send request, accept, and challenge
 export const completeFriendFlowExample = async (targetUsername, wordLength = 5) => {
   try {
-    console.log('Starting complete friend flow for username:', targetUsername);
     
     // 1. Search for the user
     const searchResults = await friendsService.searchUsers(targetUsername);
@@ -256,33 +237,27 @@ export const completeFriendFlowExample = async (targetUsername, wordLength = 5) 
     }
     
     const targetUser = searchResults[0];
-    console.log('Found target user:', targetUser.username);
     
     // 2. Check current friendship status
     const currentStatus = await friendsService.getFriendshipStatus(
       friendsService.currentUser.uid, 
       targetUser.id
     );
-    console.log('Current friendship status:', currentStatus);
     
     if (currentStatus === 'accepted') {
-      console.log('Users are already friends, sending challenge...');
       const challengeId = await friendsService.sendChallenge(targetUser.id, wordLength);
       return { type: 'challenge_sent', challengeId, targetUser };
     }
     
     if (currentStatus === 'pending') {
-      console.log('Friend request already pending');
       return { type: 'request_pending', targetUser };
     }
     
     if (currentStatus === 'blocked') {
-      console.log('User is blocked');
       return { type: 'user_blocked', targetUser };
     }
     
     // 3. Send friend request
-    console.log('Sending friend request...');
     await friendsService.sendFriendRequest(targetUser.id);
     
     return { type: 'request_sent', targetUser };
@@ -296,15 +271,12 @@ export const completeFriendFlowExample = async (targetUsername, wordLength = 5) 
 // Handle incoming friend request
 export const handleIncomingFriendRequestExample = async (senderUserId, accept = true) => {
   try {
-    console.log('Handling incoming friend request from:', senderUserId);
     
     if (accept) {
       await friendsService.acceptFriendRequest(senderUserId);
-      console.log('Friend request accepted');
       return { type: 'accepted', senderUserId };
     } else {
       await friendsService.declineFriendRequest(senderUserId);
-      console.log('Friend request declined');
       return { type: 'declined', senderUserId };
     }
   } catch (error) {
@@ -321,7 +293,6 @@ export const handleIncomingFriendRequestExample = async (senderUserId, accept = 
 export const cleanupListenersExample = () => {
   try {
     friendsService.cleanup();
-    console.log('All listeners cleaned up');
   } catch (error) {
     console.error('Failed to cleanup listeners:', error);
   }

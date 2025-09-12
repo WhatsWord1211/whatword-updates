@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Image, Dimensions, Modal } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Video } from 'expo-av';
+// Video removed to avoid build issues
 import styles from './styles';
 import { playSound } from './soundsUtil';
 import ThreeDGreenDot from './ThreeDGreenDot';
@@ -11,8 +11,7 @@ import ThreeDGreenDot from './ThreeDGreenDot';
 const HowToPlayScreen = () => {
   const navigation = useNavigation();
   const [step, setStep] = useState(0);
-  const [showVideoModal, setShowVideoModal] = useState(false);
-  const videoRef = useRef(null);
+  // Video functionality removed
 
   // QWERTY keyboard layout for dummy alphabet grid
   const qwertyKeys = [
@@ -47,18 +46,7 @@ const HowToPlayScreen = () => {
           <Text style={{ color: '#FFFFFF', fontSize: 20, marginBottom: 20, textAlign: 'center' }}>
             2. Solve their word before they solve yours.
           </Text>
-          <TouchableOpacity
-            style={[styles.button, { marginBottom: 10, backgroundColor: '#3B82F6', borderWidth: 2, borderColor: '#FFFFFF' }]}
-            onPress={() => {
-              console.log('HowToPlayScreen: Video button onPress triggered');
-              handleWatchVideo();
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.buttonText, { color: '#FFFFFF', fontSize: 18 }]}>
-              📹 Watch How-To Video
-            </Text>
-          </TouchableOpacity>
+          {/* Video button removed */}
         </View>
       ),
     },
@@ -205,28 +193,9 @@ const HowToPlayScreen = () => {
     }
   };
 
-  const handleWatchVideo = async () => {
-    try {
-      console.log('HowToPlayScreen: Video button clicked');
-      await playSound('chime');
-      console.log('HowToPlayScreen: Setting showVideoModal to true');
-      setShowVideoModal(true);
-    } catch (error) {
-      console.error('HowToPlayScreen: Failed to play chime sound', error);
-    }
-  };
-
-  const handleCloseVideo = async () => {
-    try {
-      await playSound('chime');
-      setShowVideoModal(false);
-    } catch (error) {
-      console.error('HowToPlayScreen: Failed to play chime sound', error);
-    }
-  };
+  // Video functions removed
 
   // Debug logging
-  console.log('HowToPlayScreen: Rendering with showVideoModal:', showVideoModal);
 
   return (
     <SafeAreaView style={[styles.screenContainer, { padding: 0 }]}>
@@ -271,53 +240,7 @@ const HowToPlayScreen = () => {
         </View>
       </ScrollView>
       
-      {/* Video Modal */}
-      <Modal visible={showVideoModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.videoModal, styles.modalShadow]}>
-            <View style={styles.videoHeader}>
-              <Text style={[styles.videoTitle, { color: '#FFFFFF' }]}>How To Play WhatWord</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={handleCloseVideo}
-              >
-                <Text style={[styles.closeButtonText, { color: '#FFFFFF' }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={{ color: '#FFFFFF', marginBottom: 10, textAlign: 'center' }}>
-              Video Player (Debug: Modal is visible)
-            </Text>
-            <Video
-              ref={videoRef}
-              source={require('../assets/images/how-to-vid.mp4')}
-              style={styles.videoPlayer}
-              useNativeControls
-              resizeMode="contain"
-              shouldPlay={true}
-              onError={(error) => {
-                console.error('HowToPlayScreen: Video error:', error);
-              }}
-              onLoad={() => {
-                console.log('HowToPlayScreen: Video loaded successfully');
-                // Automatically go fullscreen when video loads
-                setTimeout(() => {
-                  if (videoRef.current) {
-                    videoRef.current.presentFullscreenPlayer();
-                  }
-                }, 500);
-              }}
-              onFullscreenUpdate={(status) => {
-                if (status.fullscreenUpdate === 1) { // Entering fullscreen
-                  console.log('HowToPlayScreen: Video entered fullscreen');
-                } else if (status.fullscreenUpdate === 3) { // Exiting fullscreen
-                  console.log('HowToPlayScreen: Video exited fullscreen');
-                  setShowVideoModal(false);
-                }
-              }}
-            />
-          </View>
-        </View>
-      </Modal>
+      {/* Video modal removed */}
     </SafeAreaView>
   );
 };

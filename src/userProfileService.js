@@ -54,7 +54,6 @@ class UserProfileService {
         lastUpdated: new Date().toISOString()
       });
 
-      console.log('UserProfileService: Display name updated successfully');
       return true;
     } catch (error) {
       console.error('UserProfileService: Failed to update display name:', error);
@@ -80,7 +79,6 @@ class UserProfileService {
         lastUpdated: new Date().toISOString()
       });
 
-      console.log('UserProfileService: Photo URL updated successfully');
       return true;
     } catch (error) {
       console.error('UserProfileService: Failed to update photo URL:', error);
@@ -105,7 +103,6 @@ class UserProfileService {
         lastUpdated: new Date().toISOString()
       });
 
-      console.log('UserProfileService: Email updated successfully');
       return true;
     } catch (error) {
       console.error('UserProfileService: Failed to update email:', error);
@@ -126,7 +123,6 @@ class UserProfileService {
           pushToken: pushToken,
           lastTokenUpdate: new Date().toISOString()
         });
-        console.log('UserProfileService: Push token updated successfully');
         return true;
       }
       return false;
@@ -149,7 +145,6 @@ class UserProfileService {
           pushToken: newToken,
           lastTokenUpdate: new Date().toISOString()
         });
-        console.log('UserProfileService: Push token refreshed successfully');
         return true;
       }
       return false;
@@ -195,7 +190,6 @@ class UserProfileService {
         await updateProfile(this.currentUser, authUpdates);
       }
 
-      console.log('UserProfileService: Profile fields updated successfully');
       return true;
     } catch (error) {
       console.error('UserProfileService: Failed to update profile fields:', error);
@@ -239,7 +233,6 @@ class UserProfileService {
           ...userData,
           lastUpdated: new Date().toISOString()
         });
-        console.log('UserProfileService: User profile updated successfully');
       } else {
         // Create new profile
         await setDoc(doc(db, 'users', userId), {
@@ -248,7 +241,6 @@ class UserProfileService {
           createdAt: new Date().toISOString(),
           lastUpdated: new Date().toISOString()
         });
-        console.log('UserProfileService: User profile created successfully');
       }
       
       return true;
@@ -300,7 +292,6 @@ class UserProfileService {
         lastUpdated: new Date().toISOString()
       });
 
-      console.log('UserProfileService: User stats updated successfully');
       return true;
     } catch (error) {
       console.error('UserProfileService: Failed to update user stats:', error);

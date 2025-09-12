@@ -28,6 +28,7 @@ import LegalScreen from './src/LegalScreen';
 import { ThemeProvider } from './src/ThemeContext';
 import './src/adService'; // Initialize AdMob service
 import { initializeConsentAndAds } from './src/consentManager';
+import { loadSounds } from './src/soundsUtil';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -43,8 +44,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Initialize consent flow and ads SDK early
-    initializeConsentAndAds().catch(() => {});
+    const initializeApp = async () => {
+      // Initialize consent flow and ads SDK early
+      await initializeConsentAndAds().catch(() => {});
+      
+      // Load sounds on app start - wait for completion
+      await loadSounds().catch(() => {});
+      console.log('App: Sounds loaded, app ready');
+    };
+
+    initializeApp();
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {

@@ -15,11 +15,6 @@ const firebaseConfig = {
   measurementId: Constants.expoConfig.extra.firebaseMeasurementId
 };
 
-console.log('Firebase Config:', {
-  projectId: firebaseConfig.projectId,
-  authDomain: firebaseConfig.authDomain,
-  apiKey: firebaseConfig.apiKey ? '***' : 'MISSING'
-});
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);

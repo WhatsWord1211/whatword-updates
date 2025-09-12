@@ -7,7 +7,7 @@ import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, d
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
-import { loadSounds, playSound } from './soundsUtil';
+import { playSound } from './soundsUtil';
 import authService from './authService';
 import { useTheme } from './ThemeContext';
 import { getNotificationService } from './notificationService';
@@ -61,7 +61,6 @@ const HomeScreen = () => {
         deleteDoc(doc(db, 'notifications', notificationId))
       );
       await Promise.all(deletePromises);
-      console.log('HomeScreen: Permanently deleted', notificationIds.length, 'notifications');
     } catch (error) {
       console.error('Failed to permanently delete notifications:', error);
     }
@@ -76,11 +75,6 @@ const HomeScreen = () => {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         setUserProfile(userData);
-        console.log('HomeScreen: Refreshed user profile with updated averages:', {
-          easy: userData.easyAverageScore,
-          regular: userData.regularAverageScore,
-          hard: userData.hardAverageScore
-        });
       }
     } catch (error) {
       console.error('HomeScreen: Failed to refresh user profile:', error);
@@ -89,31 +83,24 @@ const HomeScreen = () => {
 
   const loadUserProfile = async (currentUser) => {
     try {
-      console.log('HomeScreen: Loading profile for user:', currentUser.uid);
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        console.log('HomeScreen: User data from Firestore:', userData);
         
         // Try multiple sources for display name
         let displayNameToUse = 'Player';
         
         if (currentUser.displayName && currentUser.displayName.trim()) {
           displayNameToUse = currentUser.displayName.trim();
-          console.log('HomeScreen: Using Firebase displayName:', displayNameToUse);
         } else if (userData.displayName && userData.displayName.trim()) {
           displayNameToUse = userData.displayName.trim();
-          console.log('HomeScreen: Using Firestore displayName:', displayNameToUse);
         } else if (userData.username && userData.username.trim()) {
           displayNameToUse = userData.username.trim();
-          console.log('HomeScreen: Using Firestore username:', displayNameToUse);
         } else if (currentUser.email) {
           // Use email prefix as fallback
           displayNameToUse = currentUser.email.split('@')[0];
-          console.log('HomeScreen: Using email prefix as displayName:', displayNameToUse);
         }
         
-        console.log('HomeScreen: Final displayName set to:', displayNameToUse);
         setDisplayName(displayNameToUse);
         
         // Store user profile data for rank calculation
@@ -130,7 +117,6 @@ const HomeScreen = () => {
             // );
             // const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
             //   const invites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            //   console.log('HomeScreen: Game invites snapshot update', { invites: invites.length });
             //   setGameInvites(invites);
             // }, (error) => {
             //   console.error('HomeScreen: Game invites query error:', error);
@@ -163,10 +149,6 @@ const HomeScreen = () => {
               setPendingChallenges(prev => {
                 const outgoing = prev.filter(c => c._source === 'outgoing');
                 const merged = [...incoming, ...outgoing];
-                console.log('HomeScreen: Challenge snapshot update (incoming)', {
-                  userChallenges: merged.length,
-                  challengeStatuses: merged.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
-                });
                 // Only incoming pending challenges should influence the Resume badge
                 if (incoming.length > 0) setBadgeCleared(false);
                 return merged;
@@ -180,10 +162,6 @@ const HomeScreen = () => {
               setPendingChallenges(prev => {
                 const incoming = prev.filter(c => c._source === 'incoming');
                 const merged = [...incoming, ...outgoing];
-                console.log('HomeScreen: Challenge snapshot update (outgoing)', {
-                  userChallenges: merged.length,
-                  challengeStatuses: merged.map(c => ({ id: c.id, status: c.status, from: c.fromUid || c.from, to: c.toUid || c.to }))
-                });
                 // Outgoing pending challenges should not trigger/break the Resume badge state
                 return merged;
               });
@@ -212,7 +190,6 @@ const HomeScreen = () => {
             );
             const unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
               const newNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              console.log('HomeScreen: Notifications snapshot update', { notifications: newNotifications.length });
               setNotifications(newNotifications);
               
               // Reset badge cleared state if new notifications come in
@@ -270,10 +247,7 @@ const HomeScreen = () => {
               });
               setUnseenResultsCount(unseen);
               if (unseen > 0) setBadgeCleared(false);
-              // Play a chime only when the unseen count increases to avoid repeated sounds
-              if (unseen > prevUnseenCountRef.current && isSoundReady) {
-                playSound('chime').catch(() => {});
-              }
+              // Removed chime sound that was playing multiple times during sign-in
               prevUnseenCountRef.current = unseen;
             };
 
@@ -325,8 +299,7 @@ const HomeScreen = () => {
                       sound: true,
                       priority: 'high',
                     }).catch(() => {});
-                    // Also play a chime
-                    playSound('chime').catch(() => {});
+                    // Chime removed to prevent multiple sounds during sign-in
                   }
                 });
                 // Contribute to Resume badge when a game actually starts (P2 set word)
@@ -347,7 +320,6 @@ const HomeScreen = () => {
         }, 100); // Small delay to ensure UI is responsive
         
       } else {
-        console.log('HomeScreen: No user document found, creating one...');
         // Create user profile if it doesn't exist
         const username = currentUser.email ? currentUser.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`;
         await setDoc(doc(db, 'users', currentUser.uid), {
@@ -384,7 +356,6 @@ const HomeScreen = () => {
       if (currentUser.email) {
         const emailName = currentUser.email.split('@')[0];
         setDisplayName(emailName);
-        console.log('HomeScreen: Fallback to email prefix:', emailName);
       } else {
         setDisplayName('Player');
       }
@@ -406,7 +377,7 @@ const HomeScreen = () => {
             // Load profile and other data in background
             Promise.all([
               loadUserProfile(currentUser),
-              loadSounds().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
+              Promise.resolve().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
               
               clearStuckGameState() // Clear any stuck game state
@@ -425,7 +396,7 @@ const HomeScreen = () => {
               // Load profile and other data in background
               Promise.all([
                 loadUserProfile(currentUser),
-                loadSounds(),
+                Promise.resolve(),
                 checkFirstLaunch(),
 
                 clearStuckGameState() // Clear any stuck game state
@@ -499,13 +470,11 @@ const HomeScreen = () => {
       for (const key of keysToRemove) {
         try {
           await AsyncStorage.removeItem(key);
-          console.log(`HomeScreen: Cleared ${key} from AsyncStorage`);
         } catch (error) {
           console.error(`HomeScreen: Failed to clear ${key}:`, error);
         }
       }
       
-      console.log('HomeScreen: Cleared stuck game state');
     } catch (error) {
       console.error('HomeScreen: Failed to clear stuck game state:', error);
     }
@@ -532,9 +501,7 @@ const HomeScreen = () => {
   const handleRefreshProfile = async () => {
     try {
       if (user) {
-        console.log('HomeScreen: Refreshing user profile...');
         await loadUserProfile(user);
-        console.log('HomeScreen: Profile refresh completed');
       }
     } catch (error) {
       console.error('HomeScreen: Failed to refresh profile:', error);
@@ -566,12 +533,10 @@ const HomeScreen = () => {
 
   const handleButtonPress = (screen, params) => {
     try {
-      console.log('HomeScreen: Attempting navigation to', screen, 'with params:', params);
       
       // Simple navigation with error handling
       navigation.navigate(screen, params);
       playSound('chime');
-      console.log('HomeScreen: Navigation successful to', screen);
     } catch (error) {
       console.error('HomeScreen: Navigation failed', error);
       // Don't show alert for navigation errors, just log them
@@ -683,24 +648,17 @@ const HomeScreen = () => {
               // Clear the badge when user acknowledges by clicking Resume
               setBadgeCleared(true);
               
-              // Debug: Log what's causing the badge to show
-              console.log('HomeScreen: Resume button clicked - Badge sources:', {
-                pendingChallenges: pendingChallenges.length,
-                notifications: notifications.length,
-                total: pendingChallenges.length + notifications.length,
-                badgeCleared: true
-              });
               
               handleButtonPress('ResumeGames');
             }}
           >
             <Text style={styles.buttonText}>Resume</Text>
           </TouchableOpacity>
-          {/* Notification Badge: only incoming pending challenges, unseen results, and unread notifications */}
-          {!badgeCleared && ((pendingChallenges.filter(c => c._source === 'incoming').length > 0) || notifications.length > 0 || unseenResultsCount > 0) && (
+          {/* Notification Badge: only incoming pending challenges and unread notifications */}
+          {!badgeCleared && ((pendingChallenges.filter(c => c._source === 'incoming').length > 0) || notifications.length > 0) && (
             <View style={[styles.notificationBadge, { backgroundColor: '#FF4444' }]}>
               <Text style={styles.notificationBadgeText}>
-                {pendingChallenges.filter(c => c._source === 'incoming').length + notifications.length + unseenResultsCount}
+                {pendingChallenges.filter(c => c._source === 'incoming').length + notifications.length}
               </Text>
             </View>
           )}

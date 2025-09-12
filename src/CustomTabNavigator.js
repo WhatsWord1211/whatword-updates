@@ -1,13 +1,20 @@
-import React, { useState, useEffect } from 'react';
+nimport React, { useState, useEffect } from 'react';
 import { Text, View, StyleSheet, TouchableOpacity, PanGestureHandler, State, Animated, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import { collection, query, where, onSnapshot, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { playSound } from './soundsUtil';
+
+// ⚠️ SYSTEM MISMATCH WARNING ⚠️
+// This file uses the OLD friendRequests collection system
+// Other files (FriendRequestsScreen.js, friendsService.js) use the NEW subcollection system
+// This mismatch is causing friend requests to not appear properly
+console.warn('🚨 [CustomTabNavigator] Using OLD friendRequests collection system - this may cause issues with other screens');
 
 import HomeScreen from './HomeScreen';
-import AddFriendsScreen from './AddFriendsScreen';
+import FriendsManagementScreen from './FriendsManagementScreen';
 import LeaderboardScreen from './LeaderboardScreen';
 import ProfileScreen from './ProfileScreen';
 
@@ -26,6 +33,7 @@ const CustomTabNavigator = () => {
   useEffect(() => {
     loadPersistedData();
   }, []);
+
 
   // Load dismissed notifications and notifications seen state from AsyncStorage
   const loadPersistedData = async () => {
@@ -103,15 +111,27 @@ const CustomTabNavigator = () => {
     });
 
     // Listen for pending friend requests
+    console.log('🔍 [CustomTabNavigator] Setting up friend request listener');
+    console.log('🔍 [CustomTabNavigator] Current user ID:', auth.currentUser?.uid);
+    
     const requestsQuery = query(
       collection(db, 'friendRequests'),
-      where('toUid', '==', auth.currentUser.uid),
+      where('to', '==', auth.currentUser.uid),
       where('status', '==', 'pending')
     );
 
+    console.log('🔍 [CustomTabNavigator] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
+    console.log('🔍 [CustomTabNavigator] Query: where("to", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
+
     const requestsUnsubscribe = onSnapshot(requestsQuery, (snapshot) => {
+      console.log('🔍 [CustomTabNavigator] Friend request listener triggered');
+      console.log('🔍 [CustomTabNavigator] Snapshot size:', snapshot.docs.length);
+      console.log('🔍 [CustomTabNavigator] Snapshot docs:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
       const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('🔍 [CustomTabNavigator] Processed requests:', requests);
       setPendingRequests(requests);
+      
       // Reset notifications seen flag when new requests arrive
       if (requests.length > 0) {
         setNotificationsSeen(false);
@@ -121,7 +141,7 @@ const CustomTabNavigator = () => {
       // Clear dismissed notifications if there are no actual notifications
       clearDismissedNotificationsIfNoNew();
     }, (error) => {
-      console.error('CustomTabNavigator: Friend requests query error:', error);
+      console.error('❌ [CustomTabNavigator] Friend requests query error:', error);
     });
 
     // Listen for active PvP games using a different approach
@@ -200,16 +220,9 @@ const CustomTabNavigator = () => {
     };
   }, []);
 
-  // Mark notifications as seen when Friends tab is focused (only if there are actual notifications)
-  useFocusEffect(
-    React.useCallback(() => {
-      const hasNotifications = (pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0 || notifications.length > 0);
-      if (hasNotifications && !notificationsSeen) {
-        setNotificationsSeen(true);
-        saveNotificationsSeen(true);
-      }
-    }, [pendingChallenges.length, pendingRequests.length, activePvPGames.length, notifications.length, notificationsSeen])
-  );
+  // Note: We don't automatically mark notifications as seen when Friends tab is focused
+  // The user needs to actually interact with the requests to clear the badge
+  // This ensures the badge persists until the user takes action
 
   // Animate notification badge dismissal
   const animateDismissal = () => {
@@ -316,31 +329,36 @@ const CustomTabNavigator = () => {
     return count;
   };
 
+  // Handle tab press and play sound
+  const handleTabPress = async () => {
+    try {
+      await playSound('customTab');
+    } catch (error) {
+      // Ignore sound errors to not break navigation
+    }
+  };
+
+  // Handle Friends tab press - clear notifications and play sound
+  const handleFriendsTabPress = async () => {
+    try {
+      await playSound('customTab');
+      // Clear notifications when Friends tab is clicked
+      setNotificationsSeen(true);
+      saveNotificationsSeen(true);
+    } catch (error) {
+      // Ignore sound errors to not break navigation
+    }
+  };
+
   const renderTabIcon = (icon, color, size, hasNotifications = false) => (
     <View style={styles.tabIconContainer}>
       <Text style={{ color, fontSize: size, fontWeight: "bold" }}>{icon}</Text>
       {hasNotifications && (
-                        <Animated.View style={[styles.notificationBadge, { transform: [{ scale: badgeScale }] }]}>
-                  <TouchableOpacity
-                    style={styles.notificationBadgeInner}
-                    onPress={() => {
-                      // Tap to dismiss this specific notification type
-                      if (pendingChallenges.length > 0) {
-                        dismissNotification(pendingChallenges[0].id, 'challenge');
-                      } else if (pendingRequests.length > 0) {
-                        dismissNotification(pendingRequests[0].id, 'request');
-                      } else if (activePvPGames.length > 0) {
-                        dismissNotification('1', 'activeGame');
-                      }
-                    }}
-                    onLongPress={dismissAllNotifications}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.notificationText}>
-                      {getNotificationCount() > 99 ? '99+' : getNotificationCount()}
-                    </Text>
-                  </TouchableOpacity>
-                </Animated.View>
+        <Animated.View style={[styles.notificationBadge, { transform: [{ scale: badgeScale }] }]}>
+          <Text style={styles.notificationText}>
+            {getNotificationCount() > 99 ? '99+' : getNotificationCount()}
+          </Text>
+        </Animated.View>
       )}
     </View>
   );
@@ -373,54 +391,22 @@ const CustomTabNavigator = () => {
             <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏠</Text>
           ),
         }}
+        listeners={{
+          tabPress: handleTabPress,
+        }}
       />
       <Tab.Screen 
         name="Friends" 
-        component={AddFriendsScreen}
+        component={FriendsManagementScreen}
         options={{
           title: "Friends",
-          tabBarIcon: ({ color, size }) => (
-            <View style={styles.tabIconContainer}>
-              <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👥</Text>
-              {(pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0 || notifications.length > 0) && !notificationsSeen && (
-                <TouchableOpacity
-                  style={styles.notificationBadge}
-                  onPress={() => {
-                    // Tap to dismiss this specific notification type
-                    if (pendingChallenges.length > 0) {
-                      dismissNotification(pendingChallenges[0].id, 'challenge');
-                    } else if (pendingRequests.length > 0) {
-                      dismissNotification(pendingRequests[0].id, 'request');
-                    } else if (activePvPGames.length > 0) {
-                      dismissNotification('1', 'activeGame');
-                    } else if (notifications.length > 0) {
-                      // Mark the first notification as read and dismiss it
-                      const firstNotification = notifications[0];
-                      markNotificationAsRead(firstNotification.id);
-                      dismissNotification(firstNotification.id, 'notification');
-                    }
-                  }}
-                  onLongPress={dismissAllNotifications}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.notificationText}>
-                    {getNotificationCount() > 99 ? '99+' : getNotificationCount()}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {/* Small help indicator for first-time users */}
-              {getNotificationCount() > 0 && (
-                <TouchableOpacity
-                  style={styles.helpIndicator}
-                  onPress={showNotificationHelp}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.helpText}>💡</Text>
-                </TouchableOpacity>
-              )}
-
-            </View>
-          ),
+          tabBarIcon: ({ color, size }) => {
+            const hasNotifications = (pendingChallenges.length > 0 || pendingRequests.length > 0 || activePvPGames.length > 0 || notifications.length > 0) && !notificationsSeen;
+            return renderTabIcon("👥", color, size, hasNotifications);
+          },
+        }}
+        listeners={{
+          tabPress: handleFriendsTabPress,
         }}
       />
       <Tab.Screen 
@@ -432,6 +418,9 @@ const CustomTabNavigator = () => {
             <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏆</Text>
           ),
         }}
+        listeners={{
+          tabPress: handleTabPress,
+        }}
       />
       <Tab.Screen 
         name="Profile" 
@@ -441,6 +430,9 @@ const CustomTabNavigator = () => {
           tabBarIcon: ({ color, size }) => (
             <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👤</Text>
           ),
+        }}
+        listeners={{
+          tabPress: handleTabPress,
         }}
       />
     </Tab.Navigator>
@@ -473,13 +465,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-  },
-  notificationBadgeInner: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
   },
   notificationText: {
     color: 'white',

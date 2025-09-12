@@ -8,6 +8,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "sdkVersion": "54.0.0",
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
@@ -55,8 +56,8 @@
       [
         "react-native-google-mobile-ads",
         {
-          "android_app_id": "ca-app-pub-3940256099942544~3347511713",
-          "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
+          "androidAppId": "ca-app-pub-8036041739101786~8034291620",
+          "iosAppId": "ca-app-pub-8036041739101786~7011579873"
         }
       ],
       [

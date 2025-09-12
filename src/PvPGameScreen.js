@@ -5,8 +5,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from './ThemeContext';
 import { db, auth } from './firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
-import { Audio } from 'expo-av';
-import { loadSounds, playSound } from './soundsUtil';
+// Audio mode is now handled in soundsUtil.js
+import { playSound } from './soundsUtil';
 import adService from './adService';
 import { getFeedback, isValidWord } from './gameLogic';
 import styles from './styles';
@@ -310,29 +310,7 @@ const PvPGameScreen = () => {
     return unsubscribe;
   }, []);
 
-  // Ensure audio is configured and sounds are preloaded so first backspace plays immediately
-  useEffect(() => {
-    const initializeAudio = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        await loadSounds();
-        // Warm up backspace sound silently to avoid first-press delay
-        try {
-          await playSound('backspace', { volume: 0 });
-        } catch (_) {}
-      } catch (error) {
-        // Keep UI responsive even if audio init fails
-        console.error('PvPGameScreen: Failed to initialize audio or load sounds', error);
-      }
-    };
-    initializeAudio();
-  }, []);
+  // Audio mode is now handled in soundsUtil.js
 
   // Auto-scroll to bottom when guesses are updated
   useEffect(() => {
@@ -366,6 +344,17 @@ const PvPGameScreen = () => {
         const gameData = { id: docSnap.id, ...docSnap.data() };
         // Ensure UI leaves loading state immediately regardless of status
         setGame(prev => prev && prev.id === gameData.id && prev.status === gameData.status ? prev : gameData);
+        
+        // Add this game to current user's activeGames array if not already there
+        if (gameData.status === 'active' && currentUser?.uid) {
+          try {
+            await updateDoc(doc(db, 'users', currentUser.uid), {
+              activeGames: arrayUnion(gameId)
+            });
+          } catch (error) {
+            // Ignore errors - this is best effort
+          }
+        }
         
         // Game update received - keeping minimal logging for debugging
         
@@ -434,10 +423,8 @@ const PvPGameScreen = () => {
         
         // Check for timeouts
         const timeoutType = gameService.checkGameTimeouts(gameData);
-        console.log('PvPGameScreen: Timeout check result:', timeoutType);
         
         if (timeoutType !== 'active') {
-          console.log('PvPGameScreen: Game timeout detected:', timeoutType);
           // Handle timeout automatically
           gameService.handleGameTimeout(gameData.id, timeoutType).catch(error => {
             console.error('Failed to handle timeout:', error);
@@ -458,21 +445,8 @@ const PvPGameScreen = () => {
               const currentPlayerFinished = currentPlayerData.solved || (currentPlayerData.attempts && currentPlayerData.attempts >= getMaxGuesses());
               const opponentPlayerFinished = opponentPlayerData.solved || (opponentPlayerData.attempts && opponentPlayerData.attempts >= getMaxGuesses());
               
-              console.log('PvPGameScreen: Checking game completion status:', {
-                currentPlayerFinished,
-                opponentPlayerFinished,
-                currentPlayerData: { solved: currentPlayerData.solved, attempts: currentPlayerData.attempts },
-                opponentPlayerData: { solved: opponentPlayerData.solved, attempts: opponentPlayerData.attempts },
-                maxGuesses: getMaxGuesses()
-              });
               
               if (currentPlayerFinished && opponentPlayerFinished) {
-                console.log('PvPGameScreen: Auto-completing finished game', {
-                  currentPlayerFinished,
-                  opponentPlayerFinished,
-                  currentPlayerData: { solved: currentPlayerData.solved, attempts: currentPlayerData.attempts },
-                  opponentPlayerData: { solved: opponentPlayerData.solved, attempts: opponentPlayerData.attempts }
-                });
                 // Game should be completed - determine result
                 determineGameResult(gameData, currentUser.uid).catch(error => {
                   console.error('Failed to auto-complete game:', error);
@@ -583,15 +557,6 @@ const PvPGameScreen = () => {
   const getOpponentPlayerData = (gameData) => {
     if (!gameData || !currentUser) return null;
     
-    console.log('getOpponentPlayerData: Game data structure:', {
-      hasPlayer1: !!gameData.player1,
-      hasPlayer2: !!gameData.player2,
-      hasPlayerWord: !!gameData.playerWord,
-      hasOpponentWord: !!gameData.opponentWord,
-      currentUser: currentUser.uid,
-      creatorId: gameData.creatorId,
-      playerIds: gameData.playerIds
-    });
     
     // Handle new game structure (player1/player2)
     if (gameData.player1 && gameData.player2 && gameData.player1.uid && gameData.player2.uid) {
@@ -949,7 +914,6 @@ const PvPGameScreen = () => {
   // Function to delete completed game and preserve only statistics
   const deleteCompletedGame = async (gameId, gameData) => {
     try {
-      console.log('deleteCompletedGame: Called with gameId:', gameId, 'gameData:', gameData);
       
       // Safety checks for game data
       if (!gameData || !gameData.players || !Array.isArray(gameData.players) || gameData.players.length < 2) {
@@ -982,16 +946,13 @@ const PvPGameScreen = () => {
         }
       };
       
-      console.log('deleteCompletedGame: Created gameStats:', gameStats);
       
       // Save statistics to a separate collection for leaderboard purposes
       const statsRef = doc(db, 'gameStats', gameId);
       await setDoc(statsRef, gameStats);
-      console.log('deleteCompletedGame: Successfully saved to gameStats collection');
       
       // Delete the actual game document
       await deleteDoc(doc(db, 'games', gameId));
-      console.log('deleteCompletedGame: Successfully deleted game document');
       
       return true;
     } catch (error) {

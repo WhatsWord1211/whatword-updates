@@ -5,7 +5,6 @@ let mobileAds, BannerAd, BannerAdSize, TestIds, InterstitialAd, RewardedAd, Rewa
 
 if (Constants?.appOwnership === 'expo') {
   // Running in Expo Go - native module unavailable
-  console.log('Running in Expo Go - Ads disabled (fallback mode)');
   mobileAds = null;
   BannerAd = null;
   BannerAdSize = null;
@@ -23,9 +22,7 @@ if (Constants?.appOwnership === 'expo') {
     InterstitialAd = adModule.InterstitialAd;
     RewardedAd = adModule.RewardedAd;
     RewardedAdEventType = adModule.RewardedAdEventType;
-    console.log('AdMob module loaded successfully');
   } catch (error) {
-    console.log('AdMob not available - using fallback mode');
     mobileAds = null;
     BannerAd = null;
     BannerAdSize = null;
@@ -67,7 +64,6 @@ class AdService {
     try {
       // Check if AdMob is available
       if (!mobileAds) {
-        console.log('AdMob not available - running in fallback mode');
         this.isInitialized = true; // Mark as initialized for fallback
         return;
       }
@@ -75,7 +71,6 @@ class AdService {
       // Initialize mobile ads SDK
       await mobileAds().initialize();
       this.isInitialized = true;
-      console.log('AdMob initialized successfully');
       
       // Pre-load ads
       this.loadInterstitialAd();
@@ -92,7 +87,6 @@ class AdService {
     try {
       // Check if AdMob is available
       if (!InterstitialAd) {
-        console.log('Interstitial ads not available - using fallback');
         return;
       }
 
@@ -103,11 +97,9 @@ class AdService {
       });
 
       const unsubscribeLoaded = this.interstitialAd.addAdEventListener('loaded', () => {
-        console.log('Interstitial ad loaded');
       });
 
       const unsubscribeClosed = this.interstitialAd.addAdEventListener('closed', () => {
-        console.log('Interstitial ad closed');
         // Reload for next use
         this.loadInterstitialAd();
       });
@@ -135,7 +127,6 @@ class AdService {
     try {
       // Check if AdMob is available
       if (!RewardedAd) {
-        console.log('Rewarded ads not available - using fallback');
         return;
       }
 
@@ -146,15 +137,12 @@ class AdService {
       });
 
       const unsubscribeLoaded = this.rewardedAd.addAdEventListener(RewardedAdEventType.LOADED, () => {
-        console.log('Rewarded ad loaded');
       });
 
       const unsubscribeEarned = this.rewardedAd.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward) => {
-        console.log('User earned reward:', reward);
       });
 
       const unsubscribeClosed = this.rewardedAd.addAdEventListener(RewardedAdEventType.CLOSED, () => {
-        console.log('Rewarded ad closed');
         // Reload for next use
         this.loadRewardedAd();
       });
@@ -184,31 +172,26 @@ class AdService {
       // Check if we should show an ad based on frequency
       this.gamesPlayed++;
       if (this.gamesPlayed % this.adFrequency !== 0) {
-        console.log('Skipping ad (frequency control)');
         return false;
       }
 
       // Check if AdMob is available
       if (!InterstitialAd || !this.interstitialAd) {
-        console.log('Interstitial ads not available - skipping in fallback mode');
         return true; // Return true so game flow continues
       }
 
       if (!this.isInitialized) {
-        console.log('Interstitial ad not ready');
         return false;
       }
 
       const isLoaded = await this.interstitialAd.isLoaded();
       if (!isLoaded) {
-        console.log('Interstitial ad not loaded yet');
         // Try to load and show
         this.interstitialAd.load();
         return false;
       }
 
       await this.interstitialAd.show();
-      console.log('Interstitial ad shown');
       return true;
     } catch (error) {
       console.error('Failed to show interstitial ad:', error);
@@ -234,7 +217,6 @@ class AdService {
 
         // Check if AdMob is available
         if (!RewardedAd || !this.rewardedAd) {
-          console.log('Rewarded ads not available - giving hint for free in fallback mode');
           this.hintsRequested++;
           resolve(true);
           return;
@@ -272,7 +254,6 @@ class AdService {
 
         // Show the ad
         await this.rewardedAd.show();
-        console.log('Rewarded ad shown for hint');
         
       } catch (error) {
         console.error('Failed to show rewarded ad:', error);
@@ -284,7 +265,6 @@ class AdService {
   // Update ad frequency setting
   setAdFrequency(frequency) {
     this.adFrequency = Math.max(1, frequency);
-    console.log(`Ad frequency set to: every ${this.adFrequency} games`);
   }
 
   // Get current ad statistics
@@ -302,7 +282,6 @@ class AdService {
   resetDailyHints() {
     this.hintsRequested = 0;
     this.lastHintReset = new Date().toDateString();
-    console.log('Daily hint counter reset');
   }
 
   // Check if ads are ready

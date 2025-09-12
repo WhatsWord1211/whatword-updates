@@ -16,7 +16,6 @@ export const userRegistrationExample = async () => {
       'username123'
     );
     
-    console.log('User registered successfully:', user.uid);
     
     // User profile is automatically created with:
     // - username: 'username123'
@@ -44,7 +43,6 @@ export const userLoginExample = async () => {
       'password123'
     );
     
-    console.log('User logged in successfully:', user.uid);
     
     // Push token is automatically updated in user profile
     // lastLogin timestamp is updated
@@ -66,7 +64,6 @@ export const appleSignInExample = async () => {
   try {
     const user = await authService.signInWithApple();
     
-    console.log('Apple sign-in successful:', user.uid);
     
     // If new user, profile is created with Apple data
     // If existing user, push token and lastLogin are updated
@@ -83,7 +80,6 @@ export const anonymousSignInExample = async () => {
   try {
     const user = await authService.signInAnonymously();
     
-    console.log('Anonymous sign-in successful:', user.uid);
     
     // Profile created with generated username
     // No email, but push token is still saved
@@ -109,7 +105,6 @@ export const updateDisplayNameExample = async (newDisplayName) => {
     // Update display name
     await userProfileService.updateDisplayName(newDisplayName);
     
-    console.log('Display name updated successfully');
     
     // Both Firebase Auth and Firestore are updated
     // lastUpdated timestamp is set
@@ -129,7 +124,6 @@ export const updatePhotoURLExample = async (photoURL) => {
     
     await userProfileService.updatePhotoURL(photoURL);
     
-    console.log('Photo URL updated successfully');
     
     // Both Firebase Auth and Firestore are updated
     // lastUpdated timestamp is set
@@ -149,7 +143,6 @@ export const updateEmailExample = async (newEmail) => {
     
     await userProfileService.updateEmail(newEmail);
     
-    console.log('Email updated successfully');
     
     // Only Firestore is updated (Firebase Auth email requires re-authentication)
     // lastUpdated timestamp is set
@@ -175,7 +168,6 @@ export const updateMultipleFieldsExample = async () => {
     
     await userProfileService.updateProfileFields(updates);
     
-    console.log('Multiple profile fields updated successfully');
     
     // All fields are updated in both Firebase Auth and Firestore
     // lastUpdated timestamp is set
@@ -195,7 +187,6 @@ export const getUserProfileExample = async () => {
     
     const profile = await userProfileService.getCurrentUserProfile();
     
-    console.log('User profile:', profile);
     
     // Returns complete user profile with all fields:
     // uid, username, displayName, photoURL, pushToken, email, 
@@ -221,9 +212,7 @@ export const updatePushTokenExample = async () => {
     const success = await userProfileService.updatePushToken();
     
     if (success) {
-      console.log('Push token updated successfully');
     } else {
-      console.log('No push token available');
     }
     
     return success;
@@ -242,9 +231,7 @@ export const refreshPushTokenExample = async () => {
     const success = await userProfileService.refreshPushToken();
     
     if (success) {
-      console.log('Push token refreshed successfully');
     } else {
-      console.log('No new token available');
     }
     
     return success;
@@ -263,7 +250,6 @@ export const manualTokenUpdateExample = async () => {
     const pushToken = await notificationService.getFCMToken();
     if (pushToken) {
       await authService.updateUserPushToken(currentUser.uid, pushToken);
-      console.log('Push token updated manually');
       return true;
     }
     
@@ -283,7 +269,6 @@ export const getUserStatsExample = async (userId) => {
   try {
     const stats = await userProfileService.getUserStats(userId);
     
-    console.log('User stats:', stats);
     
     // Returns: gamesPlayed, gamesWon, bestScore, createdAt, lastLogin
     
@@ -305,7 +290,6 @@ export const updateUserStatsExample = async (userId) => {
     
     await userProfileService.updateUserStats(userId, stats);
     
-    console.log('User stats updated successfully');
     
     // lastUpdated timestamp is set
     
@@ -330,7 +314,6 @@ export const completeUserSetupFlow = async () => {
       'newuser123'
     );
     
-    console.log('Step 1: User registered:', user.uid);
     
     // Step 2: Set up profile service
     userProfileService.setCurrentUser(user);
@@ -341,17 +324,14 @@ export const completeUserSetupFlow = async () => {
       photoURL: 'https://example.com/default-avatar.jpg'
     });
     
-    console.log('Step 3: Profile updated');
     
     // Step 4: Ensure push token is saved
     await userProfileService.updatePushToken();
     
-    console.log('Step 4: Push token saved');
     
     // Step 5: Get final profile
     const finalProfile = await userProfileService.getCurrentUserProfile();
     
-    console.log('Step 5: Final profile:', finalProfile);
     
     return finalProfile;
   } catch (error) {
