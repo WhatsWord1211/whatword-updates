@@ -1,8 +1,8 @@
-nimport React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Text, View, StyleSheet, TouchableOpacity, PanGestureHandler, State, Animated, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import { collection, query, where, onSnapshot, updateDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { playSound } from './soundsUtil';
@@ -220,6 +220,34 @@ const CustomTabNavigator = () => {
     };
   }, []);
 
+  // Add manual refresh when component comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🔍 [CustomTabNavigator] Component focused - refreshing friend requests');
+      if (auth.currentUser) {
+        // Manually check for friend requests
+        const requestsQuery = query(
+          collection(db, 'friendRequests'),
+          where('to', '==', auth.currentUser.uid),
+          where('status', '==', 'pending')
+        );
+        
+        getDocs(requestsQuery).then((snapshot) => {
+          console.log('🔍 [CustomTabNavigator] Manual refresh - Found', snapshot.docs.length, 'friend requests');
+          const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setPendingRequests(requests);
+          
+          if (requests.length > 0) {
+            setNotificationsSeen(false);
+            saveNotificationsSeen(false);
+          }
+        }).catch((error) => {
+          console.error('CustomTabNavigator: Manual refresh error:', error);
+        });
+      }
+    }, [auth.currentUser])
+  );
+
   // Note: We don't automatically mark notifications as seen when Friends tab is focused
   // The user needs to actually interact with the requests to clear the badge
   // This ensures the badge persists until the user takes action
@@ -323,31 +351,22 @@ const CustomTabNavigator = () => {
       !isNotificationDismissed(notification.id, 'notification')
     );
     
-    const count = !notificationsSeen ? 
-      visibleChallenges.length + visibleRequests.length + visibleActiveGames + visibleNotifications.length : 0;
+    const count = visibleChallenges.length + visibleRequests.length + visibleActiveGames + visibleNotifications.length;
     
     return count;
   };
 
   // Handle tab press and play sound
-  const handleTabPress = async () => {
-    try {
-      await playSound('customTab');
-    } catch (error) {
-      // Ignore sound errors to not break navigation
-    }
+  const handleTabPress = () => {
+    playSound('customTab').catch(() => {});
   };
 
   // Handle Friends tab press - clear notifications and play sound
-  const handleFriendsTabPress = async () => {
-    try {
-      await playSound('customTab');
-      // Clear notifications when Friends tab is clicked
-      setNotificationsSeen(true);
-      saveNotificationsSeen(true);
-    } catch (error) {
-      // Ignore sound errors to not break navigation
-    }
+  const handleFriendsTabPress = () => {
+    playSound('customTab').catch(() => {});
+    // Clear notifications when Friends tab is clicked
+    setNotificationsSeen(true);
+    saveNotificationsSeen(true);
   };
 
   const renderTabIcon = (icon, color, size, hasNotifications = false) => (
@@ -397,7 +416,6 @@ const CustomTabNavigator = () => {
       />
       <Tab.Screen 
         name="Friends" 
-        component={FriendsManagementScreen}
         options={{
           title: "Friends",
           tabBarIcon: ({ color, size }) => {
@@ -408,7 +426,12 @@ const CustomTabNavigator = () => {
         listeners={{
           tabPress: handleFriendsTabPress,
         }}
-      />
+      >
+        {(props) => <FriendsManagementScreen {...props} onClearNotifications={() => {
+          setNotificationsSeen(true);
+          saveNotificationsSeen(true);
+        }} />}
+      </Tab.Screen>
       <Tab.Screen 
         name="Leaderboard" 
         component={LeaderboardScreen}

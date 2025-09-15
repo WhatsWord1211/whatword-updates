@@ -6,7 +6,7 @@
 // NOTE: Facebook and Google sign-in buttons are temporarily hidden for production
 // They will be re-enabled once OAuth is properly configured and tested
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Pressable } from "react-native";
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential, GoogleAuthProvider } from "firebase/auth";
@@ -233,8 +233,19 @@ const AuthScreen = () => {
 
   if (showEmailForm) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background, paddingBottom: 40 }]}>
-        <View style={styles.content}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <KeyboardAvoidingView 
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.content}>
                   <Text style={[styles.welcomeTextEmail, { color: colors.textPrimary }]}>Welcome To</Text>
         
         <Image
@@ -363,7 +374,9 @@ const AuthScreen = () => {
           </View>
           
 
-        </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -424,12 +437,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#1F2937",
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
   content: {
     flex: 1,
     justifyContent: "flex-start",
     alignItems: "center",
     padding: 20,
     paddingTop: 40,
+    minHeight: '100%',
   },
   headerImage: {
     width: "100%",
@@ -439,10 +463,10 @@ const styles = StyleSheet.create({
   },
   headerImageEmail: {
     width: "100%",
-    height: 120,
+    height: 100,
     marginTop: -10,
     marginBottom: -5,
-    maxWidth: 350,
+    maxWidth: 300,
   },
   welcomeText: {
     fontSize: 36,
@@ -452,11 +476,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   welcomeTextEmail: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: "bold",
     color: "#E5E7EB",
     marginBottom: 10,
-    marginTop: 30,
+    marginTop: 20,
     textAlign: "center",
   },
   title: {
@@ -473,13 +497,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   gameDescription: {
-    fontSize: 20, // Increased from 16 to 20 for better visibility
+    fontSize: 18, // Reduced for better fit on smaller screens
     color: "#E5E7EB", // Changed from #9CA3AF to #E5E7EB for better contrast
-    marginBottom: 25,
-    marginTop: -15,
+    marginBottom: 20,
+    marginTop: -10,
     textAlign: "center",
     fontStyle: "italic",
-    lineHeight: 26, // Increased line height to match larger font
+    lineHeight: 24, // Adjusted line height
     fontWeight: "500", // Added medium weight for better readability
   },
   welcomeBackText: {
@@ -539,7 +563,7 @@ const styles = StyleSheet.create({
   formEmail: {
     width: "100%",
     maxWidth: 300,
-    marginBottom: 6,
+    marginBottom: 20,
     marginTop: 5,
   },
   input: {
@@ -567,7 +591,8 @@ const styles = StyleSheet.create({
   },
   textButton: {
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 20,
+    marginTop: 10,
   },
   textButtonText: {
     color: "#F59E0B",

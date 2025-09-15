@@ -256,13 +256,9 @@ const AddFriendsScreen = () => {
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'add' && styles.activeTabButton]}
-          onPress={async () => {
+          onPress={() => {
             setActiveTab('add');
-            try {
-              await playSound('toggleTab');
-            } catch (error) {
-              // Ignore sound errors
-            }
+            playSound('toggleTab').catch(() => {});
           }}
         >
           <Text style={[styles.tabButtonText, activeTab === 'add' && styles.activeTabButtonText]}>
@@ -271,13 +267,9 @@ const AddFriendsScreen = () => {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'requests' && styles.activeTabButton]}
-          onPress={async () => {
+          onPress={() => {
             setActiveTab('requests');
-            try {
-              await playSound('toggleTab');
-            } catch (error) {
-              // Ignore sound errors
-            }
+            playSound('toggleTab').catch(() => {});
           }}
         >
           <Text style={[styles.tabButtonText, activeTab === 'requests' && styles.activeTabButtonText]}>

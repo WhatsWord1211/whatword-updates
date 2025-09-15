@@ -474,13 +474,9 @@ const ProfileScreen = () => {
           
           <TouchableOpacity
             style={styles.button}
-            onPress={async () => {
+            onPress={() => {
               navigation.navigate('Settings');
-              try {
-                await playSound('toggleTab');
-              } catch (error) {
-                // Ignore sound errors
-              }
+              playSound('toggleTab').catch(() => {});
             }}
           >
             <Text style={styles.buttonText}>Open Settings</Text>

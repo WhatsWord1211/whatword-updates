@@ -8,6 +8,7 @@ import { playSound } from './soundsUtil';
 import styles from './styles';
 import adService from './adService';
 import gameService from './gameService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ResumeGamesScreen = () => {
   const navigation = useNavigation();
@@ -55,6 +56,53 @@ const ResumeGamesScreen = () => {
     }, [])
   );
 
+  const loadSoloGames = async (userId) => {
+    try {
+      const savedGames = await AsyncStorage.getItem('savedGames');
+      if (savedGames) {
+        const games = JSON.parse(savedGames);
+        // Filter for solo games that are not completed AND belong to the current user
+        // For backward compatibility, also include solo games without playerId (legacy games)
+        const soloGames = games.filter(game => 
+          game.gameMode === 'solo' && 
+          game.gameState !== 'gameOver' && 
+          game.gameState !== 'maxGuesses' &&
+          game.targetWord &&
+          (game.playerId === userId || !game.playerId) // Include legacy games without playerId
+        );
+        
+        // Migrate legacy solo games by adding playerId
+        let needsUpdate = false;
+        const migratedGames = soloGames.map(game => {
+          if (!game.playerId) {
+            needsUpdate = true;
+            return { ...game, playerId: userId };
+          }
+          return game;
+        });
+        
+        // Update AsyncStorage if any games were migrated
+        if (needsUpdate) {
+          const updatedGames = games.map(game => {
+            if (game.gameMode === 'solo' && !game.playerId) {
+              return { ...game, playerId: userId };
+            }
+            return game;
+          });
+          await AsyncStorage.setItem('savedGames', JSON.stringify(updatedGames));
+          console.log('ResumeGamesScreen: Migrated legacy solo games with playerId');
+        }
+        
+        setSoloGames(migratedGames);
+      } else {
+        setSoloGames([]);
+      }
+    } catch (error) {
+      console.error('ResumeGamesScreen: Failed to load solo games:', error);
+      setSoloGames([]);
+    }
+  };
+
   const loadUserGames = async (userId) => {
     try {
       setLoading(true);
@@ -74,8 +122,7 @@ const ResumeGamesScreen = () => {
       const userData = userDoc.data();
       
       // Load solo games from AsyncStorage (these are stored locally)
-      // For now, we'll focus on PvP games since those are in Firestore
-      setSoloGames([]); // TODO: Implement local solo game loading
+      await loadSoloGames(userId);
       
       // Load pending challenges (games waiting for acceptance)
       const challengesUnsubscribe = await loadPendingChallenges(userId);
@@ -757,6 +804,65 @@ const ResumeGamesScreen = () => {
     );
   };
 
+  const renderSoloGameItem = ({ item }) => {
+    const getDifficultyText = (wordLength) => {
+      if (wordLength === 4) return '🟢 Easy';
+      if (wordLength === 6) return '🔴 Hard';
+      return '🟡 Regular';
+    };
+
+    const getGameStateText = (gameState) => {
+      switch (gameState) {
+        case 'playing':
+          return '🎮 In Progress';
+        case 'setWord':
+          return '✏️ Set Word';
+        default:
+          return '🎮 Playing';
+      }
+    };
+
+    const handleResumeSoloGame = async () => {
+      try {
+        await playSound('backspace').catch(() => {});
+        navigation.navigate('Game', {
+          gameMode: 'resume',
+          gameId: item.gameId,
+          wordLength: item.wordLength,
+          difficulty: item.difficulty || (item.wordLength === 4 ? 'easy' : item.wordLength === 6 ? 'hard' : 'regular')
+        });
+      } catch (error) {
+        console.error('ResumeGamesScreen: Failed to resume solo game:', error);
+        Alert.alert('Error', 'Failed to resume game. Please try again.');
+      }
+    };
+
+    return (
+      <TouchableOpacity
+        style={styles.soloGameItem}
+        onPress={handleResumeSoloGame}
+        activeOpacity={0.7}
+      >
+        <View style={styles.soloGameContent}>
+          <View style={styles.soloGameInfo}>
+            <Text style={styles.soloGameTitle}>
+              🎯 Solo Game - {getDifficultyText(item.wordLength)}
+            </Text>
+            <Text style={styles.soloGameSubtitle}>
+              {getGameStateText(item.gameState)} • {item.guesses?.length || 0} guesses made
+            </Text>
+            <Text style={styles.soloGameTime}>
+              📅 Started: {new Date(item.timestamp).toLocaleDateString()}
+            </Text>
+          </View>
+          <View style={styles.soloGameAction}>
+            <Text style={styles.soloGameResumeText}>Resume</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.screenContainer}>
@@ -859,6 +965,20 @@ const ResumeGamesScreen = () => {
               </View>
             )}
 
+            {soloGames.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Solo Games ({soloGames.length})</Text>
+                <Text style={styles.sectionSubtitle}>Continue your solo word games</Text>
+                <FlatList
+                  data={soloGames}
+                  renderItem={renderSoloGameItem}
+                  keyExtractor={(item) => item.gameId}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            )}
+
             {completedUnseenGames.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
@@ -872,19 +992,6 @@ const ResumeGamesScreen = () => {
                   data={completedUnseenGames}
                   renderItem={renderGameItem}
                   keyExtractor={(item) => item.gameId}
-                  scrollEnabled={false}
-                  showsVerticalScrollIndicator={false}
-                />
-              </View>
-            )}
-            
-            {soloGames.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <Text style={styles.sectionTitle}>Solo Games</Text>
-                <FlatList
-                  data={soloGames}
-                  renderItem={renderGameItem}
-                  keyExtractor={(item) => item.gameId || `solo_${item.timestamp}`}
                   scrollEnabled={false}
                   showsVerticalScrollIndicator={false}
                 />

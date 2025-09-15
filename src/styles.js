@@ -3497,8 +3497,10 @@ export default StyleSheet.create({
     textAlign: 'center',
   },
   activeDifficultyTabText: {
-    color: '#1F2937',
+    color: '#000000',
     fontWeight: '700',
+    fontSize: 12,
+    textAlign: 'center',
   },
 
   // Resume Games Screen
@@ -3744,6 +3746,71 @@ export default StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+  },
+  
+  // Solo Game Resume Styles
+  soloGameItem: {
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#374151',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    transform: [{ scale: 1 }],
+    // Add a subtle gradient effect using border
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  soloGameContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  soloGameInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  soloGameTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 4,
+  },
+  soloGameSubtitle: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 2,
+  },
+  soloGameTime: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+  },
+  soloGameAction: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  soloGameResumeText: {
+    color: '#1F2937',
+    fontSize: 14,
+    fontWeight: '700',
     fontFamily: 'Roboto-Bold',
   },
 

@@ -6,15 +6,15 @@
     "owner": "wilderbssmstr",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/WhatWord-Icon.png",
     "userInterfaceStyle": "light",
     "sdkVersion": "54.0.0",
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/images/WhatWord-Icon.png",
         "backgroundColor": "#FFFFFF"
       }
     },
@@ -49,7 +49,7 @@
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/images/WhatWord-Icon.png",
       "bundler": "metro"
     },
     "plugins": [

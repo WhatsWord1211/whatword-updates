@@ -246,6 +246,59 @@ const GameScreen = () => {
     }
   }, [gameMode, difficulty, wordLength]);
 
+  // Load saved game state for resume mode
+  useEffect(() => {
+    const loadSavedGameState = async () => {
+      if (gameMode === 'resume' && gameId) {
+        try {
+          const savedGames = await AsyncStorage.getItem('savedGames');
+          if (savedGames) {
+            const games = JSON.parse(savedGames);
+            const savedGame = games.find(game => game.gameId === gameId);
+            
+            if (savedGame && savedGame.gameMode === 'solo') {
+              console.log('GameScreen: Loading saved solo game state:', savedGame.gameId);
+              
+              // Restore game state
+              setGuesses(savedGame.guesses || []);
+              setInputWord(savedGame.inputWord || '');
+              setAlphabet(savedGame.alphabet || Array(26).fill('unknown'));
+              setTargetWord(savedGame.targetWord);
+              setGameState(savedGame.gameState || 'playing');
+              setHintCount(savedGame.hintCount || 0);
+              setUsedHintLetters(savedGame.usedHintLetters || []);
+              
+              // Set difficulty if available
+              if (savedGame.difficulty) {
+                setDifficulty(savedGame.difficulty);
+              } else {
+                // Infer difficulty from word length
+                const inferredDifficulty = savedGame.wordLength === 4 ? 'easy' : 
+                                         savedGame.wordLength === 6 ? 'hard' : 'regular';
+                setDifficulty(inferredDifficulty);
+              }
+              
+              console.log('GameScreen: Solo game state restored successfully');
+            } else {
+              console.warn('GameScreen: No saved solo game found for gameId:', gameId);
+              // Navigate back if no saved game found
+              navigation.goBack();
+            }
+          } else {
+            console.warn('GameScreen: No saved games found');
+            navigation.goBack();
+          }
+        } catch (error) {
+          console.error('GameScreen: Failed to load saved game state:', error);
+          Alert.alert('Error', 'Failed to load saved game. Please try again.');
+          navigation.goBack();
+        }
+      }
+    };
+
+    loadSavedGameState();
+  }, [gameMode, gameId, navigation]);
+
   // Firebase subscription effect
   useEffect(() => {
     // Early return if not PvP or no gameId
@@ -423,7 +476,7 @@ const GameScreen = () => {
           gameMode,
           wordLength: wordLength || 5,
           gameId,
-          playerId: playerId || null,
+          playerId: playerId || auth.currentUser?.uid || null,
           isCreator: isCreator || false,
           guesses: guesses.map(guess => ({
             word: guess.word,
@@ -440,6 +493,7 @@ const GameScreen = () => {
           hintCount,
           usedHintLetters,
           opponentGuessCountOnSolve,
+          difficulty: difficulty || (wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular'),
           timestamp: new Date().toISOString(),
         };
         let games = [];
@@ -460,6 +514,22 @@ const GameScreen = () => {
 
   const guaranteeCircles = (num) => {
     return isNaN(num) ? 0 : num;
+  };
+
+  const cleanupCompletedSoloGame = async () => {
+    if (gameMode === 'solo' && gameId) {
+      try {
+        const savedGames = await AsyncStorage.getItem('savedGames');
+        if (savedGames) {
+          const games = JSON.parse(savedGames);
+          const filteredGames = games.filter(game => game.gameId !== gameId);
+          await AsyncStorage.setItem('savedGames', JSON.stringify(filteredGames));
+          console.log('GameScreen: Cleaned up completed solo game:', gameId);
+        }
+      } catch (error) {
+        console.error('GameScreen: Failed to cleanup completed solo game:', error);
+      }
+    }
   };
 
   useEffect(() => {
@@ -1121,7 +1191,8 @@ const GameScreen = () => {
                     setShowWinPopup(false);
                     // Show ad after game completion
                     await showGameCompletionAd();
-                    await AsyncStorage.removeItem('savedGames');
+                    // Clean up completed solo game from saved games
+                    await cleanupCompletedSoloGame();
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}
@@ -1174,7 +1245,8 @@ const GameScreen = () => {
                     setShowLosePopup(false);
                     // Show ad after game completion
                     await showGameCompletionAd();
-                    await AsyncStorage.removeItem('savedGames');
+                    // Clean up completed solo game from saved games
+                    await cleanupCompletedSoloGame();
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}
@@ -1197,7 +1269,8 @@ const GameScreen = () => {
                     setShowTiePopup(false);
                     // Show ad after game completion
                     await showGameCompletionAd();
-                    await AsyncStorage.removeItem('savedGames');
+                    // Clean up completed solo game from saved games
+                    await cleanupCompletedSoloGame();
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}
@@ -1371,6 +1444,8 @@ const GameScreen = () => {
                     await saveGameState();
                     // Show ad after max guesses reached
                     await showGameCompletionAd();
+                    // Clean up completed solo game from saved games
+                    await cleanupCompletedSoloGame();
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}

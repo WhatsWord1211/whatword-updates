@@ -75,11 +75,7 @@ const LeaderboardScreen = () => {
       return;
     }
     setActiveDifficulty(difficulty);
-    try {
-      await playSound('toggleTab');
-    } catch (error) {
-      // Ignore sound errors
-    }
+    playSound('toggleTab').catch(() => {});
   };
 
 
@@ -471,13 +467,9 @@ const LeaderboardScreen = () => {
         <View style={styles.tabContainer}>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'solo' && styles.activeTab]}
-            onPress={async () => {
+            onPress={() => {
               setActiveTab('solo');
-              try {
-                await playSound('toggleTab');
-              } catch (error) {
-                // Ignore sound errors
-              }
+              playSound('toggleTab').catch(() => {});
             }}
           >
             <Text style={[styles.tabText, activeTab === 'solo' && styles.activeTabText]}>
@@ -486,13 +478,9 @@ const LeaderboardScreen = () => {
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'pvp' && styles.activeTab]}
-            onPress={async () => {
+            onPress={() => {
               setActiveTab('pvp');
-              try {
-                await playSound('toggleTab');
-              } catch (error) {
-                // Ignore sound errors
-              }
+              playSound('toggleTab').catch(() => {});
             }}
           >
             <Text style={[styles.tabText, activeTab === 'pvp' && styles.activeTabText]}>
@@ -508,7 +496,7 @@ const LeaderboardScreen = () => {
             onPress={() => handleDifficultyChange('easy')}
           >
             <Text style={[styles.difficultyTabText, activeDifficulty === 'easy' && styles.activeDifficultyTabText]}>
-              🟢 Easy
+              Easy
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -516,7 +504,7 @@ const LeaderboardScreen = () => {
             onPress={() => handleDifficultyChange('regular')}
           >
             <Text style={[styles.difficultyTabText, activeDifficulty === 'regular' && styles.activeDifficultyTabText]}>
-              🟡 Regular
+              Regular
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -533,7 +521,7 @@ const LeaderboardScreen = () => {
               activeDifficulty === 'hard' && styles.activeDifficultyTabText,
               !hardModeUnlocked && styles.lockedDifficultyTabText
             ]}>
-              {!hardModeUnlocked ? '🔒' : '🔴'} Hard
+              {!hardModeUnlocked ? '🔒' : ''} Hard
             </Text>
             {!hardModeUnlocked && (
               <Text style={styles.lockedDifficultySubtext}>

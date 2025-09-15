@@ -1307,10 +1307,20 @@ const PvPGameScreen = () => {
             </Text>
             <TouchableOpacity
               style={styles.winButtonContainer}
-              onPress={() => {
-                setShowWinPopup(false);
-                navigation.navigate('Home');
-                playSound('chime').catch(() => {});
+              onPress={async () => {
+                try {
+                  setShowWinPopup(false);
+                  if (game?.id && currentUser?.uid) {
+                    await updateDoc(doc(db, 'games', game.id), {
+                      resultsSeenBy: arrayUnion(currentUser.uid)
+                    });
+                  }
+                } catch (markErr) {
+                  console.error('PvPGameScreen: Failed to mark results seen on win:', markErr);
+                } finally {
+                  navigation.navigate('Home');
+                  playSound('chime').catch(() => {});
+                }
               }}
             >
               <Text style={styles.buttonText}>OK</Text>
@@ -1329,10 +1339,20 @@ const PvPGameScreen = () => {
             </Text>
             <TouchableOpacity
               style={styles.maxGuessesButtonContainer}
-              onPress={() => {
-                setShowMaxGuessesPopup(false);
-                navigation.navigate('Home');
-                playSound('chime').catch(() => {});
+              onPress={async () => {
+                try {
+                  setShowMaxGuessesPopup(false);
+                  if (game?.id && currentUser?.uid) {
+                    await updateDoc(doc(db, 'games', game.id), {
+                      resultsSeenBy: arrayUnion(currentUser.uid)
+                    });
+                  }
+                } catch (markErr) {
+                  console.error('PvPGameScreen: Failed to mark results seen on max guesses:', markErr);
+                } finally {
+                  navigation.navigate('Home');
+                  playSound('chime').catch(() => {});
+                }
               }}
             >
               <Text style={styles.buttonText}>Return to Home</Text>
@@ -1351,10 +1371,20 @@ const PvPGameScreen = () => {
             </Text>
             <TouchableOpacity
               style={styles.tieButtonContainer}
-              onPress={() => {
-                setShowTiePopup(false);
-                navigation.navigate('Home');
-                playSound('chime').catch(() => {});
+              onPress={async () => {
+                try {
+                  setShowTiePopup(false);
+                  if (game?.id && currentUser?.uid) {
+                    await updateDoc(doc(db, 'games', game.id), {
+                      resultsSeenBy: arrayUnion(currentUser.uid)
+                    });
+                  }
+                } catch (markErr) {
+                  console.error('PvPGameScreen: Failed to mark results seen on tie:', markErr);
+                } finally {
+                  navigation.navigate('Home');
+                  playSound('chime').catch(() => {});
+                }
               }}
             >
               <Text style={styles.buttonText}>Main Menu</Text>

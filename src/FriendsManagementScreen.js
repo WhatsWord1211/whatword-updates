@@ -10,7 +10,7 @@ import logger from './logger';
 import { useTheme } from './ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const FriendsManagementScreen = () => {
+const FriendsManagementScreen = ({ onClearNotifications }) => {
   const navigation = useNavigation();
   const { colors } = useTheme();
   
@@ -287,6 +287,22 @@ const FriendsManagementScreen = () => {
       console.log('🔍 [FriendsManagementScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
       console.log('🔍 [FriendsManagementScreen] Target user:', user.uid, user.username || user.displayName);
       
+      // Check if users are already friends
+      console.log('🔍 [FriendsManagementScreen] Checking if users are already friends...');
+      const friendCheckQuery = query(
+        collection(db, 'users', auth.currentUser.uid, 'friends'),
+        where('uid', '==', user.uid)
+      );
+      
+      const friendCheckSnapshot = await getDocs(friendCheckQuery);
+      console.log('🔍 [FriendsManagementScreen] Friend check results:', friendCheckSnapshot.docs.length, 'documents found');
+      
+      if (!friendCheckSnapshot.empty) {
+        console.log('🔍 [FriendsManagementScreen] Users are already friends - preventing send');
+        Alert.alert('Already Friends', `You are already friends with ${user.username || user.displayName}.`);
+        return;
+      }
+      
       // Check if a request already exists
       console.log('🔍 [FriendsManagementScreen] Checking for existing friend request...');
       const existingRequestQuery = query(
@@ -374,6 +390,11 @@ const FriendsManagementScreen = () => {
       Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
       playSound('chime');
       
+      // Clear notifications when request is handled
+      if (onClearNotifications) {
+        onClearNotifications();
+      }
+      
       // Reload requests
       loadFriendRequests();
     } catch (error) {
@@ -388,6 +409,11 @@ const FriendsManagementScreen = () => {
       await deleteDoc(doc(db, 'friendRequests', request.id));
       Alert.alert('Declined', 'Friend request declined.');
       playSound('chime');
+      
+      // Clear notifications when request is handled
+      if (onClearNotifications) {
+        onClearNotifications();
+      }
       
       // Reload requests
       loadFriendRequests();
@@ -510,13 +536,9 @@ const FriendsManagementScreen = () => {
             activeTab === 'friends' && styles.activeTab,
             { backgroundColor: activeTab === 'friends' ? colors.primary : colors.surface }
           ]}
-          onPress={async () => {
+          onPress={() => {
             setActiveTab('friends');
-            try {
-              await playSound('toggleTab');
-            } catch (error) {
-              // Ignore sound errors
-            }
+            playSound('toggleTab').catch(() => {});
           }}
         >
           <Text 
@@ -541,11 +563,7 @@ const FriendsManagementScreen = () => {
             setActiveTab('requests');
             // Clear the requests tab badge when clicked
             clearRequestsTabBadge();
-            try {
-              await playSound('toggleTab');
-            } catch (error) {
-              // Ignore sound errors
-            }
+            playSound('toggleTab').catch(() => {});
           }}
         >
           <View style={{ position: 'relative', flexDirection: 'row', alignItems: 'center' }}>
@@ -598,13 +616,9 @@ const FriendsManagementScreen = () => {
             activeTab === 'add' && styles.activeTab,
             { backgroundColor: activeTab === 'add' ? colors.primary : colors.surface }
           ]}
-          onPress={async () => {
+          onPress={() => {
             setActiveTab('add');
-            try {
-              await playSound('toggleTab');
-            } catch (error) {
-              // Ignore sound errors
-            }
+            playSound('toggleTab').catch(() => {});
           }}
         >
           <Text 

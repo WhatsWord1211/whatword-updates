@@ -206,73 +206,70 @@ const HomeScreen = () => {
             notificationsUnsubscribeRef.current = unsubscribeNotifications;
 
             // Listen for completed games with unseen results for badge on Resume
-            // Support both schemas: games with `playerIds` or legacy `players`
-            const completedQuery1 = query(
-              collection(db, 'games'),
-              where('type', '==', 'pvp'),
-              where('playerIds', 'array-contains', currentUser.uid),
-              where('status', '==', 'completed')
-            );
-            const completedQuery2 = query(
-              collection(db, 'games'),
-              where('type', '==', 'pvp'),
-              where('players', 'array-contains', currentUser.uid),
-              where('status', '==', 'completed')
-            );
-
-            const handleCompletedSnapshot = (docs1, docs2) => {
-              let unseen = 0;
-              const allDocs = new Map();
-              docs1.forEach(d => allDocs.set(d.id, d));
-              docs2.forEach(d => allDocs.set(d.id, d));
-              Array.from(allDocs.values()).forEach((docSnap) => {
-                const data = docSnap.data();
-                if (data?.status !== 'completed') return;
-                const playersArray = data.playerIds || data.players || [];
-                const seen = Array.isArray(data.resultsSeenBy) ? data.resultsSeenBy : [];
-                // Only first finisher should get badge: if both solved, mark who finished first
-                const firstFinisherId = data.firstFinisherId || null;
-                // If explicit firstFinisherId is stored, only count for that user
-                if (firstFinisherId) {
-                  if (firstFinisherId === currentUser.uid && !seen.includes(currentUser.uid)) unseen += 1;
+            // Use a more specific approach that respects Firestore security rules
+            // Instead of querying all games, we'll track completed games through user's activeGames array
+            // and check for completed status in a way that doesn't violate permissions
+            const userDocRef = doc(db, 'users', currentUser.uid);
+            
+            const completedGamesQuery = onSnapshot(userDocRef, async (userDoc) => {
+              if (userDoc.exists()) {
+                const userData = userDoc.data();
+                const activeGameIds = userData.activeGames || [];
+                const completedGameIds = userData.completedGames || [];
+                
+                // Combine both active and completed game IDs to check
+                const allGameIds = [...activeGameIds, ...completedGameIds];
+                
+                if (allGameIds.length > 0) {
+                  // Fetch game documents for these specific games
+                  const gamePromises = allGameIds.map(gameId => getDoc(doc(db, 'games', gameId)));
+                  const gameDocs = await Promise.all(gamePromises);
+                  
+                  const completedGames = [];
+                  gameDocs.forEach((gameDoc) => {
+                    if (gameDoc.exists()) {
+                      const gameData = gameDoc.data();
+                      if (gameData.type === 'pvp' && gameData.status === 'completed') {
+                        completedGames.push({ id: gameDoc.id, ...gameData });
+                      }
+                    }
+                  });
+                  
+                  // Process completed games for unseen results
+                  let unseen = 0;
+                  completedGames.forEach((gameData) => {
+                    const playersArray = gameData.playerIds || gameData.players || [];
+                    const seen = Array.isArray(gameData.resultsSeenBy) ? gameData.resultsSeenBy : [];
+                    const firstFinisherId = gameData.firstFinisherId || null;
+                    
+                    if (firstFinisherId) {
+                      if (firstFinisherId === currentUser.uid && !seen.includes(currentUser.uid)) unseen += 1;
+                    } else {
+                      const isPlayer1 = playersArray[0] === currentUser.uid;
+                      const meSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
+                      const oppSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
+                      if (meSolved && !seen.includes(currentUser.uid)) {
+                        unseen += 1;
+                      }
+                    }
+                  });
+                  
+                  setUnseenResultsCount(unseen);
+                  if (unseen > 0) setBadgeCleared(false);
+                  prevUnseenCountRef.current = unseen;
                 } else {
-                  // Fallback: Only count if current user had solved and opponent hadn’t at some point (waiting_for_opponent)
-                  const isPlayer1 = playersArray[0] === currentUser.uid;
-                  const meSolved = isPlayer1 ? data.player1?.solved : data.player2?.solved;
-                  const oppSolved = isPlayer1 ? data.player2?.solved : data.player1?.solved;
-                  if (meSolved && !seen.includes(currentUser.uid)) {
-                    unseen += 1;
-                  }
+                  setUnseenResultsCount(0);
                 }
-              });
-              setUnseenResultsCount(unseen);
-              if (unseen > 0) setBadgeCleared(false);
-              // Removed chime sound that was playing multiple times during sign-in
-              prevUnseenCountRef.current = unseen;
-            };
-
-            let completedSnap1 = null;
-            let completedSnap2 = null;
-
-            const unsubscribeCompleted1 = onSnapshot(completedQuery1, (snapshot) => {
-              completedSnap1 = snapshot.docs;
-              handleCompletedSnapshot(completedSnap1 || [], completedSnap2 || []);
+              }
             }, (error) => {
-              console.error('HomeScreen: Completed games query error:', error);
+              console.error('HomeScreen: User document query error for completed games:', error);
             });
 
-            const unsubscribeCompleted2 = onSnapshot(completedQuery2, (snapshot) => {
-              completedSnap2 = snapshot.docs;
-              handleCompletedSnapshot(completedSnap1 || [], completedSnap2 || []);
-            }, (error) => {
-              console.error('HomeScreen: Completed games (players) query error:', error);
-            });
-
+            // Store the completed games query unsubscribe function
             if (completedResultsUnsubscribeRef.current) {
-              const prev = completedResultsUnsubscribeRef.current;
-              if (Array.isArray(prev)) prev.forEach(fn => fn && fn()); else if (typeof prev === 'function') prev();
+              completedResultsUnsubscribeRef.current();
             }
-            completedResultsUnsubscribeRef.current = [unsubscribeCompleted1, unsubscribeCompleted2];
+            completedResultsUnsubscribeRef.current = completedGamesQuery;
 
             // Listen for accepted challenges that indicate a game has started (P2 set their word)
             const acceptedChallengesQuery = query(
@@ -379,8 +376,8 @@ const HomeScreen = () => {
               loadUserProfile(currentUser),
               Promise.resolve().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
-              
-              clearStuckGameState() // Clear any stuck game state
+              clearStuckGameState(), // Clear any stuck game state
+              checkForResumableSoloGames(currentUser.uid) // Check for resumable solo games
             ]).catch(console.error);
           }
           return;
@@ -398,8 +395,8 @@ const HomeScreen = () => {
                 loadUserProfile(currentUser),
                 Promise.resolve(),
                 checkFirstLaunch(),
-
-                clearStuckGameState() // Clear any stuck game state
+                clearStuckGameState(), // Clear any stuck game state
+                checkForResumableSoloGames(currentUser.uid) // Check for resumable solo games
               ]).catch(console.error);
             } else {
               // No user authenticated - this shouldn't happen in the new flow
@@ -436,6 +433,10 @@ const HomeScreen = () => {
 
         if (notificationsUnsubscribeRef.current) {
           notificationsUnsubscribeRef.current();
+        }
+
+        if (completedResultsUnsubscribeRef.current) {
+          completedResultsUnsubscribeRef.current();
         }
 
     };
@@ -480,6 +481,30 @@ const HomeScreen = () => {
     }
   };
 
+  const checkForResumableSoloGames = async (userId) => {
+    try {
+      const savedGames = await AsyncStorage.getItem('savedGames');
+      if (savedGames) {
+        const games = JSON.parse(savedGames);
+        const resumableSoloGames = games.filter(game => 
+          game.gameMode === 'solo' && 
+          game.gameState !== 'gameOver' && 
+          game.gameState !== 'maxGuesses' &&
+          game.targetWord &&
+          (game.playerId === userId || !game.playerId) // Include legacy games without playerId
+        );
+        
+        if (resumableSoloGames.length > 0) {
+          console.log('HomeScreen: Found resumable solo games:', resumableSoloGames.length);
+          // The ResumeGamesScreen will handle displaying these
+          // We could also show a notification here if desired
+        }
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to check for resumable solo games:', error);
+    }
+  };
+
 
 
   const handleSignOut = async () => {
@@ -492,6 +517,8 @@ const HomeScreen = () => {
       setPendingChallenges([]);
       setBadgeCleared(false);
       
+      // Note: Solo games are preserved across sign out/in
+      // They are stored locally and will be available when user signs back in
 
     } catch (error) {
       console.error('HomeScreen: Sign out failed:', error);
