@@ -665,16 +665,15 @@ const HomeScreen = () => {
         <View style={{ position: 'relative', width: '100%' }}>
           <TouchableOpacity
             style={styles.button}
-            onPress={() => {
+            onPress={async () => {
               // Permanently delete notifications when user acknowledges them by going to Resume screen
               if (notifications.length > 0) {
                 const notificationIds = notifications.map(notification => notification.id);
-                permanentlyDeleteNotifications(notificationIds);
+                await permanentlyDeleteNotifications(notificationIds);
               }
               
               // Clear the badge when user acknowledges by clicking Resume
               setBadgeCleared(true);
-              
               
               handleButtonPress('ResumeGames');
             }}

@@ -9,7 +9,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential, GoogleAuthProvider } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential, GoogleAuthProvider, sendPasswordResetEmail } from "firebase/auth";
 import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import Constants from 'expo-constants';
@@ -28,6 +28,7 @@ const AuthScreen = () => {
   const [isLogin, setIsLogin] = useState(false); // Default to Create Account for new users
   const [loading, setLoading] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(true); // Auto-show email form since it's the only option
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -122,6 +123,46 @@ const AuthScreen = () => {
       "Facebook sign-in will be available soon! For now, please use Google or email sign-in.",
       [{ text: "OK" }]
     );
+  };
+
+  const handlePasswordReset = async () => {
+    if (!email) {
+      Alert.alert("Error", "Please enter your email address");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      Alert.alert(
+        "Password Reset Sent", 
+        "Check your email for instructions to reset your password.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setShowPasswordReset(false);
+              setEmail("");
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error("AuthScreen: Password reset error:", error);
+      let errorMessage = "An error occurred. Please try again.";
+      
+      if (error.code === "auth/user-not-found") {
+        errorMessage = "No account found with this email address.";
+      } else if (error.code === "auth/invalid-email") {
+        errorMessage = "Please enter a valid email address.";
+      } else if (error.code === "auth/too-many-requests") {
+        errorMessage = "Too many requests. Please try again later.";
+      }
+      
+      Alert.alert("Password Reset Error", errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEmailAuth = async () => {
@@ -348,6 +389,17 @@ const AuthScreen = () => {
               </Text>
             </TouchableOpacity>
             
+            {isLogin && (
+              <TouchableOpacity 
+                style={styles.textButton}
+                onPress={() => setShowPasswordReset(true)}
+              >
+                <Text style={[styles.textButtonText, { color: '#8B5CF6', textDecorationLine: 'underline' }]}>
+                  Forgot Password?
+                </Text>
+              </TouchableOpacity>
+            )}
+            
             <TouchableOpacity 
               style={styles.textButton}
               onPress={() => {
@@ -377,6 +429,55 @@ const AuthScreen = () => {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+        
+        {/* Password Reset Modal */}
+        {showPasswordReset && (
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modal, { backgroundColor: '#1F2937' }]}>
+              <Text style={[styles.modalTitle, { color: '#FFFFFF' }]}>Reset Password</Text>
+              <Text style={[styles.modalText, { color: '#FFFFFF' }]}>
+                Enter your email address and we'll send you instructions to reset your password.
+              </Text>
+              
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: '#F9FAFB', 
+                  color: '#1F2937',
+                  borderColor: '#D1D5DB' 
+                }]}
+                placeholder="Email"
+                placeholderTextColor="#9CA3AF"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                  style={[styles.modalButton, { backgroundColor: '#E5E7EB' }]}
+                  onPress={() => {
+                    setShowPasswordReset(false);
+                    setEmail("");
+                  }}
+                >
+                  <Text style={[styles.modalButtonText, { color: '#1F2937' }]}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
+                  onPress={handlePasswordReset}
+                  disabled={loading}
+                >
+                  <Text style={[styles.modalButtonText, { color: 'white' }]}>
+                    {loading ? "Sending..." : "Reset Password"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -691,6 +792,58 @@ const styles = StyleSheet.create({
   },
   passwordToggleText: {
     fontSize: 18,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    padding: 24,
+    margin: 20,
+    minWidth: 300,
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  modalButton: {
+    flex: 0.4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  modalButtonPrimary: {
+    flex: 0.6,
+    backgroundColor: '#8B5CF6',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

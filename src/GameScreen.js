@@ -31,7 +31,8 @@ const GameScreen = () => {
     gameId: initialGameId, 
     playerId, 
     isCreator, 
-    guesses: savedGuesses, 
+    guesses: savedGuesses,
+    resumeGame, 
     inputWord: savedInputWord, 
     alphabet: savedAlphabet, 
     targetWord: savedTargetWord, 
@@ -249,7 +250,7 @@ const GameScreen = () => {
   // Load saved game state for resume mode
   useEffect(() => {
     const loadSavedGameState = async () => {
-      if (gameMode === 'resume' && gameId) {
+      if ((gameMode === 'resume' || resumeGame) && gameId) {
         try {
           const savedGames = await AsyncStorage.getItem('savedGames');
           if (savedGames) {
@@ -808,6 +809,9 @@ const GameScreen = () => {
 
       if (gameMode === 'pvp' && gameId) {
         await setDoc(doc(db, 'games', gameId), { status: 'quit', quitBy: playerId }, { merge: true });
+      } else if (gameMode === 'solo') {
+        // Clean up quit solo game from saved games
+        await cleanupCompletedSoloGame();
       }
       setShowWordRevealPopup(true);
       await playSound('chime').catch(() => {});

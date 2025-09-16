@@ -826,10 +826,11 @@ const ResumeGamesScreen = () => {
       try {
         await playSound('backspace').catch(() => {});
         navigation.navigate('Game', {
-          gameMode: 'resume',
+          gameMode: 'solo',
           gameId: item.gameId,
           wordLength: item.wordLength,
-          difficulty: item.difficulty || (item.wordLength === 4 ? 'easy' : item.wordLength === 6 ? 'hard' : 'regular')
+          difficulty: item.difficulty || (item.wordLength === 4 ? 'easy' : item.wordLength === 6 ? 'hard' : 'regular'),
+          resumeGame: true
         });
       } catch (error) {
         console.error('ResumeGamesScreen: Failed to resume solo game:', error);
