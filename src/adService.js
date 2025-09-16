@@ -199,6 +199,33 @@ class AdService {
     }
   }
 
+  // Show interstitial ad for hint (always shows if available)
+  async showInterstitialAdForHint() {
+    try {
+      // Check if AdMob is available
+      if (!InterstitialAd || !this.interstitialAd) {
+        return true; // Return true so hint is granted
+      }
+
+      if (!this.isInitialized) {
+        return false;
+      }
+
+      const isLoaded = await this.interstitialAd.isLoaded();
+      if (!isLoaded) {
+        // Try to load and show
+        this.interstitialAd.load();
+        return false;
+      }
+
+      await this.interstitialAd.show();
+      return true;
+    } catch (error) {
+      console.error('Failed to show interstitial ad for hint:', error);
+      return false;
+    }
+  }
+
   // Show rewarded ad for hint (returns promise that resolves when ad is watched)
   async showRewardedAdForHint() {
     return new Promise(async (resolve, reject) => {
@@ -211,24 +238,29 @@ class AdService {
         }
 
         if (this.hintsRequested >= this.maxHintsPerDay) {
-          reject(new Error('Daily hint limit reached'));
+          console.log('AdService: Daily hint limit reached');
+          resolve(false);
           return;
         }
 
         // Check if AdMob is available
         if (!RewardedAd || !this.rewardedAd) {
+          console.log('AdService: RewardedAd not available, granting hint');
           this.hintsRequested++;
           resolve(true);
           return;
         }
 
         if (!this.isInitialized) {
+          console.log('AdService: Not initialized for rewarded ad');
           reject(new Error('Rewarded ad not ready'));
           return;
         }
 
         const isLoaded = await this.rewardedAd.isLoaded();
+        console.log('AdService: Rewarded ad loaded:', isLoaded);
         if (!isLoaded) {
+          console.log('AdService: Rewarded ad not loaded yet');
           reject(new Error('Rewarded ad not loaded yet'));
           return;
         }

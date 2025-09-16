@@ -153,15 +153,12 @@ const GameScreen = () => {
   // Show interstitial ad after game completion
   const showGameCompletionAd = useCallback(async () => {
     try {
-      if (gameMode === 'solo') {
-        // For solo games, show ad after completion
-        await adService.showInterstitialAd();
-      }
-      // For PvP games, ads are handled differently (after returning to resume screen)
+      // Show ads for all game modes after completion
+      await adService.showInterstitialAd();
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
     }
-  }, [gameMode]);
+  }, []);
 
   const handleHint = useCallback(async () => {
     if (hintCount >= 3) {
@@ -172,8 +169,8 @@ const GameScreen = () => {
     }
 
     try {
-      // Show rewarded ad for hint
-      const adWatched = await adService.showRewardedAdForHint();
+      // Show interstitial ad for hint
+      const adWatched = await adService.showInterstitialAdForHint();
       if (!adWatched) {
         return;
       }
