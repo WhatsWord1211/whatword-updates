@@ -1,55 +1,42 @@
-// AdMob imports - avoid loading in Expo Go (no native module)
+// AdMob imports - load in production builds
 import Constants from 'expo-constants';
 
-let mobileAds, BannerAd, BannerAdSize, TestIds, InterstitialAd, RewardedAd, RewardedAdEventType;
+let mobileAds, TestIds, InterstitialAd;
 
-if (Constants?.appOwnership === 'expo') {
-  // Running in Expo Go - native module unavailable
+// Always try to load AdMob in production builds
+// Only skip in development with Expo Go
+const isExpoGo = Constants?.appOwnership === 'expo' && __DEV__;
+
+if (isExpoGo) {
+  // Running in Expo Go development - native module unavailable
+  console.log('AdService: Running in Expo Go, AdMob not available');
   mobileAds = null;
-  BannerAd = null;
-  BannerAdSize = null;
   TestIds = null;
   InterstitialAd = null;
-  RewardedAd = null;
-  RewardedAdEventType = null;
 } else {
   try {
+    console.log('AdService: Attempting to load AdMob module...');
     const adModule = require('react-native-google-mobile-ads');
     mobileAds = adModule.default;
-    BannerAd = adModule.BannerAd;
-    BannerAdSize = adModule.BannerAdSize;
     TestIds = adModule.TestIds;
     InterstitialAd = adModule.InterstitialAd;
-    RewardedAd = adModule.RewardedAd;
-    RewardedAdEventType = adModule.RewardedAdEventType;
+    console.log('AdService: AdMob module loaded successfully');
   } catch (error) {
+    console.error('AdService: Failed to load AdMob module:', error);
     mobileAds = null;
-    BannerAd = null;
-    BannerAdSize = null;
     TestIds = null;
     InterstitialAd = null;
-    RewardedAd = null;
-    RewardedAdEventType = null;
   }
 }
 
-// Test Ad Unit IDs (replace with real ones for production)
+// Test Ad Unit IDs (Google's official test INTERSTITIAL ID)
 const AD_UNIT_IDS = {
-  // Test IDs for development - using Google's official test IDs
-  BANNER: 'ca-app-pub-3940256099942544/6300978111',
-  INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712', 
-  REWARDED: 'ca-app-pub-3940256099942544/5224354917',
-  
-  // Production IDs (uncomment and replace when ready to publish)
-  // BANNER: 'ca-app-pub-XXXXXXXXXXXXXXX/YYYYYYYYYY',
-  // INTERSTITIAL: 'ca-app-pub-XXXXXXXXXXXXXXX/YYYYYYYYYY',
-  // REWARDED: 'ca-app-pub-XXXXXXXXXXXXXXX/YYYYYYYYYY',
+  INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712'
 };
 
 class AdService {
   constructor() {
     this.interstitialAd = null;
-    this.rewardedAd = null;
     this.isInitialized = false;
     this.adFrequency = 1; // Show ad after every X games (1 = every game)
     this.gamesPlayed = 0;
@@ -62,34 +49,46 @@ class AdService {
 
   async initialize() {
     try {
+      console.log('AdService: Initializing...');
+      console.log('AdService: mobileAds available:', !!mobileAds);
+      console.log('AdService: InterstitialAd available:', !!InterstitialAd);
+      console.log('AdService: Constants.appOwnership:', Constants?.appOwnership);
+      console.log('AdService: __DEV__:', __DEV__);
+      
       // Check if AdMob is available
       if (!mobileAds) {
-        this.isInitialized = true; // Mark as initialized for fallback
+        console.log('AdService: AdMob not available, running in fallback mode');
+        this.isInitialized = false; // Mark as NOT initialized for fallback
         return;
       }
 
+      console.log('AdService: Initializing mobile ads SDK...');
       // Initialize mobile ads SDK
       await mobileAds().initialize();
       this.isInitialized = true;
       
+      console.log('AdService: Mobile ads SDK initialized, loading interstitial ad...');
       // Pre-load ads
       this.loadInterstitialAd();
-      this.loadRewardedAd();
+      console.log('AdService: Successfully initialized with AdMob');
     } catch (error) {
-      console.error('Failed to initialize AdMob:', error);
-      // Fallback mode - mark as initialized so app doesn't crash
-      this.isInitialized = true;
+      console.error('AdService: Failed to initialize AdMob:', error);
+      // Fallback mode - mark as NOT initialized so hints are blocked
+      this.isInitialized = false;
     }
   }
 
   // Load interstitial ad for after-game display
   loadInterstitialAd() {
     try {
+      console.log('AdService: loadInterstitialAd called');
       // Check if AdMob is available
       if (!InterstitialAd) {
+        console.log('AdService: InterstitialAd not available, skipping load');
         return;
       }
 
+      console.log('AdService: Creating interstitial ad with ID:', AD_UNIT_IDS.INTERSTITIAL);
       this.interstitialAd = InterstitialAd.createForAdRequest(AD_UNIT_IDS.INTERSTITIAL, {
         // Default to non-personalized; consent flow can later adjust if needed
         requestNonPersonalizedAdsOnly: true,
@@ -97,19 +96,22 @@ class AdService {
       });
 
       const unsubscribeLoaded = this.interstitialAd.addAdEventListener('loaded', () => {
+        console.log('AdService: Interstitial ad loaded successfully');
       });
 
       const unsubscribeClosed = this.interstitialAd.addAdEventListener('closed', () => {
+        console.log('AdService: Interstitial ad closed, reloading...');
         // Reload for next use
         this.loadInterstitialAd();
       });
 
       const unsubscribeError = this.interstitialAd.addAdEventListener('error', (error) => {
-        console.error('Interstitial ad error:', error);
+        console.error('AdService: Interstitial ad error:', error);
         // Retry loading after delay
         setTimeout(() => this.loadInterstitialAd(), 30000);
       });
 
+      console.log('AdService: Starting to load interstitial ad...');
       this.interstitialAd.load();
       
       return () => {
@@ -122,47 +124,91 @@ class AdService {
     }
   }
 
-  // Load rewarded ad for hints
-  loadRewardedAd() {
+  // Wait for interstitial to load with timeout
+  async waitForInterstitialLoaded(timeoutMs = 4000) {
     try {
-      // Check if AdMob is available
-      if (!RewardedAd) {
-        return;
+      if (!this.interstitialAd) {
+        this.loadInterstitialAd();
       }
 
-      this.rewardedAd = RewardedAd.createForAdRequest(AD_UNIT_IDS.REWARDED, {
-        // Default to non-personalized; consent flow can later adjust if needed
-        requestNonPersonalizedAdsOnly: true,
-        keywords: ['word game', 'puzzle', 'brain game'],
-      });
+      const isAlreadyLoaded = this.interstitialAd && (await this.interstitialAd.isLoaded());
+      if (isAlreadyLoaded) {
+        return true;
+      }
 
-      const unsubscribeLoaded = this.rewardedAd.addAdEventListener(RewardedAdEventType.LOADED, () => {
-      });
+      return await new Promise((resolve) => {
+        let settled = false;
 
-      const unsubscribeEarned = this.rewardedAd.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward) => {
-      });
+        const onLoaded = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(true);
+        };
 
-      const unsubscribeClosed = this.rewardedAd.addAdEventListener(RewardedAdEventType.CLOSED, () => {
-        // Reload for next use
-        this.loadRewardedAd();
-      });
+        const onError = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(false);
+        };
 
-      const unsubscribeError = this.rewardedAd.addAdEventListener(RewardedAdEventType.ERROR, (error) => {
-        console.error('Rewarded ad error:', error);
-        // Retry loading after delay
-        setTimeout(() => this.loadRewardedAd(), 30000);
-      });
+        const cleanup = () => {
+          if (unsubscribeLoaded) unsubscribeLoaded();
+          if (unsubscribeError) unsubscribeError();
+        };
 
-      this.rewardedAd.load();
-      
-      return () => {
-        unsubscribeLoaded();
-        unsubscribeEarned();
-        unsubscribeClosed();
-        unsubscribeError();
-      };
-    } catch (error) {
-      console.error('Failed to load rewarded ad:', error);
+        const unsubscribeLoaded = this.interstitialAd?.addAdEventListener('loaded', onLoaded);
+        const unsubscribeError = this.interstitialAd?.addAdEventListener('error', onError);
+
+        // Ensure a load attempt is in progress
+        this.interstitialAd?.load();
+
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(false);
+        }, timeoutMs);
+      });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Show interstitial with retry and wait
+  async showInterstitialWithRetry(options = { timeoutMs: 5000, retries: 1 }) {
+    const { timeoutMs, retries } = options;
+    try {
+      if (!InterstitialAd || !this.interstitialAd) {
+        return false;
+      }
+      if (!this.isInitialized) {
+        return false;
+      }
+
+      let loaded = await this.interstitialAd.isLoaded();
+      let attemptsRemaining = Math.max(0, retries);
+      while (!loaded && attemptsRemaining >= 0) {
+        loaded = await this.waitForInterstitialLoaded(timeoutMs);
+        if (!loaded) {
+          attemptsRemaining -= 1;
+          if (attemptsRemaining >= 0) {
+            // force another load attempt between waits
+            this.interstitialAd.load();
+          }
+        }
+      }
+
+      if (!loaded) {
+        return false;
+      }
+
+      await this.interstitialAd.show();
+      return true;
+    } catch (e) {
+      console.error('showInterstitialWithRetry failed:', e);
+      return false;
     }
   }
 
@@ -177,25 +223,28 @@ class AdService {
 
       // Check if AdMob is available
       if (!InterstitialAd || !this.interstitialAd) {
+        console.log('AdService: AdMob not available, skipping ad');
         return true; // Return true so game flow continues
       }
 
       if (!this.isInitialized) {
-        return false;
+        console.log('AdService: AdMob not initialized, skipping ad');
+        return true; // Return true so game flow continues
       }
 
-      const isLoaded = await this.interstitialAd.isLoaded();
-      if (!isLoaded) {
-        // Try to load and show
-        this.interstitialAd.load();
-        return false;
+      console.log('AdService: Attempting to show interstitial ad');
+      const shown = await this.showInterstitialWithRetry({ timeoutMs: 5000, retries: 1 });
+      
+      if (shown) {
+        console.log('AdService: Successfully showed interstitial ad');
+      } else {
+        console.log('AdService: Failed to show interstitial ad');
       }
-
-      await this.interstitialAd.show();
-      return true;
+      
+      return shown;
     } catch (error) {
-      console.error('Failed to show interstitial ad:', error);
-      return false;
+      console.error('AdService: Failed to show interstitial ad:', error);
+      return true; // Return true so game flow continues
     }
   }
 
@@ -204,94 +253,29 @@ class AdService {
     try {
       // Check if AdMob is available
       if (!InterstitialAd || !this.interstitialAd) {
-        return true; // Return true so hint is granted
+        console.log('AdService: AdMob not available, allowing hint without ad');
+        return true; // Allow hint without ad if AdMob not available
       }
 
       if (!this.isInitialized) {
-        return false;
+        console.log('AdService: AdMob not initialized, allowing hint without ad');
+        return true; // Allow hint without ad if not initialized
       }
 
-      const isLoaded = await this.interstitialAd.isLoaded();
-      if (!isLoaded) {
-        // Try to load and show
-        this.interstitialAd.load();
-        return false;
+      console.log('AdService: Attempting to show interstitial ad for hint');
+      const shown = await this.showInterstitialWithRetry({ timeoutMs: 5000, retries: 1 });
+      
+      if (shown) {
+        console.log('AdService: Successfully showed interstitial ad for hint');
+      } else {
+        console.log('AdService: Failed to show interstitial ad for hint');
       }
-
-      await this.interstitialAd.show();
-      return true;
+      
+      return shown;
     } catch (error) {
-      console.error('Failed to show interstitial ad for hint:', error);
-      return false;
+      console.error('AdService: Failed to show interstitial ad for hint:', error);
+      return true; // Allow hint even if ad fails
     }
-  }
-
-  // Show rewarded ad for hint (returns promise that resolves when ad is watched)
-  async showRewardedAdForHint() {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Check daily hint limit
-        const today = new Date().toDateString();
-        if (today !== this.lastHintReset) {
-          this.hintsRequested = 0;
-          this.lastHintReset = today;
-        }
-
-        if (this.hintsRequested >= this.maxHintsPerDay) {
-          console.log('AdService: Daily hint limit reached');
-          resolve(false);
-          return;
-        }
-
-        // Check if AdMob is available
-        if (!RewardedAd || !this.rewardedAd) {
-          console.log('AdService: RewardedAd not available, granting hint');
-          this.hintsRequested++;
-          resolve(true);
-          return;
-        }
-
-        if (!this.isInitialized) {
-          console.log('AdService: Not initialized for rewarded ad');
-          reject(new Error('Rewarded ad not ready'));
-          return;
-        }
-
-        const isLoaded = await this.rewardedAd.isLoaded();
-        console.log('AdService: Rewarded ad loaded:', isLoaded);
-        if (!isLoaded) {
-          console.log('AdService: Rewarded ad not loaded yet');
-          reject(new Error('Rewarded ad not loaded yet'));
-          return;
-        }
-
-        // Set up reward listener
-        const unsubscribeEarned = this.rewardedAd.addAdEventListener(
-          RewardedAdEventType.EARNED_REWARD,
-          () => {
-            this.hintsRequested++;
-            unsubscribeEarned();
-            resolve(true);
-          }
-        );
-
-        // Set up closed listener
-        const unsubscribeClosed = this.rewardedAd.addAdEventListener(
-          RewardedAdEventType.CLOSED,
-          () => {
-            unsubscribeClosed();
-            reject(new Error('Ad was closed without reward'));
-          }
-        );
-
-        // Show the ad
-        await this.rewardedAd.show();
-        
-      } catch (error) {
-        console.error('Failed to show rewarded ad:', error);
-        reject(error);
-      }
-    });
   }
 
   // Update ad frequency setting
@@ -322,7 +306,7 @@ class AdService {
     if (!mobileAds) {
       return true;
     }
-    return this.isInitialized && (this.interstitialAd || this.rewardedAd);
+    return this.isInitialized && this.interstitialAd;
   }
 }
 

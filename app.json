@@ -12,11 +12,31 @@
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 10,
+      "versionCode": 12,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/WhatWord-Icon.png",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "permissions": [
+        "com.google.android.gms.permission.AD_ID",
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "intentFilters": [
+        {
+          "action": "android.intent.action.VIEW",
+          "data": [
+            {
+              "scheme": "https",
+              "host": "play.google.com"
+            }
+          ]
+        }
+      ]
     },
     "extra": {
       "eas": {
@@ -70,7 +90,21 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/WhatWord-Icon.png",
+          "color": "#8B5CF6",
+          "defaultChannel": "default"
+        }
+      ],
       "expo-tracking-transparency"
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b189d504-5441-4ee4-977f-2ad58d77659d"
+    }
   }
 }

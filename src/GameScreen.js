@@ -169,12 +169,12 @@ const GameScreen = () => {
     }
 
     try {
-      // Show interstitial ad for hint
+      // Show interstitial ad for hint (required)
       const adWatched = await adService.showInterstitialAdForHint();
       if (!adWatched) {
-        return;
+        return; // require ad
       }
-      
+
       await playSound('hint').catch(() => {});
 
       // Get letter frequencies in target word
@@ -646,7 +646,11 @@ const GameScreen = () => {
             setGameState('gameOver');
             setShowWinPopup(true);
             await playSound('victory').catch(() => {});
-            const newScore = guesses.length + 1;
+            // Calculate score with hint penalty (each hint = 3 guesses)
+            const nonHintGuesses = guesses.filter(guess => !guess.isHint);
+            const usedHints = guesses.filter(guess => guess.isHint).length;
+            const hintPenalty = usedHints * 3; // Each hint counts as 3 guesses
+            const newScore = nonHintGuesses.length + hintPenalty + 1;
             
             // Ensure difficulty is set for solo games
             if (!difficulty) {
@@ -661,7 +665,8 @@ const GameScreen = () => {
                 const leaderboardData = JSON.parse(leaderboard);
                 leaderboardData.push({ 
                   mode: gameMode, 
-                  guesses: newScore, 
+                  guesses: newScore, // Includes hint penalty (each hint = 3 guesses)
+                  usedHints: usedHints,
                   timestamp: new Date().toISOString(), 
                   userId: auth.currentUser?.uid || 'Anonymous' 
                 });
@@ -686,7 +691,8 @@ const GameScreen = () => {
                     mode: gameMode,
                     difficulty: gameDifficulty, // Save difficulty level
                     wordLength: wordLength || 5, // Save word length
-                    guesses: newScore,
+                    guesses: newScore, // Includes hint penalty (each hint = 3 guesses)
+                    usedHints: usedHints, // Track number of hints used
                     timestamp: new Date().toISOString(), 
                     userId: auth.currentUser.uid,
                   };
@@ -701,7 +707,8 @@ const GameScreen = () => {
                     won: true,
                     score: newScore,
                     bestScore: 0, // Will be updated by the service if it's better
-                    difficulty: gameDifficulty // Pass difficulty for rolling average calculation
+                    difficulty: gameDifficulty, // Pass difficulty for rolling average calculation
+                    usedHints: usedHints // Pass hint usage information
                   });
                 } catch (firebaseError) {
                   console.error('GameScreen: Firebase error details:', {

@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
 import { playSound } from './soundsUtil';
 import { useTheme } from './ThemeContext';
+import { checkUsernameAvailability } from './usernameValidation';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -122,6 +123,19 @@ const ProfileScreen = () => {
       if (!editedProfile.username.trim() || !editedProfile.displayName.trim()) {
         Alert.alert('Error', 'Username and display name cannot be empty');
         return;
+      }
+
+      // Check if username has changed
+      const usernameChanged = userProfile.username !== editedProfile.username.trim();
+      
+      if (usernameChanged) {
+        // Validate username availability
+        const usernameCheck = await checkUsernameAvailability(editedProfile.username.trim(), user.uid);
+        
+        if (!usernameCheck.isAvailable) {
+          Alert.alert('Username Error', usernameCheck.error);
+          return;
+        }
       }
 
       await updateDoc(doc(db, 'users', user.uid), {

@@ -11,6 +11,8 @@ import { playSound } from './soundsUtil';
 import authService from './authService';
 import { useTheme } from './ThemeContext';
 import { getNotificationService } from './notificationService';
+import pushNotificationService from './pushNotificationService';
+import appUpdateService from './appUpdateService';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
@@ -377,7 +379,8 @@ const HomeScreen = () => {
               Promise.resolve().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
               clearStuckGameState(), // Clear any stuck game state
-              checkForResumableSoloGames(currentUser.uid) // Check for resumable solo games
+              checkForResumableSoloGames(currentUser.uid), // Check for resumable solo games
+              appUpdateService.checkForUpdates() // Check for app updates
             ]).catch(console.error);
           }
           return;
@@ -396,7 +399,9 @@ const HomeScreen = () => {
                 Promise.resolve(),
                 checkFirstLaunch(),
                 clearStuckGameState(), // Clear any stuck game state
-                checkForResumableSoloGames(currentUser.uid) // Check for resumable solo games
+                checkForResumableSoloGames(currentUser.uid), // Check for resumable solo games
+                initializePushNotifications(currentUser.uid), // Initialize push notifications
+                appUpdateService.checkForUpdates() // Check for app updates
               ]).catch(console.error);
             } else {
               // No user authenticated - this shouldn't happen in the new flow
@@ -502,6 +507,42 @@ const HomeScreen = () => {
       }
     } catch (error) {
       console.error('HomeScreen: Failed to check for resumable solo games:', error);
+    }
+  };
+
+  const initializePushNotifications = async (userId) => {
+    try {
+      console.log('HomeScreen: Initializing push notifications for user:', userId);
+      
+      // Initialize the push notification service
+      const pushToken = await pushNotificationService.initialize();
+      
+      if (pushToken) {
+        // Save the push token to the user's Firestore document
+        await pushNotificationService.savePushTokenToFirestore(userId, pushToken);
+        console.log('HomeScreen: Push notifications initialized successfully');
+        
+        // Set up notification listeners
+        pushNotificationService.setupNotificationListeners();
+        
+        // Show success message to user
+        Alert.alert(
+          'Notifications Enabled!',
+          'You\'ll now receive notifications about new challenges, friend requests, and game updates.',
+          [{ text: 'Got it!' }]
+        );
+      } else {
+        console.log('HomeScreen: Push notifications not available (likely simulator)');
+        
+        // Show info message about notifications
+        Alert.alert(
+          'Notifications',
+          'To receive notifications about new challenges and friend requests, please enable them in your device settings.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to initialize push notifications:', error);
     }
   };
 
@@ -742,6 +783,42 @@ const HomeScreen = () => {
               }}
             >
               <Text style={styles.buttonText}>Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: '#8B5CF6' }]}
+              onPress={async () => {
+                try {
+                  const success = await pushNotificationService.sendTestNotification();
+                  if (success) {
+                    Alert.alert('Test Sent', 'Push notification sent! Check your notification bar.');
+                  } else {
+                    Alert.alert('Test Failed', 'Could not send test notification. Check console for details.');
+                  }
+                  setShowMenuModal(false);
+                } catch (error) {
+                  console.error('Test notification error:', error);
+                  Alert.alert('Error', 'Failed to send test notification');
+                  setShowMenuModal(false);
+                }
+              }}
+            >
+              <Text style={styles.buttonText}>Test Push Notification</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: '#FF6B35' }]}
+              onPress={async () => {
+                try {
+                  await appUpdateService.forceCheckForUpdates();
+                  Alert.alert('Update Check', 'Update check completed. Check console for details.');
+                  setShowMenuModal(false);
+                } catch (error) {
+                  console.error('Update check error:', error);
+                  Alert.alert('Error', 'Failed to check for updates');
+                  setShowMenuModal(false);
+                }
+              }}
+            >
+              <Text style={styles.buttonText}>Test Update Check</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.button}

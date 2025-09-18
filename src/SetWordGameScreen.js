@@ -6,6 +6,7 @@ import { db, auth } from './firebase';
 import { addDoc, updateDoc, doc, collection, arrayUnion, getDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import { isValidWord } from './gameLogic';
+import pushNotificationService from './pushNotificationService';
 import styles from './styles';
 
 const SetWordGameScreen = () => {
@@ -218,19 +219,17 @@ const SetWordGameScreen = () => {
            console.error('🔍 Failed to update Player 2\'s activeGames array:', updateError);
          }
          
-         // Send notification to Player 1 that the game has started
-         try {
-           const NotificationService = require('./notificationService').default;
-           const notificationService = new NotificationService();
-           await notificationService.sendChallengeResponseNotification(
-             challenge.from,
-             challenge.toUsername || 'Player 2',
-             challenge.id,
-             true // accepted = true
-           );
-         } catch (notificationError) {
-           console.error('🔍 Failed to send game start notification:', notificationError);
-         }
+        // Send push notification to Player 1 that the game has started
+        try {
+          const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
+          await pushNotificationService.sendGameStartedNotification(
+            challenge.from,
+            challenge.toUsername || 'Player 2',
+            wordLength
+          );
+        } catch (notificationError) {
+          console.error('🔍 Failed to send game start push notification:', notificationError);
+        }
 
         Alert.alert('Game Started!', 'Both players can now play at their own pace!', [
           {
@@ -260,6 +259,17 @@ const SetWordGameScreen = () => {
         
         const challengeRef = await addDoc(collection(db, 'challenges'), challengeData);
         
+        // Send push notification for game challenge
+        try {
+          const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
+          await pushNotificationService.sendGameChallengeNotification(
+            challenge.to,
+            challenge.fromUsername,
+            wordLength
+          );
+        } catch (notificationError) {
+          console.error('Failed to send game challenge push notification:', notificationError);
+        }
         
         playSound('chime');
         

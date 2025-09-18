@@ -28,6 +28,7 @@ import LegalScreen from './src/LegalScreen';
 import { ThemeProvider } from './src/ThemeContext';
 import './src/adService'; // Initialize AdMob service
 import { initializeConsentAndAds } from './src/consentManager';
+import * as Notifications from 'expo-notifications';
 import { loadSounds } from './src/soundsUtil';
 
 const Stack = createNativeStackNavigator();
@@ -54,6 +55,23 @@ export default function App() {
     };
 
     initializeApp();
+
+    // Set up background notification handling
+    const setupBackgroundNotifications = () => {
+      // Handle notifications when app is in background or killed
+      Notifications.setNotificationHandler({
+        handleNotification: async (notification) => {
+          console.log('App: Background notification received:', notification);
+          return {
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+          };
+        },
+      });
+    };
+
+    setupBackgroundNotifications();
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {

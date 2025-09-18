@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { playSound } from './soundsUtil';
+import pushNotificationService from './pushNotificationService';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -1233,30 +1234,11 @@ class NotificationService {
     }
   }
 
-  // Send push notification (this would typically be done through Cloud Functions)
+  // Send push notification using the new push notification service
   async sendPushNotification(toUserId, title, body, data = {}) {
     try {
-      // Get the recipient's push token
-      const pushToken = await this.getUserPushToken(toUserId);
-      
-      // Always create a Firestore notification so the app can badge even without push
-      const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await setDoc(doc(db, 'notifications', notificationId), {
-        toUserId,
-        toUid: toUserId, // compatibility with queries expecting toUid
-        title,
-        body,
-        data,
-        pushToken: pushToken || null,
-        timestamp: new Date().toISOString(),
-        read: false,
-        status: pushToken ? 'pending' : 'in_app'
-      });
-      
-      if (pushToken) {
-      } else {
-      }
-      return notificationId;
+      // Use the new push notification service which handles both push and Firestore
+      return await pushNotificationService.sendPushNotification(toUserId, title, body, data);
     } catch (error) {
       console.error('NotificationService: Failed to send push notification:', error);
       return null;
@@ -1265,32 +1247,12 @@ class NotificationService {
 
   // Send friend request notification
   async sendFriendRequestNotification(toUserId, senderName) {
-    return this.sendPushNotification(
-      toUserId,
-      'New Friend Request',
-      `${senderName} sent you a friend request`,
-      {
-        type: 'friend_request',
-        senderName,
-        timestamp: new Date().toISOString()
-      }
-    );
+    return pushNotificationService.sendFriendRequestNotification(toUserId, senderName);
   }
 
   // Send challenge notification
   async sendChallengeNotification(toUserId, senderName, challengeId, wordLength) {
-    return this.sendPushNotification(
-      toUserId,
-      'Game Challenge',
-      `${senderName} challenged you to a ${wordLength}-letter word game!`,
-      {
-        type: 'challenge',
-        challengeId,
-        senderName,
-        wordLength,
-        timestamp: new Date().toISOString()
-      }
-    );
+    return pushNotificationService.sendGameChallengeNotification(toUserId, senderName, wordLength);
   }
 
   // Send challenge response notification

@@ -1,24 +1,19 @@
-// AuthScreen with improved user experience flow
+// AuthScreen with email authentication
 // - Defaults to "Create Account" for new users (better conversion)
 // - "Sign In" option easily accessible for returning users
 // - Firebase automatically handles "remember me" functionality
 // - No guest mode - clean authentication flow
-// NOTE: Facebook and Google sign-in buttons are temporarily hidden for production
-// They will be re-enabled once OAuth is properly configured and tested
+// - Email/password authentication only for simplicity
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithCredential, GoogleAuthProvider, sendPasswordResetEmail } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
-import Constants from 'expo-constants';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from './ThemeContext';
+import { checkUsernameAvailability } from './usernameValidation';
 
-// Configure WebBrowser for OAuth
-WebBrowser.maybeCompleteAuthSession();
 
 const AuthScreen = () => {
   const navigation = useNavigation();
@@ -34,96 +29,7 @@ const AuthScreen = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Google OAuth configuration
-  const googleConfig = {
-    clientId: Constants.expoConfig.extra.googleClientId,
-    scopes: ['openid', 'profile', 'email'],
-    redirectUri: AuthSession.makeRedirectUri({
-      scheme: 'com.whatword.app'
-    }),
-  };
 
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(googleConfig);
-
-  // Handle Google OAuth response
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      handleGoogleSignInSuccess(authentication.accessToken);
-    }
-  }, [response]);
-
-  const handleGoogleSignIn = async () => {
-    try {
-      await promptAsync();
-    } catch (error) {
-      console.error('Google OAuth prompt error:', error);
-      Alert.alert("Google Sign-In Error", "Failed to start Google sign-in process.");
-    }
-  };
-
-  const handleGoogleSignInSuccess = async (accessToken) => {
-    try {
-      setLoading(true);
-      
-      // Get user info from Google
-      const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const userInfo = await userInfoResponse.json();
-      
-      // Create Firebase credential using the access token
-      const credential = GoogleAuthProvider.credential(null, accessToken);
-      const result = await signInWithCredential(auth, credential);
-      
-      // Check if user profile exists
-      const userDocRef = doc(db, 'users', result.user.uid);
-      const userDoc = await getDoc(userDocRef);
-      
-      if (userDoc.exists()) {
-        // Update existing profile
-        await updateDoc(userDocRef, {
-          lastLogin: new Date(),
-          email: result.user.email,
-          displayName: result.user.displayName || userInfo.name || result.user.email.split('@')[0]
-        });
-      } else {
-        // Create new profile
-        await setDoc(userDocRef, {
-          uid: result.user.uid,
-          username: userInfo.name || result.user.email.split('@')[0],
-          displayName: userInfo.name || result.user.email.split('@')[0],
-          email: result.user.email,
-          createdAt: new Date(),
-          lastLogin: new Date(),
-          gamesPlayed: 0,
-          gamesWon: 0,
-          bestScore: 0,
-          totalScore: 0,
-          friends: [],
-          isAnonymous: false,
-        });
-      }
-      
-      Alert.alert("Success!", "Signed in with Google successfully!");
-      
-    } catch (error) {
-      console.error('Google sign-in error:', error);
-      Alert.alert("Google Sign-In Error", error.message || "An error occurred during Google sign-in.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-
-  const handleFacebookSignIn = async () => {
-    Alert.alert(
-      "Coming Soon", 
-      "Facebook sign-in will be available soon! For now, please use Google or email sign-in.",
-      [{ text: "OK" }]
-    );
-  };
 
   const handlePasswordReset = async () => {
     if (!email) {
@@ -228,11 +134,32 @@ const AuthScreen = () => {
         // Create new account
         result = await createUserWithEmailAndPassword(auth, email, password);
         
+        // Generate a unique username from email
+        let baseUsername = email.split('@')[0];
+        let finalUsername = baseUsername;
+        let counter = 1;
+        
+        // Check if base username is available, if not add numbers
+        while (true) {
+          const usernameCheck = await checkUsernameAvailability(finalUsername);
+          if (usernameCheck.isAvailable) {
+            break;
+          }
+          finalUsername = `${baseUsername}${counter}`;
+          counter++;
+          
+          // Prevent infinite loop
+          if (counter > 999) {
+            finalUsername = `${baseUsername}_${Date.now()}`;
+            break;
+          }
+        }
+        
         // Create user profile in Firestore
         await setDoc(doc(db, 'users', result.user.uid), {
           uid: result.user.uid,
-          username: email.split('@')[0],
-          displayName: email.split('@')[0],
+          username: finalUsername,
+          displayName: finalUsername,
           email: email,
           createdAt: new Date(),
           lastLogin: new Date(),
@@ -256,7 +183,7 @@ const AuthScreen = () => {
           hardModeUnlocked: false
         });
         
-        Alert.alert("Success!", "Account created successfully! You can now customize your profile.");
+        Alert.alert("Success!", `Account created successfully! Your username is: ${finalUsername}. You can customize your profile later.`);
       }
     } catch (error) {
       console.error('Auth error:', error);
@@ -638,14 +565,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  googleButton: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DB4437",
-  },
-  googleButtonText: {
-    color: "#DB4437",
-    fontSize: 16,
-    fontWeight: "600",
+  disabledButton: {
+    opacity: 0.6,
   },
   emailButton: {
     backgroundColor: "#F59E0B",

@@ -3904,4 +3904,50 @@ export default StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
+
+  // Video styles
+  videoButton: {
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  videoButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Regular',
+  },
+  videoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoContainer: {
+    width: '95%',
+    height: '80%',
+    position: 'relative',
+  },
+  video: {
+    flex: 1,
+    borderRadius: 12,
+  },
+  videoCloseButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  videoCloseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Regular',
+  },
 });

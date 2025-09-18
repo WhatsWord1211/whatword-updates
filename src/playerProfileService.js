@@ -24,6 +24,14 @@ class PlayerProfileService {
         lastGamePlayed: new Date().toISOString()
       };
 
+      // Track hint usage
+      if (gameResult.usedHints && gameResult.usedHints > 0) {
+        updates.hintsUsed = increment(gameResult.usedHints);
+        updates.gamesWithHints = increment(1);
+      } else {
+        updates.gamesWithoutHints = increment(1);
+      }
+
       if (gameResult.won) {
         updates.gamesWon = increment(1);
         updates.currentStreak = increment(1);
@@ -41,7 +49,7 @@ class PlayerProfileService {
         updates.totalScore = increment(gameResult.score);
       }
 
-      // Update average score
+      // Update average score (all games count now with penalty scoring)
       const userDoc = await getDoc(doc(db, 'users', uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();

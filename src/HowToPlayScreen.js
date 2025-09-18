@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Image, Dimensions, Modal } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Video removed to avoid build issues
+import { VideoView, useVideoPlayer } from 'expo-video';
 import styles from './styles';
 import { playSound } from './soundsUtil';
 import ThreeDGreenDot from './ThreeDGreenDot';
@@ -11,7 +11,13 @@ import ThreeDGreenDot from './ThreeDGreenDot';
 const HowToPlayScreen = () => {
   const navigation = useNavigation();
   const [step, setStep] = useState(0);
-  // Video functionality removed
+  const [showVideo, setShowVideo] = useState(false);
+  
+  // Video player setup
+  const player = useVideoPlayer(require('../assets/images/how-to-video.mp4'), player => {
+    player.loop = true;
+    player.muted = false;
+  });
 
   // QWERTY keyboard layout for dummy alphabet grid
   const qwertyKeys = [
@@ -46,7 +52,12 @@ const HowToPlayScreen = () => {
           <Text style={{ color: '#FFFFFF', fontSize: 20, marginBottom: 20, textAlign: 'center' }}>
             2. Solve their word before they solve yours.
           </Text>
-          {/* Video button removed */}
+          <TouchableOpacity
+            style={styles.videoButton}
+            onPress={() => setShowVideo(true)}
+          >
+            <Text style={styles.videoButtonText}>📹 Watch How-To Video</Text>
+          </TouchableOpacity>
         </View>
       ),
     },
@@ -240,7 +251,33 @@ const HowToPlayScreen = () => {
         </View>
       </ScrollView>
       
-      {/* Video modal removed */}
+      {/* Video Modal */}
+      <Modal
+        visible={showVideo}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowVideo(false)}
+      >
+        <View style={styles.videoModalOverlay}>
+          <View style={styles.videoContainer}>
+            <VideoView
+              style={styles.video}
+              player={player}
+              allowsFullscreen={true}
+              allowsPictureInPicture={true}
+            />
+            <TouchableOpacity
+              style={styles.videoCloseButton}
+              onPress={() => {
+                setShowVideo(false);
+                player.pause();
+              }}
+            >
+              <Text style={styles.videoCloseButtonText}>✕ Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

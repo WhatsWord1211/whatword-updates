@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { getNotificationService } from './notificationService';
+import pushNotificationService from './pushNotificationService';
 
 class FriendsService {
   constructor() {
@@ -80,11 +81,9 @@ class FriendsService {
 
       // Send push notification
       console.log('🔍 [FriendsService] Sending push notification to:', toUserId);
-      await getNotificationService().sendPushNotification(
+      await pushNotificationService.sendFriendRequestNotification(
         toUserId,
-        'New Friend Request',
-        `${userData.username || 'Someone'} sent you a friend request`,
-        { type: 'friend_request', senderId: this.currentUser.uid, senderName: userData.username }
+        userData.username || 'Someone'
       );
       console.log('🔍 [FriendsService] Push notification sent successfully');
 
@@ -138,7 +137,7 @@ class FriendsService {
       console.log('🔍 [FriendsService] Created mutual friendship');
 
       // Send push notification
-      await getNotificationService().sendPushNotification(
+      await pushNotificationService.sendPushNotification(
         fromUserId,
         'Friend Request Accepted',
         `${userData.username || 'Someone'} accepted your friend request`,
@@ -426,6 +425,13 @@ class FriendsService {
           senderId: this.currentUser.uid, 
           senderName: userData.username 
         }
+      );
+
+      // Send game started push notification
+      await pushNotificationService.sendGameStartedNotification(
+        challengeData.fromUid,
+        userData.username || 'Someone',
+        challengeData.wordLength
       );
 
       return gameId;

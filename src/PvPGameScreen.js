@@ -12,6 +12,7 @@ import { getFeedback, isValidWord } from './gameLogic';
 import styles from './styles';
 import gameService from './gameService';
 import playerProfileService from './playerProfileService';
+import pushNotificationService from './pushNotificationService';
 import ThreeDPurpleRing from './ThreeDPurpleRing';
 import ThreeDGreenDot from './ThreeDGreenDot';
 
@@ -266,8 +267,18 @@ const PvPGameScreen = () => {
               notificationService.sendGameCompletionNotification(player1Uid, gameId, messageFor(player1Uid)),
               notificationService.sendGameCompletionNotification(player2Uid, gameId, messageFor(player2Uid))
             ]);
+            // Send push notifications for both players in case of tie
+            await Promise.all([
+              pushNotificationService.sendGameCompletedNotification(player1Uid, gameData.player2?.username || 'Opponent', true),
+              pushNotificationService.sendGameCompletedNotification(player2Uid, gameData.player1?.username || 'Opponent', true)
+            ]);
           } else if (firstFinisher && (firstFinisher === player1Uid || firstFinisher === player2Uid)) {
             await notificationService.sendGameCompletionNotification(firstFinisher, gameId, messageFor(firstFinisher));
+            // Send push notification to first finisher when game is complete
+            const opponentUid = firstFinisher === player1Uid ? player2Uid : player1Uid;
+            const opponentUsername = firstFinisher === player1Uid ? gameData.player2?.username : gameData.player1?.username;
+            const firstFinisherWon = winnerId === firstFinisher;
+            await pushNotificationService.sendGameCompletedNotification(firstFinisher, opponentUsername || 'Opponent', firstFinisherWon);
           }
           // Mark notifications sent
           await updateDoc(gameRef, { notificationsSent: true });
