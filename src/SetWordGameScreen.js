@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
@@ -22,7 +22,30 @@ const SetWordGameScreen = () => {
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const [opponentHardModeUnlocked, setOpponentHardModeUnlocked] = useState(true); // Default to true to avoid flicker
 
-
+  // Calculate optimal sizing for alphabet grid to use full width
+  const windowWidth = Dimensions.get('window').width;
+  const availableWidth = windowWidth - 20; // Minimal padding for screen edges
+  
+  // Calculate optimal letter size and spacing to maximize usage
+  const getOptimalSizing = () => {
+    const longestRow = 10; // QWERTY top row has 10 letters
+    const minSpacing = 2; // Minimal spacing between letters
+    const totalSpacing = (longestRow - 1) * minSpacing; // Total spacing needed
+    const availableForLetters = availableWidth - totalSpacing;
+    const letterSize = Math.floor(availableForLetters / longestRow);
+    
+    // Use larger letters - be more aggressive with sizing
+    const finalLetterSize = Math.max(Math.min(letterSize, 50), 28); // Increased max to 50, min to 28
+    const actualSpacing = Math.max((availableWidth - (longestRow * finalLetterSize)) / (longestRow - 1), 1);
+    
+    // Make buttons taller by increasing height by 20%
+    const buttonHeight = Math.floor(finalLetterSize * 1.2);
+    
+    return { letterSize: finalLetterSize, spacing: actualSpacing, buttonHeight: buttonHeight };
+  };
+  
+  const { letterSize, spacing, buttonHeight } = getOptimalSizing();
+  const maxKeyboardWidth = availableWidth;
 
   // QWERTY keyboard layout (same as GameScreen)
   const qwertyKeys = [
@@ -491,16 +514,38 @@ const SetWordGameScreen = () => {
 
                  {/* Alphabet Grid - Same as GameScreen */}
          <View style={styles.alphabetContainer}>
-           <View style={styles.alphabetGrid}>
+           <View style={[styles.alphabetGrid, { maxWidth: maxKeyboardWidth }]}>
                               {qwertyKeys.map((row, rowIndex) => (
-                   <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 5 }}>
+                   <View key={`row-${rowIndex}`} style={{ 
+                     flexDirection: 'row', 
+                     justifyContent: 'center', 
+                     alignItems: 'center', 
+                     width: '100%', 
+                     marginBottom: 5,
+                     paddingHorizontal: 5 // Add padding to prevent edge overflow
+                   }}>
                      {row.map((letter) => (
                        <TouchableOpacity
                          key={letter}
-                         style={styles.letter}
+                         style={{ 
+                           width: letterSize, 
+                           height: buttonHeight, 
+                           marginHorizontal: spacing / 2,
+                           marginVertical: 2,
+                           justifyContent: 'center',
+                           alignItems: 'center'
+                         }}
                          onPress={() => addLetter(letter)}
                        >
-                         <Text style={styles.letter}>
+                         <Text style={[
+                           styles.letter,
+                           { 
+                             width: letterSize - 4, // Account for border
+                             height: letterSize - 4,
+                             fontSize: (letterSize * 0.6) + 1, // Responsive font size + 1
+                             lineHeight: letterSize - 4
+                           }
+                         ]}>
                            {letter}
                          </Text>
                        </TouchableOpacity>

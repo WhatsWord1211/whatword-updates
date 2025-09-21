@@ -79,6 +79,7 @@ const GameScreen = () => {
   const [hintLetter, setHintLetter] = useState('');
   const [opponentGuesses, setOpponentGuesses] = useState([]);
   const [opponentWord, setOpponentWord] = useState('');
+  const [opponentUsername, setOpponentUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [soundsLoaded, setSoundsLoaded] = useState(false);
   const [gameId, setGameId] = useState(initialGameId || `solo_${Date.now()}`);
@@ -102,9 +103,30 @@ const GameScreen = () => {
   const inputToKeyboardPadding = 20;
   const keyboardToButtonsPadding = 5;
 
-  // Calculate max width for keyboard based on screen size
+  // Calculate optimal sizing for alphabet grid to use full width
   const windowWidth = Dimensions.get('window').width;
-  const maxKeyboardWidth = windowWidth - 40;
+  const availableWidth = windowWidth - 20; // Minimal padding for screen edges
+  
+  // Calculate optimal letter size and spacing to maximize usage
+  const getOptimalSizing = () => {
+    const longestRow = 10; // QWERTY top row has 10 letters
+    const minSpacing = 2; // Minimal spacing between letters
+    const totalSpacing = (longestRow - 1) * minSpacing; // Total spacing needed
+    const availableForLetters = availableWidth - totalSpacing;
+    const letterSize = Math.floor(availableForLetters / longestRow);
+    
+    // Use larger letters - be more aggressive with sizing
+    const finalLetterSize = Math.max(Math.min(letterSize, 50), 28); // Increased max to 50, min to 28
+    const actualSpacing = Math.max((availableWidth - (longestRow * finalLetterSize)) / (longestRow - 1), 1);
+    
+    // Make buttons taller by increasing height by 20%
+    const buttonHeight = Math.floor(finalLetterSize * 1.2);
+    
+    return { letterSize: finalLetterSize, spacing: actualSpacing, buttonHeight: buttonHeight };
+  };
+  
+  const { letterSize, spacing, buttonHeight } = getOptimalSizing();
+  const maxKeyboardWidth = availableWidth;
 
   // QWERTY keyboard layout
   const qwertyKeys = [
@@ -169,11 +191,8 @@ const GameScreen = () => {
     }
 
     try {
-      // Show interstitial ad for hint (required)
-      const adWatched = await adService.showInterstitialAdForHint();
-      if (!adWatched) {
-        return; // require ad
-      }
+      // Show interstitial ad for hint
+      await adService.showInterstitialAdForHint();
 
       await playSound('hint').catch(() => {});
 
@@ -329,6 +348,12 @@ const GameScreen = () => {
           
           // Update opponent guesses
           setOpponentGuesses(isCreator ? data.opponentGuesses || [] : data.playerGuesses || []);
+          
+          // Fetch opponent username for PvP games
+          if (gameMode === 'pvp' && data.playerIds && !opponentUsername) {
+            fetchOpponentUsername(data);
+          }
+          
           // Check if game is ready and both players can start setting words
           if (data.status === 'ready' && gameState === 'setWord') {
             // Game is ready, both players can now set their words
@@ -466,6 +491,25 @@ const GameScreen = () => {
       playSound('maxGuesses').catch(() => {});
     }
   }, [guesses, opponentGuesses, gameState, hasShownOpponentSolved, gameMode, gameId, opponentGuessCountOnSolve]);
+
+  // Fetch opponent username for PvP games
+  const fetchOpponentUsername = useCallback(async (gameData) => {
+    if (gameMode !== 'pvp' || !gameData.playerIds) return;
+    
+    try {
+      const opponentId = gameData.playerIds.find(id => id !== auth.currentUser?.uid);
+      if (!opponentId) return;
+      
+      const opponentDoc = await getDoc(doc(db, 'users', opponentId));
+      if (opponentDoc.exists()) {
+        const opponentData = opponentDoc.data();
+        setOpponentUsername(opponentData.username || opponentData.displayName || 'Opponent');
+      }
+    } catch (error) {
+      console.error('GameScreen: Failed to fetch opponent username:', error);
+      setOpponentUsername('Opponent');
+    }
+  }, [gameMode, auth.currentUser?.uid]);
 
   const saveGameState = async () => {
     if (gameState !== 'gameOver' && gameMode !== 'resume' && targetWord) {
@@ -1038,9 +1082,16 @@ const GameScreen = () => {
             ))}
           </View>
           <View style={styles.alphabetContainer}>
-            <View style={styles.alphabetGrid}>
+            <View style={[styles.alphabetGrid, { maxWidth: maxKeyboardWidth }]}>
               {qwertyKeys.map((row, rowIndex) => (
-                <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 5 }}>
+                <View key={`row-${rowIndex}`} style={{ 
+                  flexDirection: 'row', 
+                  justifyContent: 'center', 
+                  alignItems: 'center', 
+                  width: '100%', 
+                  marginBottom: 5,
+                  paddingHorizontal: 5 // Add padding to prevent edge overflow
+                }}>
                   {row.map((letter) => {
                     const index = letter.charCodeAt(0) - 65;
                     return (
@@ -1050,6 +1101,14 @@ const GameScreen = () => {
                         onLongPress={() => toggleLetter(index)}
                         delayLongPress={300}
                         disabled={isLoading || gameState === 'maxGuesses' || gameState === 'gameOver' || guesses.some(g => g.isCorrect)}
+                        style={{ 
+                          width: letterSize, 
+                          height: buttonHeight, 
+                          marginHorizontal: spacing / 2,
+                          marginVertical: 2,
+                          justifyContent: 'center',
+                          alignItems: 'center'
+                        }}
                       >
                         <Text
                           style={[
@@ -1057,7 +1116,11 @@ const GameScreen = () => {
                             { 
                               color: colors.textPrimary,
                               backgroundColor: colors.surface,
-                              borderColor: colors.border
+                              borderColor: colors.border,
+                              width: letterSize - 4, // Account for border
+                              height: letterSize - 4,
+                              fontSize: (letterSize * 0.6) + 1, // Responsive font size + 1
+                              lineHeight: letterSize - 4
                             },
                             alphabet[index] === 'absent' && styles.eliminatedLetter,
                             alphabet[index] === 'present' && styles.presentLetter
@@ -1191,7 +1254,7 @@ const GameScreen = () => {
                 <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
                   {gameMode === 'solo'
                     ? `You solved the word in ${guesses.length} guesses!`
-                    : `You won with ${guesses.length} guesses, opponent used ${opponentGuessCountOnSolve || opponentGuesses.length} guesses!`}
+                    : `You won! You solved ${opponentUsername || 'your opponent'}'s word in ${guesses.length} guesses, while they solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses!`}
                 </Text>
                 <TouchableOpacity
                   style={styles.winButtonContainer}
@@ -1245,7 +1308,7 @@ const GameScreen = () => {
                 <Text style={[styles.loseMessage, { color: colors.textSecondary }]}>
                   {gameMode === 'solo'
                     ? `The word was: ${targetWord}`
-                    : `You used ${guesses.length} guesses, opponent used ${opponentGuessCountOnSolve || opponentGuesses.length} guesses.`}
+                    : `You lost! ${opponentUsername || 'Your opponent'} solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses, while you solved their word in ${guesses.length} guesses.`}
                 </Text>
                 <TouchableOpacity
                   style={styles.loseButtonContainer}
@@ -1269,7 +1332,9 @@ const GameScreen = () => {
               <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
                 <Text style={[styles.opponentGuessesTitle, { color: colors.textPrimary }]}>It's a Tie!</Text>
                 <Text style={[styles.opponentGuessesMessage, { color: colors.textSecondary }]}>
-                  Both players used {guesses.length} guesses!
+                  {gameMode === 'solo'
+                    ? `You used ${guesses.length} guesses!`
+                    : `It's a tie! Both you and ${opponentUsername || 'your opponent'} solved each other's words in ${guesses.length} guesses!`}
                 </Text>
                 <TouchableOpacity
                   style={styles.opponentGuessesButtonContainer}

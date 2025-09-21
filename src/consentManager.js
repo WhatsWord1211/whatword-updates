@@ -25,8 +25,9 @@ export async function initializeConsentAndAds() {
 
     const mobileAds = adModule ? adModule.default : null;
     const MaxAdContentRating = adModule ? adModule.MaxAdContentRating : null;
-    const AdsConsent = adModule ? adModule.AdsConsent : null;
-    const AdsConsentStatus = adModule ? adModule.AdsConsentStatus : null;
+    // Skip UMP consent entirely for now to avoid blocking test ads
+    const AdsConsent = null;
+    const AdsConsentStatus = null;
 
     console.log('ConsentManager: mobileAds available:', !!mobileAds);
     console.log('ConsentManager: MaxAdContentRating available:', !!MaxAdContentRating);
@@ -43,23 +44,7 @@ export async function initializeConsentAndAds() {
       }
     }
 
-    // Google UMP: fetch and show if required
-    try {
-      if (AdsConsent && AdsConsentStatus) {
-        console.log('ConsentManager: Requesting UMP info update...');
-        await AdsConsent.requestInfoUpdate({});
-        const status = await AdsConsent.getStatus();
-        console.log('ConsentManager: UMP status:', status);
-        if (status === AdsConsentStatus.REQUIRED) {
-          console.log('ConsentManager: Showing UMP consent form...');
-          const form = await AdsConsent.loadForm();
-          await form.show();
-          console.log('ConsentManager: UMP consent form completed');
-        }
-      }
-    } catch (error) {
-      console.error('ConsentManager: UMP error:', error);
-    }
+    // UMP disabled for now
 
     // After consent, set request configuration
     if (mobileAds && MaxAdContentRating) {

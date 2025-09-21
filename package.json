@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:android": "eas build --platform android",
-    "build:ios": "eas build --platform ios"
+    "build:ios": "eas build --platform ios",
+    "update-version": "node scripts/update-version.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

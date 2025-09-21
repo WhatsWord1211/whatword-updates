@@ -8,6 +8,7 @@ import settingsService from './settingsService';
 import { getThemeColors } from './theme';
 import styles from './styles';
 import adService from './adService';
+import pushNotificationService from './pushNotificationService';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -51,6 +52,40 @@ const SettingsScreen = () => {
       setAdStats(stats);
     } catch (error) {
       console.error('Failed to load ad stats:', error);
+    }
+  };
+
+  const requestNotificationPermissions = async () => {
+    try {
+      console.log('SettingsScreen: Requesting notification permissions...');
+      const pushToken = await pushNotificationService.initialize();
+      
+      if (pushToken) {
+        Alert.alert(
+          '✅ Notifications Enabled',
+          'You will now receive push notifications for friend requests, game challenges, and updates.',
+          [{ text: 'Great!' }]
+        );
+      } else {
+        Alert.alert(
+          '❌ Permission Denied',
+          'Please enable notifications in your device settings to receive push notifications.',
+          [
+            { text: 'Cancel' },
+            { text: 'Open Settings', onPress: () => {
+              // This would open device settings, but we can't do that directly
+              Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
+            }}
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('SettingsScreen: Failed to request notification permissions:', error);
+      Alert.alert(
+        'Error',
+        'Failed to request notification permissions. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -289,6 +324,15 @@ const SettingsScreen = () => {
               thumbColor={settings.pushNotifications ? theme.textInverse : theme.textMuted}
             />
           </View>
+
+          <TouchableOpacity
+            style={[styles.settingButton, { backgroundColor: theme.primary }]}
+            onPress={requestNotificationPermissions}
+          >
+            <Text style={[styles.settingButtonText, { color: theme.textInverse }]}>
+              🔔 Request Notification Permissions
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.settingItem}>
             <Text style={[styles.settingLabel, { color: theme.textSecondary }]}>Friend Requests</Text>

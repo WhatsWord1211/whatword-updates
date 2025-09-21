@@ -905,7 +905,11 @@ const ResumeGamesScreen = () => {
         <Text style={styles.headerTitle}>Resume Games</Text>
       </View>
 
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollContent} 
+        contentContainerStyle={{ paddingBottom: 20 }} // Add bottom padding
+        showsVerticalScrollIndicator={false}
+      >
         {!hasGames ? (
           <View style={styles.emptyStateContainer}>
             <Text style={styles.emptyStateTitle}>No Games in Progress</Text>

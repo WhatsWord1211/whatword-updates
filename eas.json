@@ -17,6 +17,9 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "buildConfiguration": "Release"
       }
     },
     "apk-test": {
@@ -29,6 +32,9 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "buildConfiguration": "Release"
       }
     }
   },

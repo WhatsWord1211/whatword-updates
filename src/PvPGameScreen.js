@@ -86,9 +86,30 @@ const PvPGameScreen = () => {
   const inputToKeyboardPadding = 20;
   const keyboardToButtonsPadding = 5;
   
-  // Calculate max width for keyboard based on screen size
+  // Calculate optimal sizing for alphabet grid to use full width
   const windowWidth = Dimensions.get('window').width;
-  const maxKeyboardWidth = windowWidth - 40;
+  const availableWidth = windowWidth - 20; // Minimal padding for screen edges
+  
+  // Calculate optimal letter size and spacing to maximize usage
+  const getOptimalSizing = () => {
+    const longestRow = 10; // QWERTY top row has 10 letters
+    const minSpacing = 2; // Minimal spacing between letters
+    const totalSpacing = (longestRow - 1) * minSpacing; // Total spacing needed
+    const availableForLetters = availableWidth - totalSpacing;
+    const letterSize = Math.floor(availableForLetters / longestRow);
+    
+    // Use larger letters - be more aggressive with sizing
+    const finalLetterSize = Math.max(Math.min(letterSize, 50), 28); // Increased max to 50, min to 28
+    const actualSpacing = Math.max((availableWidth - (longestRow * finalLetterSize)) / (longestRow - 1), 1);
+    
+    // Make buttons taller by increasing height by 20%
+    const buttonHeight = Math.floor(finalLetterSize * 1.2);
+    
+    return { letterSize: finalLetterSize, spacing: actualSpacing, buttonHeight: buttonHeight };
+  };
+  
+  const { letterSize, spacing, buttonHeight } = getOptimalSizing();
+  const maxKeyboardWidth = availableWidth;
   
   // QWERTY keyboard layout
   const qwertyKeys = [
@@ -1061,9 +1082,16 @@ const PvPGameScreen = () => {
       </View>
       
       <View style={styles.alphabetContainer}>
-        <View style={styles.alphabetGrid}>
+        <View style={[styles.alphabetGrid, { maxWidth: maxKeyboardWidth }]}>
           {qwertyKeys.map((row, rowIndex) => (
-            <View key={`row-${rowIndex}`} style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 5 }}>
+            <View key={`row-${rowIndex}`} style={{ 
+              flexDirection: 'row', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              width: '100%', 
+              marginBottom: 5,
+              paddingHorizontal: 5 // Add padding to prevent edge overflow
+            }}>
               {row.map((letter) => {
                 const index = letter.charCodeAt(0) - 65;
                 return (
@@ -1073,10 +1101,24 @@ const PvPGameScreen = () => {
                     onLongPress={() => toggleLetter(index)}
                     delayLongPress={300}
                     disabled={isLoading || !canGuess()}
+                    style={{ 
+                      width: letterSize, 
+                      height: buttonHeight, 
+                      marginHorizontal: spacing / 2,
+                      marginVertical: 2,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
                   >
                     <Text
                       style={[
                         styles.letter,
+                        { 
+                          width: letterSize - 4, // Account for border
+                          height: letterSize - 4,
+                          fontSize: (letterSize * 0.6) + 1, // Responsive font size + 1
+                          lineHeight: letterSize - 4
+                        },
                         alphabet[index] === 'absent' && styles.eliminatedLetter,
                         alphabet[index] === 'present' && styles.presentLetter
                       ]}
@@ -1272,11 +1314,19 @@ const PvPGameScreen = () => {
                gameOverData?.winnerId === currentUser?.uid ? "You Won!" : "You Lost!"}
             </Text>
             <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
-              {gameOverData?.tie ? 
-                "Both players solved their words in the same number of attempts!" :
-                gameOverData?.winnerId === currentUser?.uid ?
-                `Congratulations! You solved ${opponentUsername}'s word faster!` :
-                `${opponentUsername} solved your word faster. Better luck next time!`}
+              {(() => {
+                const isPlayer1 = game?.player1?.uid === currentUser?.uid;
+                const myAttempts = isPlayer1 ? (game?.player1?.attempts || 0) : (game?.player2?.attempts || 0);
+                const opponentAttempts = isPlayer1 ? (game?.player2?.attempts || 0) : (game?.player1?.attempts || 0);
+                
+                if (gameOverData?.tie) {
+                  return `It's a tie! Both players solved their words in ${myAttempts} attempts!`;
+                } else if (gameOverData?.winnerId === currentUser?.uid) {
+                  return `Congratulations! You solved ${opponentUsername}'s word in ${myAttempts} attempts, while they solved your word in ${opponentAttempts} attempts!`;
+                } else {
+                  return `${opponentUsername} solved your word in ${opponentAttempts} attempts, while you solved their word in ${myAttempts} attempts. Better luck next time!`;
+                }
+              })()}
             </Text>
             <TouchableOpacity
               style={styles.winButtonContainer}
@@ -1288,15 +1338,24 @@ const PvPGameScreen = () => {
                       resultsSeenBy: arrayUnion(currentUser.uid)
                     });
                   }
+                  
                   // Show interstitial ad after acknowledging results
+                  console.log('PvPGameScreen: Attempting to show interstitial ad...');
                   try {
                     await adService.showInterstitialAd();
+                    console.log('PvPGameScreen: Ad shown successfully');
                   } catch (adErr) {
                     console.error('PvPGameScreen: Failed to show interstitial ad:', adErr);
                   }
+                  
+                  // Navigate to home after ad (or if ad fails)
+                  console.log('PvPGameScreen: Navigating to home...');
+                  navigation.navigate('Home');
+                  playSound('chime').catch(() => {});
+                  
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on acknowledge:', markErr);
-                } finally {
+                  // Still navigate even if marking fails
                   navigation.navigate('Home');
                   playSound('chime').catch(() => {});
                 }
@@ -1378,7 +1437,7 @@ const PvPGameScreen = () => {
           <View style={[styles.tiePopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.tieTitle, { color: colors.textPrimary }]}>It's a Tie!</Text>
             <Text style={[styles.tieMessage, { color: colors.textSecondary }]}> 
-              Both players reached the maximum attempts without solving. The game ends in a tie!
+              Both players reached the maximum of {getMaxGuesses()} attempts without solving. The game ends in a tie!
             </Text>
             <TouchableOpacity
               style={styles.tieButtonContainer}

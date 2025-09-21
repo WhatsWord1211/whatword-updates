@@ -33,22 +33,14 @@ class AppUpdateService {
         return;
       }
 
-      console.log('AppUpdateService: Checking for app updates...');
-
-      // Get current app version
-      const currentVersion = this.getCurrentVersion();
-      const currentBuildNumber = this.getCurrentBuildNumber();
-      
-      console.log('AppUpdateService: Current version:', currentVersion, 'Build:', currentBuildNumber);
-
-      // Check if there's a newer version available on Google Play Store
+      // Check for updates using local version comparison
       const updateAvailable = await this.checkGooglePlayStoreForUpdates();
       
       if (updateAvailable) {
-        console.log('AppUpdateService: Update available, redirecting to Google Play Store');
+        console.log('AppUpdateService: Update available, showing update prompt');
         await this.redirectToUpdate();
       } else {
-        console.log('AppUpdateService: App is up to date');
+        console.log('AppUpdateService: No update available');
       }
 
     } catch (error) {
@@ -64,8 +56,8 @@ class AppUpdateService {
   async checkGooglePlayStoreForUpdates() {
     try {
       // Method 1: Check against a remote version endpoint
-      // You can host a simple JSON file with the latest version info
-      const versionCheckUrl = 'https://raw.githubusercontent.com/yourusername/whatword-updates/main/version.json';
+      // Using a simple JSON file hosted on GitHub
+      const versionCheckUrl = 'https://raw.githubusercontent.com/WhatsWord1211/whatword-updates/refs/heads/main/version.json';
       
       try {
         const response = await fetch(versionCheckUrl, {
@@ -87,6 +79,7 @@ class AppUpdateService {
             return true;
           }
           
+          console.log('AppUpdateService: No update available - current build is up to date');
           return false;
         }
       } catch (fetchError) {
@@ -96,7 +89,7 @@ class AppUpdateService {
       // Method 2: Fallback to local version comparison
       // This is a simple approach where you manually update the target version
       const currentBuildNumber = this.getCurrentBuildNumber();
-      const targetBuildNumber = 13; // Update this when you release a new version
+      const targetBuildNumber = 15; // Fallback target (same as current)
       
       console.log('AppUpdateService: Current build:', currentBuildNumber, 'Target build:', targetBuildNumber);
       
@@ -113,32 +106,43 @@ class AppUpdateService {
   }
 
   /**
-   * Redirect user to Google Play Store update page
+   * Redirect user to appropriate app store update page
    */
   async redirectToUpdate() {
     try {
-      const packageName = Constants.expoConfig?.android?.package || 'com.whatword.app';
-      const playStoreUrl = `https://play.google.com/store/apps/details?id=${packageName}`;
+      let storeUrl, storeName;
+      
+      if (Platform.OS === 'ios') {
+        // iOS App Store
+        const bundleId = Constants.expoConfig?.ios?.bundleIdentifier || 'com.whatword.app';
+        storeUrl = `https://apps.apple.com/app/id${bundleId}`;
+        storeName = 'App Store';
+      } else {
+        // Android Google Play Store
+        const packageName = Constants.expoConfig?.android?.package || 'com.whatword.app';
+        storeUrl = `https://play.google.com/store/apps/details?id=${packageName}`;
+        storeName = 'Google Play Store';
+      }
       
       // Show alert first to inform user
       Alert.alert(
         'Update Available',
-        'A new version of WhatWord is available. You will be redirected to the Google Play Store to update the app.',
+        `A new version of WhatWord is available. You will be redirected to the ${storeName} to update the app.`,
         [
           {
             text: 'Update Now',
             onPress: async () => {
               try {
-                const supported = await Linking.canOpenURL(playStoreUrl);
+                const supported = await Linking.canOpenURL(storeUrl);
                 if (supported) {
-                  await Linking.openURL(playStoreUrl);
+                  await Linking.openURL(storeUrl);
                 } else {
-                  console.error('AppUpdateService: Cannot open Google Play Store URL');
-                  Alert.alert('Error', 'Cannot open Google Play Store. Please update manually.');
+                  console.error(`AppUpdateService: Cannot open ${storeName} URL`);
+                  Alert.alert('Error', `Cannot open ${storeName}. Please update manually.`);
                 }
               } catch (error) {
-                console.error('AppUpdateService: Failed to open Google Play Store:', error);
-                Alert.alert('Error', 'Failed to open Google Play Store. Please update manually.');
+                console.error(`AppUpdateService: Failed to open ${storeName}:`, error);
+                Alert.alert('Error', `Failed to open ${storeName}. Please update manually.`);
               }
             }
           },

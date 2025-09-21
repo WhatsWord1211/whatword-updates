@@ -50,39 +50,87 @@ class PushNotificationService {
     let token;
 
     if (Platform.OS === 'android') {
+      // Create notification channels for Android
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
+        name: 'Default Notifications',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#8B5CF6',
+        sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
+        showBadge: true,
+      });
+
+      await Notifications.setNotificationChannelAsync('game_updates', {
+        name: 'Game Updates',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#8B5CF6',
+        sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
+        showBadge: true,
+      });
+
+      await Notifications.setNotificationChannelAsync('friend_requests', {
+        name: 'Friend Requests',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#8B5CF6',
+        sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
+        showBadge: true,
       });
     }
 
     if (Device.isDevice) {
+      // Check current permissions
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      console.log('PushNotificationService: Current permission status:', existingStatus);
+      
       let finalStatus = existingStatus;
       
       if (existingStatus !== 'granted') {
         console.log('PushNotificationService: Requesting notification permissions...');
+        
+        // Request permissions with comprehensive options
         const { status } = await Notifications.requestPermissionsAsync({
           ios: {
             allowAlert: true,
             allowBadge: true,
             allowSound: true,
             allowAnnouncements: true,
+            allowCriticalAlerts: false,
+            provideAppNotificationSettings: true,
+            allowProvisional: false,
+          },
+          android: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowVibrate: true,
+            allowLights: true,
           },
         });
+        
         finalStatus = status;
+        console.log('PushNotificationService: Permission request result:', status);
         
         if (status === 'granted') {
-          console.log('PushNotificationService: Notification permissions granted');
+          console.log('PushNotificationService: ✅ Notification permissions granted');
+        } else if (status === 'denied') {
+          console.log('PushNotificationService: ❌ Notification permissions denied');
         } else {
-          console.log('PushNotificationService: Notification permissions denied');
+          console.log('PushNotificationService: ⚠️ Notification permissions undetermined');
         }
+      } else {
+        console.log('PushNotificationService: ✅ Notification permissions already granted');
       }
       
       if (finalStatus !== 'granted') {
-        console.log('PushNotificationService: Notification permissions not granted, skipping push token registration');
+        console.log('PushNotificationService: Cannot proceed without notification permissions');
         return null;
       }
       
@@ -155,6 +203,14 @@ class PushNotificationService {
         return null;
       }
 
+      // Determine appropriate channel based on notification type
+      let channelId = 'default';
+      if (data.type === 'friend_request' || data.type === 'friend_request_accepted') {
+        channelId = 'friend_requests';
+      } else if (data.type === 'game_challenge' || data.type === 'game_started' || data.type === 'game_completed' || data.type === 'game_move') {
+        channelId = 'game_updates';
+      }
+
       // Send push notification via Expo's service
       const message = {
         to: pushToken,
@@ -163,7 +219,8 @@ class PushNotificationService {
         body: body,
         data: data,
         priority: 'high',
-        channelId: 'default',
+        channelId: channelId,
+        badge: 1, // Set badge count
       };
 
       const response = await fetch('https://exp.host/--/api/v2/push/send', {

@@ -13,6 +13,7 @@ import { useTheme } from './ThemeContext';
 import { getNotificationService } from './notificationService';
 import pushNotificationService from './pushNotificationService';
 import appUpdateService from './appUpdateService';
+import * as Notifications from 'expo-notifications';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
@@ -63,6 +64,10 @@ const HomeScreen = () => {
         deleteDoc(doc(db, 'notifications', notificationId))
       );
       await Promise.all(deletePromises);
+      // Dismiss from device center as well
+      try {
+        await Promise.all(notificationIds.map(id => Notifications.dismissNotificationAsync(id)));
+      } catch (_) {}
     } catch (error) {
       console.error('Failed to permanently delete notifications:', error);
     }
@@ -514,6 +519,81 @@ const HomeScreen = () => {
     try {
       console.log('HomeScreen: Initializing push notifications for user:', userId);
       
+      // Check if we've already requested permissions for this user in this session
+      const permissionRequestedKey = `notification_permission_requested_${userId}`;
+      const hasRequestedPermissions = await AsyncStorage.getItem(permissionRequestedKey);
+      
+      // Check if notifications are already initialized
+      const existingToken = await pushNotificationService.getUserPushToken(userId);
+      if (existingToken) {
+        console.log('HomeScreen: Push notifications already initialized');
+        // Still set up listeners
+        pushNotificationService.setupNotificationListeners();
+        return;
+      }
+      
+      // For existing users, check if they have notification permissions
+      const { status: permissionStatus } = await Notifications.getPermissionsAsync();
+      console.log('HomeScreen: Current permission status:', permissionStatus);
+      
+      if (permissionStatus !== 'granted' && !hasRequestedPermissions) {
+        console.log('HomeScreen: Requesting notification permissions for existing user...');
+        
+        // Mark that we've requested permissions for this user
+        await AsyncStorage.setItem(permissionRequestedKey, 'true');
+        
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowAnnouncements: true,
+            allowCriticalAlerts: false,
+            provideAppNotificationSettings: true,
+            allowProvisional: false,
+          },
+          android: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowVibrate: true,
+            allowLights: true,
+          },
+        });
+        
+        console.log('HomeScreen: Permission request result:', status);
+        
+        if (status !== 'granted') {
+          console.log('HomeScreen: User denied notification permissions');
+          // Show alert to inform user about notification permissions
+          Alert.alert(
+            '🔔 Enable Notifications',
+            'To receive notifications about friend requests, game challenges, and updates, please enable notifications in your device settings.',
+            [
+              { text: 'Not Now', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => {
+                Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
+              }}
+            ]
+          );
+          return;
+        }
+      } else if (permissionStatus !== 'granted' && hasRequestedPermissions) {
+        console.log('HomeScreen: User previously denied permissions, showing settings guidance');
+        // Show alert to inform user about notification permissions
+        Alert.alert(
+          '🔔 Enable Notifications',
+          'To receive notifications about friend requests, game challenges, and updates, please enable notifications in your device settings.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => {
+              Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
+            }}
+          ]
+        );
+        return;
+      }
+      
       // Initialize the push notification service
       const pushToken = await pushNotificationService.initialize();
       
@@ -525,24 +605,29 @@ const HomeScreen = () => {
         // Set up notification listeners
         pushNotificationService.setupNotificationListeners();
         
-        // Show success message to user
+        // Show success message to user (only on first setup)
         Alert.alert(
-          'Notifications Enabled!',
-          'You\'ll now receive notifications about new challenges, friend requests, and game updates.',
+          '🔔 Notifications Enabled!',
+          'You\'ll now receive notifications for:\n• Friend requests\n• Game challenges\n• Game updates\n• Your turn reminders',
           [{ text: 'Got it!' }]
         );
       } else {
-        console.log('HomeScreen: Push notifications not available (likely simulator)');
-        
-        // Show info message about notifications
+        console.log('HomeScreen: Failed to get push token - permissions may be denied');
+        // Show alert to inform user about notification permissions
         Alert.alert(
-          'Notifications',
-          'To receive notifications about new challenges and friend requests, please enable them in your device settings.',
-          [{ text: 'OK' }]
+          '🔔 Enable Notifications',
+          'To receive notifications about friend requests, game challenges, and updates, please enable notifications in your device settings.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => {
+              Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
+            }}
+          ]
         );
       }
     } catch (error) {
       console.error('HomeScreen: Failed to initialize push notifications:', error);
+      // Don't show error alert for initialization failures
     }
   };
 

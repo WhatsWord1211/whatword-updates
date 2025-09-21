@@ -355,6 +355,10 @@ export default StyleSheet.create({
   scroll: {
     width: '100%',
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+  },
   inputDisplay: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -396,14 +400,18 @@ export default StyleSheet.create({
     maxWidth: '100%',
     alignSelf: 'center',
     paddingBottom: 1,
+    paddingHorizontal: 10, // Add horizontal padding to prevent edge overflow
   },
   letter: {
-    width: 26,
-    height: 34,
+    // Dynamic sizing based on screen width
+    minWidth: 24,
+    minHeight: 32,
+    maxWidth: 32,
+    maxHeight: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    fontSize: 22,
-    margin: 4,
+    fontSize: 18, // Reduced base font size
+    margin: 2, // Reduced margin for better fit
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#374151',
@@ -411,6 +419,9 @@ export default StyleSheet.create({
     color: '#E5E7EB',
     fontFamily: 'Roboto-Regular',
     textAlign: 'center',
+    // Use flex to make letters responsive
+    flex: 1,
+    aspectRatio: 1, // Keep letters square
   },
 
   eliminatedLetter: {
@@ -1550,6 +1561,8 @@ export default StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#4B5563',
     backgroundColor: '#1F2937',
+    minHeight: 60, // Ensure minimum height
+    zIndex: 1, // Ensure header stays on top
   },
   emptyStateContainer: {
     alignItems: 'center',
@@ -3949,5 +3962,19 @@ export default StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
+  },
+
+  settingButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginVertical: 8,
+    alignItems: 'center',
+  },
+
+  settingButtonText: {
+    fontSize: 16,
+    fontFamily: 'Roboto-Regular',
+    fontWeight: '500',
   },
 });

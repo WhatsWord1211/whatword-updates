@@ -1334,6 +1334,10 @@ class NotificationService {
         read: true,
         readAt: new Date().toISOString()
       });
+      // Attempt to dismiss from device notification center as well
+      try {
+        await Notifications.dismissNotificationAsync(notificationId);
+      } catch (_) {}
       return true;
     } catch (error) {
       console.error('NotificationService: Failed to mark notification as read:', error);

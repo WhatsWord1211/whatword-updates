@@ -30,6 +30,7 @@ import './src/adService'; // Initialize AdMob service
 import { initializeConsentAndAds } from './src/consentManager';
 import * as Notifications from 'expo-notifications';
 import { loadSounds } from './src/soundsUtil';
+import * as Device from 'expo-device';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -56,22 +57,7 @@ export default function App() {
 
     initializeApp();
 
-    // Set up background notification handling
-    const setupBackgroundNotifications = () => {
-      // Handle notifications when app is in background or killed
-      Notifications.setNotificationHandler({
-        handleNotification: async (notification) => {
-          console.log('App: Background notification received:', notification);
-          return {
-            shouldShowAlert: true,
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-          };
-        },
-      });
-    };
-
-    setupBackgroundNotifications();
+    // Notification handling is now managed by pushNotificationService
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -85,6 +71,7 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
 
   // Determine which component to render
   const navigationCondition = user ? 'MainTabs' : 'Auth';

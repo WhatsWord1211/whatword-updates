@@ -1,0 +1,16 @@
+--------- beginning of main
+09-18 13:41:40.822 32528 32607 I ReactNativeJS: AdService: Attempting to show interstitial ad for hint
+09-18 13:41:40.823 32528 32607 E ReactNativeJS: 'showInterstitialWithRetry failed:', [TypeError: undefined is not a function]
+09-18 13:41:40.825 32528 32607 I ReactNativeJS: AdService: Failed to show interstitial ad for hint
+09-18 13:41:45.489 32528 32607 I ReactNativeJS: AdService: Attempting to show interstitial ad for hint
+09-18 13:41:45.489 32528 32607 E ReactNativeJS: 'showInterstitialWithRetry failed:', [TypeError: undefined is not a function]
+09-18 13:41:45.492 32528 32607 I ReactNativeJS: AdService: Failed to show interstitial ad for hint
+09-18 13:41:47.823 32528 32607 I ReactNativeJS: AdService: Attempting to show interstitial ad for hint
+09-18 13:41:47.824 32528 32607 E ReactNativeJS: 'showInterstitialWithRetry failed:', [TypeError: undefined is not a function]
+09-18 13:41:47.830 32528 32607 I ReactNativeJS: AdService: Failed to show interstitial ad for hint
+09-18 13:43:09.097 32528 32607 I ReactNativeJS: AdService: Attempting to show interstitial ad
+09-18 13:43:09.098 32528 32607 E ReactNativeJS: 'showInterstitialWithRetry failed:', [TypeError: undefined is not a function]
+09-18 13:43:09.144 32528 32607 I ReactNativeJS: AdService: Failed to show interstitial ad
+09-18 13:43:09.153 32528 32607 I ReactNativeJS: 'GameScreen: Cleaned up completed solo game:', 'solo_1758220895876'
+09-18 13:43:09.164 32528 32607 I ReactNativeJS: 🔍 [CustomTabNavigator] Component focused - refreshing friend requests
+09-18 13:43:09.173 32528 32607 I ReactNativeJS: '🔍 [CustomTabNavigator] Manual refresh - Found', 0, 'friend requests'
