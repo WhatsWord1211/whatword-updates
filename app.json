@@ -4,7 +4,7 @@
     "slug": "whatword",
     "scheme": "whatword",
     "owner": "wilderbssmstr",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/WhatWord-Icon.png",
     "userInterfaceStyle": "light",
@@ -12,13 +12,12 @@
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 12,
+      "versionCode": 16,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/WhatWord-Icon.png",
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
-        "com.google.android.gms.permission.AD_ID",
         "com.google.android.gms.permission.AD_ID",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -63,9 +62,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.whatword.app",
       "googleServicesFile": "./firebase/GoogleService-Info.plist",
+      "buildNumber": "16",
       "infoPlist": {
         "NSUserTrackingUsageDescription": "Your data will be used to deliver personalized ads and to measure ad performance.",
-        "NSUserNotificationsUsageDescription": "Allow notifications to alert you about new challenges, friend requests, and game updates."
+        "NSUserNotificationsUsageDescription": "Allow notifications to alert you about new challenges, friend requests, and game updates.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "web": {
