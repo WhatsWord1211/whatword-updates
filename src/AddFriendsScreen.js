@@ -6,6 +6,7 @@ import { db, auth } from './firebase';
 import { collection, query, where, orderBy, limit, getDocs, addDoc, onSnapshot, updateDoc, doc, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
+import { getNotificationService } from './notificationService';
 
 // ⚠️ SYSTEM MISMATCH WARNING ⚠️
 // This file uses the OLD friendRequests collection system
@@ -93,6 +94,60 @@ const AddFriendsScreen = () => {
   };
 
   const sendFriendRequest = async (user) => {
+    try {
+      // Check notification permissions before sending friend request
+      const notificationService = getNotificationService();
+      const areNotificationsEnabled = await notificationService.areNotificationsEnabled();
+      
+      if (!areNotificationsEnabled) {
+        // Ask user to enable notifications for friend requests
+        Alert.alert(
+          'Enable Notifications',
+          'To send friend requests, please enable notifications. This allows users to receive alerts when you send them a friend request.',
+          [
+            {
+              text: 'Not Now',
+              style: 'cancel',
+              onPress: () => {
+                // Still allow friend request but warn user
+                Alert.alert(
+                  'Friend Request Sent',
+                  'Friend request sent, but the user may not be notified. Enable notifications in Settings to ensure they receive alerts.',
+                  [{ text: 'OK' }]
+                );
+                proceedWithFriendRequest(user);
+              }
+            },
+            {
+              text: 'Enable Notifications',
+              onPress: async () => {
+                const result = await notificationService.handleNotificationPermissions({
+                  showExplanation: true,
+                  forceRequest: true,
+                  silent: false
+                });
+                
+                if (result.success) {
+                  Alert.alert('Success', 'Notifications enabled! Users will now receive friend request alerts.');
+                } else {
+                  Alert.alert('Notifications Disabled', 'Friend request sent, but the user may not be notified. Enable notifications in Settings to ensure they receive alerts.');
+                }
+                
+                proceedWithFriendRequest(user);
+              }
+            }
+          ]
+        );
+      } else {
+        proceedWithFriendRequest(user);
+      }
+    } catch (error) {
+      console.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
+      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+    }
+  };
+
+  const proceedWithFriendRequest = async (user) => {
     try {
       console.log('🔍 [AddFriendsScreen] Starting friend request process');
       console.log('🔍 [AddFriendsScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);

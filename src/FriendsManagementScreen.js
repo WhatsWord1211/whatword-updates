@@ -736,170 +736,169 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 Loading requests...
               </Text>
             ) : (
-              <ScrollView
+              <FlatList
                 style={{ width: '100%' }}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-                showsVerticalScrollIndicator={true}
-              >
-                {pendingRequests.length > 0 && (
-                  <View>
-                    <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 16 }]}>
-                      Incoming Requests ({pendingRequests.length})
-                    </Text>
-                    <View>
-                      {pendingRequests.map((item) => (
-                        <View key={item.id} style={{
-                          padding: 20,
-                          marginBottom: 16,
-                          borderRadius: 12,
-                          borderWidth: 2,
-                          borderColor: '#10B981',
-                          backgroundColor: '#1F2937',
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.25,
-                          shadowRadius: 4,
-                          elevation: 5,
-                        }}>
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={{
-                              fontSize: 20,
-                              fontWeight: '700',
-                              marginBottom: 8,
-                              color: '#FFFFFF',
-                            }}>
-                              {item.fromUsername || 'Unknown User'}
-                            </Text>
-                            <Text style={{
-                              fontSize: 16,
-                              color: '#D1D5DB',
-                              lineHeight: 22,
-                            }}>
-                              wants to be your friend
-                            </Text>
-                          </View>
-                          <View style={{ 
-                            flexDirection: 'row', 
-                            gap: 12,
-                            justifyContent: 'flex-end'
+                data={[
+                  ...(pendingRequests.length > 0 ? [{ type: 'header', id: 'header_incoming' }] : []),
+                  ...pendingRequests.map(r => ({ ...r, type: 'incoming' })),
+                  ...(sentRequests.length > 0 ? [{ type: 'header', id: 'header_sent' }] : []),
+                  ...sentRequests.map(r => ({ ...r, type: 'sent' })),
+                ]}
+                keyExtractor={(item, index) => `${item.type}_${item.id || index}`}
+                renderItem={({ item }) => {
+                  if (item.type === 'header' && item.id === 'header_incoming') {
+                    return (
+                      <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 16 }]}>Incoming Requests ({pendingRequests.length})</Text>
+                    );
+                  }
+                  if (item.type === 'header' && item.id === 'header_sent') {
+                    return (
+                      <View style={{ marginTop: 24, marginBottom: 16, alignItems: 'center' }}>
+                        <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700' }]}>Sent Requests</Text>
+                      </View>
+                    );
+                  }
+                  if (item.type === 'incoming') {
+                    return (
+                      <View style={{
+                        padding: 20,
+                        marginBottom: 16,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: '#10B981',
+                        backgroundColor: '#1F2937',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 4,
+                        elevation: 5,
+                      }}>
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={{
+                            fontSize: 20,
+                            fontWeight: '700',
+                            marginBottom: 8,
+                            color: '#FFFFFF',
                           }}>
-                            <TouchableOpacity
-                              style={{
-                                backgroundColor: '#10B981',
-                                paddingHorizontal: 20,
-                                paddingVertical: 12,
-                                borderRadius: 8,
-                                minWidth: 90,
-                                alignItems: 'center',
-                              }}
-                              onPress={() => acceptFriendRequest(item)}
-                            >
-                              <Text style={{
-                                color: '#FFFFFF',
-                                fontSize: 16,
-                                fontWeight: '700',
-                              }}>Accept</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={{
-                                backgroundColor: '#EF4444',
-                                paddingHorizontal: 20,
-                                paddingVertical: 12,
-                                borderRadius: 8,
-                                minWidth: 90,
-                                alignItems: 'center',
-                              }}
-                              onPress={() => declineFriendRequest(item)}
-                            >
-                              <Text style={{
-                                color: '#FFFFFF',
-                                fontSize: 16,
-                                fontWeight: '700',
-                              }}>Decline</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-                
-                {sentRequests.length > 0 && (
-                  <View style={{ marginTop: 24 }}>
-                    <View style={{ marginBottom: 16, alignItems: 'center' }}>
-                      <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700' }]}>
-                        Sent Requests
-                      </Text>
-                    </View>
-                    <View>
-                      {sentRequests.map((item) => (
-                        <View key={item.id} style={{
-                          padding: 20,
-                          marginBottom: 16,
-                          borderRadius: 12,
-                          borderWidth: 2,
-                          borderColor: '#F59E0B',
-                          backgroundColor: '#1F2937',
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.25,
-                          shadowRadius: 4,
-                          elevation: 5,
-                        }}>
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={{
-                              fontSize: 20,
-                              fontWeight: '700',
-                              marginBottom: 8,
-                              color: '#FFFFFF',
-                            }}>
-                              {item.toUsername || 'Unknown User'}
-                            </Text>
-                            <Text style={{
-                              fontSize: 16,
-                              color: '#D1D5DB',
-                              lineHeight: 22,
-                            }}>
-                              Friend request sent
-                            </Text>
-                          </View>
-                          <View style={{ 
-                            flexDirection: 'row', 
-                            gap: 12,
-                            justifyContent: 'center'
+                            {item.fromUsername || 'Unknown User'}
+                          </Text>
+                          <Text style={{
+                            fontSize: 16,
+                            color: '#D1D5DB',
+                            lineHeight: 22,
                           }}>
-                            <TouchableOpacity
-                              style={{
-                                backgroundColor: '#EF4444',
-                                paddingHorizontal: 20,
-                                paddingVertical: 12,
-                                borderRadius: 8,
-                                minWidth: 90,
-                                alignItems: 'center',
-                              }}
-                              onPress={() => cancelFriendRequest(item)}
-                            >
-                              <Text style={{
-                                color: '#FFFFFF',
-                                fontSize: 16,
-                                fontWeight: '700',
-                              }}>Cancel</Text>
-                            </TouchableOpacity>
-                          </View>
+                            wants to be your friend
+                          </Text>
                         </View>
-                      ))}
+                        <View style={{ 
+                          flexDirection: 'row', 
+                          gap: 12,
+                          justifyContent: 'flex-end'
+                        }}>
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#10B981',
+                              paddingHorizontal: 20,
+                              paddingVertical: 12,
+                              borderRadius: 8,
+                              minWidth: 90,
+                              alignItems: 'center',
+                            }}
+                            onPress={() => acceptFriendRequest(item)}
+                          >
+                            <Text style={{
+                              color: '#FFFFFF',
+                              fontSize: 16,
+                              fontWeight: '700',
+                            }}>Accept</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#EF4444',
+                              paddingHorizontal: 20,
+                              paddingVertical: 12,
+                              borderRadius: 8,
+                              minWidth: 90,
+                              alignItems: 'center',
+                            }}
+                            onPress={() => declineFriendRequest(item)}
+                          >
+                            <Text style={{
+                              color: '#FFFFFF',
+                              fontSize: 16,
+                              fontWeight: '700',
+                            }}>Decline</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  }
+                  // sent
+                  return (
+                    <View style={{
+                      padding: 20,
+                      marginBottom: 16,
+                      borderRadius: 12,
+                      borderWidth: 2,
+                      borderColor: '#F59E0B',
+                      backgroundColor: '#1F2937',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 4,
+                      elevation: 5,
+                    }}>
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{
+                          fontSize: 20,
+                          fontWeight: '700',
+                          marginBottom: 8,
+                          color: '#FFFFFF',
+                        }}>
+                          {item.toUsername || 'Unknown User'}
+                        </Text>
+                        <Text style={{
+                          fontSize: 16,
+                          color: '#D1D5DB',
+                          lineHeight: 22,
+                        }}>
+                          Friend request sent
+                        </Text>
+                      </View>
+                      <View style={{ 
+                        flexDirection: 'row', 
+                        gap: 12,
+                        justifyContent: 'center'
+                      }}>
+                        <TouchableOpacity
+                          style={{
+                            backgroundColor: '#EF4444',
+                            paddingHorizontal: 20,
+                            paddingVertical: 12,
+                            borderRadius: 8,
+                            minWidth: 90,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => cancelFriendRequest(item)}
+                        >
+                          <Text style={{
+                            color: '#FFFFFF',
+                            fontSize: 16,
+                            fontWeight: '700',
+                          }}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
-                )}
-                
-                {pendingRequests.length === 0 && sentRequests.length === 0 && (
+                  );
+                }}
+                ListEmptyComponent={(
                   <View style={[styles.emptyState, { paddingHorizontal: 16 }]}>
-                    <Text style={styles.emptyStateText}>
-                      No friend requests
-                    </Text>
+                    <Text style={styles.emptyStateText}>No friend requests</Text>
                   </View>
                 )}
-              </ScrollView>
+                showsVerticalScrollIndicator={true}
+              />
             )}
           </View>
         )}
