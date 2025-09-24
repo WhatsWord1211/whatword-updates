@@ -12,7 +12,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswor
 import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { useTheme } from './ThemeContext';
-import { checkUsernameAvailability } from './usernameValidation';
+import { checkUsernameAvailability, generateUsernameFromEmail } from './usernameValidation';
 
 
 const AuthScreen = () => {
@@ -115,10 +115,11 @@ const AuthScreen = () => {
           });
         } else {
           // Create profile if it doesn't exist
+          const safeUsername = await generateUsernameFromEmail(email);
           await setDoc(userDocRef, {
             uid: result.user.uid,
-            username: email.split('@')[0],
-            displayName: email.split('@')[0],
+            username: safeUsername,
+            displayName: safeUsername,
             email: email,
             createdAt: new Date(),
             lastLogin: new Date(),

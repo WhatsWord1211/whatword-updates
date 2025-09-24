@@ -4,7 +4,7 @@
     "slug": "whatword",
     "scheme": "whatword",
     "owner": "wilderbssmstr",
-    "version": "1.0.1",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/WhatWord-Icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 16,
+      "versionCode": 24,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/WhatWord-Icon.png",
         "backgroundColor": "#FFFFFF"
@@ -23,7 +23,8 @@
         "android.permission.VIBRATE",
         "android.permission.WAKE_LOCK",
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "intentFilters": [
         {
@@ -41,14 +42,23 @@
       "eas": {
         "projectId": "b189d504-5441-4ee4-977f-2ad58d77659d"
       },
-      "firebaseApiKey": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
+      "firebaseApiKey": "AIzaSyC0ceckaysOdcG6jiVYMVSQBTi3aHBnzYI",
       "firebaseAuthDomain": "whatword-a3f4b.firebaseapp.com",
       "firebaseProjectId": "whatword-a3f4b",
       "firebaseStorageBucket": "whatword-a3f4b.firebasestorage.app",
       "firebaseMessagingSenderId": "1052433400571",
       "firebaseAppId": "1:1052433400571:web:16122dad5c5a1344d9265e",
       "firebaseMeasurementId": "G-TWN7PXQ55G",
-      "googleClientId": "1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com"
+      "googleClientId": "1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com",
+      "_comment_old_keys": "Old Firebase configuration keys (kept as fallback):",
+      "_firebaseApiKey_old": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
+      "_firebaseAuthDomain_old": "whatword-a3f4b.firebaseapp.com",
+      "_firebaseProjectId_old": "whatword-a3f4b",
+      "_firebaseStorageBucket_old": "whatword-a3f4b.firebasestorage.app",
+      "_firebaseMessagingSenderId_old": "1052433400571",
+      "_firebaseAppId_old": "1:1052433400571:web:16122dad5c5a1344d9265e",
+      "_firebaseMeasurementId_old": "G-TWN7PXQ55G",
+      "_googleClientId_old": "1052433400571-4jndr2km62in472e86s63ocpu50tr72v.apps.googleusercontent.com"
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -62,7 +72,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.whatword.app",
       "googleServicesFile": "./firebase/GoogleService-Info.plist",
-      "buildNumber": "16",
+      "buildNumber": "24",
       "infoPlist": {
         "NSUserTrackingUsageDescription": "Your data will be used to deliver personalized ads and to measure ad performance.",
         "NSUserNotificationsUsageDescription": "Allow notifications to alert you about new challenges, friend requests, and game updates.",

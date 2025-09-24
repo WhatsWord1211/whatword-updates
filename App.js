@@ -57,11 +57,11 @@ export default function App() {
 
     initializeApp();
 
-    // Notification handling is now managed by pushNotificationService
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUser(user);
+        
       } else {
         setUser(null);
       }

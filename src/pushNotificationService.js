@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { Platform, Alert } from 'react-native';
+import { Platform, Alert, InteractionManager } from 'react-native';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -13,6 +13,9 @@ Notifications.setNotificationHandler({
       shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
+      // iOS-specific: Ensure notifications show in background
+      shouldShowBanner: true,
+      shouldShowList: true,
     };
   },
 });
@@ -22,24 +25,67 @@ class PushNotificationService {
     this.expoPushToken = null;
     this.notificationListener = null;
     this.responseListener = null;
+    this.isInitialized = false;
+    this.isInitializing = false;
+    
+    // Queue and throttling
+    this.notificationQueue = [];
+    this.isProcessingQueue = false;
+    this.lastNotificationTime = 0;
+    this.minNotificationInterval = 1000; // 1 second between notifications
+    
+    // Token refresh tracking
+    this.tokenRefreshPromise = null;
+    this.lastTokenRefresh = 0;
+    this.tokenRefreshInterval = 24 * 60 * 60 * 1000; // 24 hours
+    
+    // Request timeout
+    this.requestTimeout = 5000; // 5 seconds
   }
 
   /**
    * Initialize push notifications and get Expo push token
    */
   async initialize() {
+    // Prevent multiple simultaneous initializations
+    if (this.isInitialized) {
+      return this.expoPushToken;
+    }
+    
+    if (this.isInitializing) {
+      return this.tokenRefreshPromise;
+    }
+    
+    this.isInitializing = true;
+    
     try {
+      console.log('PushNotificationService: Initializing...');
+      
       // Register for push notifications
       const token = await this.registerForPushNotificationsAsync();
       if (token) {
         this.expoPushToken = token;
-        console.log('PushNotificationService: Expo push token:', token);
+        this.isInitialized = true;
+        console.log('PushNotificationService: Expo push token obtained:', token);
+        
+        // Set up listeners asynchronously
+        this.setupNotificationListeners();
+        
+        // Reset app badge on successful initialization
+        try {
+          await Notifications.setBadgeCountAsync(0);
+        } catch (_) {}
+
         return token;
       }
+      
+      console.log('PushNotificationService: No push token obtained');
       return null;
     } catch (error) {
       console.error('PushNotificationService: Failed to initialize:', error);
       return null;
+    } finally {
+      this.isInitializing = false;
     }
   }
 
@@ -55,11 +101,11 @@ class PushNotificationService {
         name: 'Default Notifications',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
+        showBadge: true,
+        enableLights: true,
+        enableVibrate: true,
         lightColor: '#8B5CF6',
         sound: 'default',
-        enableVibrate: true,
-        enableLights: true,
-        showBadge: true,
       });
 
       await Notifications.setNotificationChannelAsync('game_updates', {
@@ -135,7 +181,15 @@ class PushNotificationService {
       }
       
       try {
-        const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+        // Try multiple ways to get the project ID
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 
+                         Constants.easConfig?.projectId ?? 
+                         'b189d504-5441-4ee4-977f-2ad58d77659d';
+        
+        console.log('PushNotificationService: Constants.expoConfig:', Constants.expoConfig);
+        console.log('PushNotificationService: Constants.easConfig:', Constants.easConfig);
+        console.log('PushNotificationService: Resolved projectId:', projectId);
+        
         if (!projectId) {
           throw new Error('Project ID not found');
         }
@@ -144,15 +198,72 @@ class PushNotificationService {
           projectId,
         })).data;
         console.log('PushNotificationService: Got Expo push token:', token);
+        console.log('PushNotificationService: Project ID used:', projectId);
       } catch (error) {
         console.error('PushNotificationService: Failed to get Expo push token:', error);
-        return;
+        return null;
       }
     } else {
-      Alert.alert('Must use physical device for Push Notifications');
+      console.log('PushNotificationService: Must use physical device for Push Notifications');
+      return null;
     }
 
     return token;
+  }
+
+  /**
+   * Refresh push token on app start and save to Firestore if changed
+   */
+  async refreshTokenIfNeeded(userId) {
+    if (!userId) {
+      console.log('PushNotificationService: No userId provided for token refresh');
+      return null;
+    }
+
+    // Check if we need to refresh the token
+    const now = Date.now();
+    if (this.tokenRefreshPromise) {
+      return this.tokenRefreshPromise;
+    }
+
+    if (now - this.lastTokenRefresh < this.tokenRefreshInterval && this.expoPushToken) {
+      console.log('PushNotificationService: Token refresh not needed yet');
+      return this.expoPushToken;
+    }
+
+    this.tokenRefreshPromise = this._performTokenRefresh(userId);
+    return this.tokenRefreshPromise;
+  }
+
+  async _performTokenRefresh(userId) {
+    try {
+      console.log('PushNotificationService: Refreshing push token...');
+      
+      const newToken = await this.registerForPushNotificationsAsync();
+      if (newToken && newToken !== this.expoPushToken) {
+        console.log('PushNotificationService: Token changed, updating...');
+        this.expoPushToken = newToken;
+        this.lastTokenRefresh = Date.now();
+        
+        // Save to Firestore asynchronously
+        this.savePushTokenToFirestore(userId, newToken).catch(error => {
+          console.error('PushNotificationService: Failed to save refreshed token:', error);
+        });
+        
+        return newToken;
+      } else if (newToken) {
+        console.log('PushNotificationService: Token unchanged');
+        this.lastTokenRefresh = Date.now();
+        return newToken;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('PushNotificationService: Token refresh failed:', error);
+      return null;
+    } finally {
+      this.tokenRefreshPromise = null;
+    }
   }
 
   /**
@@ -162,6 +273,7 @@ class PushNotificationService {
     try {
       await setDoc(doc(db, 'users', userId), {
         expoPushToken: token,
+        pushToken: token, // Also save as pushToken for compatibility
         pushTokenUpdatedAt: new Date().toISOString(),
       }, { merge: true });
       console.log('PushNotificationService: Saved push token to Firestore');
@@ -179,7 +291,7 @@ class PushNotificationService {
     try {
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (userDoc.exists()) {
-        return userDoc.data().expoPushToken || null;
+        return userDoc.data().expoPushToken || userDoc.data().pushToken || null;
       }
       return null;
     } catch (error) {
@@ -189,18 +301,106 @@ class PushNotificationService {
   }
 
   /**
-   * Send push notification using Expo's push notification service
+   * Send push notification using Expo's push notification service (non-blocking)
    */
   async sendPushNotification(toUserId, title, body, data = {}) {
+    console.log('PushNotificationService: sendPushNotification called:', { toUserId, title, body, data });
+    
+    // Create a unique key for deduplication
+    const notificationKey = `${toUserId}_${title}_${body}_${JSON.stringify(data)}`;
+    
+    // Check if we've already sent this notification recently (within 5 minutes)
+    const now = Date.now();
+    const recentNotifications = this.notificationQueue.filter(n => 
+      n.notificationKey === notificationKey && 
+      (now - n.timestamp) < 5 * 60 * 1000 // 5 minutes
+    );
+    
+    if (recentNotifications.length > 0) {
+      console.log('PushNotificationService: Duplicate notification detected, skipping:', notificationKey);
+      return Promise.resolve(null);
+    }
+    
+    // Add to queue for throttling
+    return new Promise((resolve) => {
+      this.notificationQueue.push({
+        toUserId,
+        title,
+        body,
+        data,
+        resolve,
+        timestamp: now,
+        notificationKey
+      });
+      
+      console.log('PushNotificationService: Added to queue. Queue length:', this.notificationQueue.length);
+      
+      // Process queue asynchronously
+      this._processNotificationQueue();
+    });
+  }
+
+  /**
+   * Process notification queue with throttling (non-blocking)
+   */
+  async _processNotificationQueue() {
+    if (this.isProcessingQueue || this.notificationQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    // Process one notification at a time to avoid blocking
+    const processNext = async () => {
+      if (this.notificationQueue.length === 0) {
+        this.isProcessingQueue = false;
+        return;
+      }
+
+      const now = Date.now();
+      const timeSinceLastNotification = now - this.lastNotificationTime;
+      
+      // Throttle notifications
+      if (timeSinceLastNotification < this.minNotificationInterval) {
+        const delay = this.minNotificationInterval - timeSinceLastNotification;
+        setTimeout(processNext, delay);
+        return;
+      }
+
+      const notification = this.notificationQueue.shift();
+      if (notification) {
+        try {
+          await this._sendSingleNotification(notification);
+        } catch (error) {
+          console.error('PushNotificationService: Error processing notification:', error);
+          notification.resolve(null);
+        }
+      }
+
+      // Process next notification after a small delay to prevent blocking
+      setTimeout(processNext, 10);
+    };
+
+    processNext();
+  }
+
+  /**
+   * Send a single notification (non-blocking with timeout)
+   */
+  async _sendSingleNotification({ toUserId, title, body, data, resolve }) {
     try {
+      console.log('PushNotificationService: _sendSingleNotification called for user:', toUserId);
+      
       // Get the recipient's push token
       const pushToken = await this.getUserPushToken(toUserId);
+      console.log('PushNotificationService: Retrieved push token:', pushToken ? 'Found' : 'Not found');
       
       if (!pushToken) {
         console.log('PushNotificationService: No push token found for user:', toUserId);
         // Still save to Firestore for in-app notifications
         await this.saveNotificationToFirestore(toUserId, title, body, data);
-        return null;
+        resolve(null);
+        return;
       }
 
       // Determine appropriate channel based on notification type
@@ -211,7 +411,7 @@ class PushNotificationService {
         channelId = 'game_updates';
       }
 
-      // Send push notification via Expo's service
+      // Send push notification via Expo's service with timeout
       const message = {
         to: pushToken,
         sound: 'default',
@@ -220,37 +420,67 @@ class PushNotificationService {
         data: data,
         priority: 'high',
         channelId: channelId,
-        badge: 1, // Set badge count
+        // Do not force a badge increment on each push; let the app manage badges
       };
 
-      const response = await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Accept-encoding': 'gzip, deflate',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(message),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
 
-      const result = await response.json();
-      
-      if (result.data && result.data[0] && result.data[0].status === 'ok') {
-        console.log('PushNotificationService: Push notification sent successfully');
-        // Also save to Firestore for in-app notifications
-        await this.saveNotificationToFirestore(toUserId, title, body, data);
-        return result.data[0].id;
-      } else {
-        console.error('PushNotificationService: Failed to send push notification:', result);
+      try {
+        console.log('PushNotificationService: Sending message to Expo:', JSON.stringify(message, null, 2));
+        
+        const response = await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Accept-encoding': 'gzip, deflate',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(message),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        console.log('PushNotificationService: Expo response status:', response.status);
+        
+        const result = await response.json();
+        console.log('PushNotificationService: Expo response:', JSON.stringify(result, null, 2));
+        
+        if (result.data && result.data[0] && result.data[0].status === 'ok') {
+          console.log('PushNotificationService: Push notification sent successfully');
+          // Do not duplicate successful pushes into Firestore to avoid flooding in-app notifications
+          resolve(result.data[0].id);
+        } else {
+          console.error('PushNotificationService: Failed to send push notification:', result);
+          // Fallback to Firestore notification
+          this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
+            console.error('PushNotificationService: Failed to save to Firestore:', error);
+          });
+          resolve(null);
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.error('PushNotificationService: Request timeout after', this.requestTimeout, 'ms');
+        } else {
+          console.error('PushNotificationService: Fetch error:', fetchError);
+        }
+        
         // Fallback to Firestore notification
-        await this.saveNotificationToFirestore(toUserId, title, body, data);
-        return null;
+        this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
+          console.error('PushNotificationService: Failed to save to Firestore:', error);
+        });
+        resolve(null);
       }
+
+      this.lastNotificationTime = Date.now();
     } catch (error) {
       console.error('PushNotificationService: Error sending push notification:', error);
       // Fallback to Firestore notification
-      await this.saveNotificationToFirestore(toUserId, title, body, data);
-      return null;
+      this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
+        console.error('PushNotificationService: Failed to save to Firestore:', error);
+      });
+      resolve(null);
     }
   }
 
@@ -357,9 +587,12 @@ class PushNotificationService {
   }
 
   /**
-   * Set up notification listeners
+   * Set up notification listeners with safe navigation
    */
   setupNotificationListeners() {
+    // Clean up existing listeners first
+    this.cleanup();
+
     // Listener for notifications received while app is running
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
       console.log('PushNotificationService: Notification received:', notification);
@@ -370,17 +603,23 @@ class PushNotificationService {
       console.log('PushNotificationService: Notification response:', response);
       const data = response.notification.request.content.data;
       
-      // Handle different notification types
-      if (data.type === 'challenge') {
-        // Navigate to challenges screen
-        this.handleChallengeNotification(data);
-      } else if (data.type === 'friend_request') {
-        // Navigate to friend requests screen
-        this.handleFriendRequestNotification(data);
-      } else if (data.type === 'game_move' || data.type === 'game_completed') {
-        // Navigate to game screen
-        this.handleGameNotification(data);
-      }
+      // Use InteractionManager to ensure safe navigation
+      InteractionManager.runAfterInteractions(() => {
+        try {
+          // Handle different notification types
+          if (data.type === 'challenge') {
+            this.handleChallengeNotification(data);
+          } else if (data.type === 'friend_request') {
+            this.handleFriendRequestNotification(data);
+          } else if (data.type === 'game_move' || data.type === 'game_completed') {
+            this.handleGameNotification(data);
+          } else {
+            console.log('PushNotificationService: Unknown notification type:', data.type);
+          }
+        } catch (error) {
+          console.error('PushNotificationService: Error handling notification response:', error);
+        }
+      });
     });
   }
 
@@ -388,43 +627,121 @@ class PushNotificationService {
    * Handle challenge notification tap
    */
   handleChallengeNotification(data) {
-    // This would typically use navigation service
     console.log('PushNotificationService: Handling challenge notification:', data);
-    // NavigationService.navigate('PendingChallenges');
+    
+    // Use setTimeout to ensure navigation happens after current execution
+    setTimeout(() => {
+      try {
+        // This would typically use navigation service
+        // For now, we'll just log - navigation should be handled by the app's navigation system
+        console.log('PushNotificationService: Should navigate to PendingChallenges');
+      } catch (error) {
+        console.error('PushNotificationService: Error handling challenge notification:', error);
+      }
+    }, 100);
   }
 
   /**
    * Handle friend request notification tap
    */
   handleFriendRequestNotification(data) {
-    // This would typically use navigation service
     console.log('PushNotificationService: Handling friend request notification:', data);
-    // NavigationService.navigate('FriendRequests');
+    
+    // Use setTimeout to ensure navigation happens after current execution
+    setTimeout(() => {
+      try {
+        // This would typically use navigation service
+        // For now, we'll just log - navigation should be handled by the app's navigation system
+        console.log('PushNotificationService: Should navigate to FriendRequests');
+      } catch (error) {
+        console.error('PushNotificationService: Error handling friend request notification:', error);
+      }
+    }, 100);
   }
 
   /**
    * Handle game notification tap
    */
   handleGameNotification(data) {
-    // This would typically use navigation service
     console.log('PushNotificationService: Handling game notification:', data);
-    // NavigationService.navigate('Game', { gameId: data.gameId });
+    
+    // Use setTimeout to ensure navigation happens after current execution
+    setTimeout(() => {
+      try {
+        // This would typically use navigation service
+        // For now, we'll just log - navigation should be handled by the app's navigation system
+        console.log('PushNotificationService: Should navigate to Game with gameId:', data.gameId);
+      } catch (error) {
+        console.error('PushNotificationService: Error handling game notification:', error);
+      }
+    }, 100);
   }
 
   /**
-   * Clean up listeners
+   * Clean up listeners and clear queue
    */
   cleanup() {
     if (this.notificationListener) {
       Notifications.removeNotificationSubscription(this.notificationListener);
+      this.notificationListener = null;
     }
     if (this.responseListener) {
       Notifications.removeNotificationSubscription(this.responseListener);
+      this.responseListener = null;
+    }
+    
+    // Clear notification queue
+    this.notificationQueue = [];
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Test function to debug push notifications
+   */
+  async testPushNotification(userId) {
+    console.log('PushNotificationService: Testing push notification for user:', userId);
+    
+    // Test getting our own token
+    const ourToken = this.expoPushToken;
+    console.log('PushNotificationService: Our push token:', ourToken);
+    
+    // Test getting user's token
+    const userToken = await this.getUserPushToken(userId);
+    console.log('PushNotificationService: User push token:', userToken);
+    
+    // Test sending a notification to ourselves
+    if (ourToken) {
+      console.log('PushNotificationService: Sending test notification to ourselves...');
+      return await this.sendPushNotification(userId, 'Test Notification', 'This is a test notification', { type: 'test' });
+    } else {
+      console.log('PushNotificationService: No push token available for testing');
+      return null;
     }
   }
 
   /**
-   * Test push notification
+   * Clear notification queue
+   */
+  clearNotificationQueue() {
+    console.log('PushNotificationService: Clearing notification queue');
+    this.notificationQueue = [];
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Get queue status for debugging
+   */
+  getQueueStatus() {
+    return {
+      queueLength: this.notificationQueue.length,
+      isProcessing: this.isProcessingQueue,
+      lastNotificationTime: this.lastNotificationTime,
+      isInitialized: this.isInitialized
+    };
+  }
+
+  /**
+   * Test push notification (non-blocking)
    */
   async sendTestNotification() {
     if (!this.expoPushToken) {
@@ -433,32 +750,22 @@ class PushNotificationService {
     }
 
     try {
-      const message = {
-        to: this.expoPushToken,
-        sound: 'default',
-        title: '🧪 Test Notification',
-        body: 'This is a test push notification from WhatWord!',
-        data: { type: 'test' },
-      };
-
-      const response = await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Accept-encoding': 'gzip, deflate',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(message),
-      });
-
-      const result = await response.json();
-      console.log('PushNotificationService: Test notification result:', result);
-      return result.data && result.data[0] && result.data[0].status === 'ok';
+      // Use the non-blocking send method
+      const result = await this.sendPushNotification(
+        'test_user', // This would be the current user's ID in real usage
+        '🧪 Test Notification',
+        'This is a test push notification from WhatWord!',
+        { type: 'test' }
+      );
+      
+      console.log('PushNotificationService: Test notification queued:', result);
+      return true;
     } catch (error) {
       console.error('PushNotificationService: Test notification failed:', error);
       return false;
     }
   }
+
 }
 
 // Export singleton instance

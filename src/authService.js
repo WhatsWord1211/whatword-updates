@@ -1,5 +1,6 @@
 import { auth } from './firebase';
 import { signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getNotificationService } from './notificationService';
 
 class AuthService {
   constructor() {

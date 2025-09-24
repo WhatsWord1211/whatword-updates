@@ -29,13 +29,16 @@ if (isExpoGo) {
 
 // Test Ad Unit IDs (Google's official test INTERSTITIAL ID)
 const AD_UNIT_IDS = {
-  INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712'
+  INTERSTITIAL: Platform.OS === 'ios' 
+    ? 'ca-app-pub-3940256099942544/4411468910' // iOS test interstitial
+    : 'ca-app-pub-3940256099942544/1033173712'  // Android test interstitial
 };
 
 class AdService {
   constructor() {
     this.interstitialAd = null;
     this.isInitialized = false;
+    this.isAdLoaded = false;
     this.adFrequency = 1; // Show ad after every X games (1 = every game)
     this.gamesPlayed = 0;
     
@@ -93,6 +96,7 @@ class AdService {
       // Add event listeners
       this.interstitialAd.addAdEventListener('loaded', () => {
         console.log('AdService: Interstitial ad loaded successfully');
+        this.isAdLoaded = true;
       });
 
       this.interstitialAd.addAdEventListener('closed', () => {
@@ -127,8 +131,6 @@ class AdService {
       // Check if AdMob is available first
       if (!InterstitialAd || !this.interstitialAd) {
         console.log('AdService: AdMob not available, skipping ad');
-        console.log('AdService: InterstitialAd class:', !!InterstitialAd);
-        console.log('AdService: interstitialAd instance:', !!this.interstitialAd);
         return true; // Return true so game flow continues
       }
 
@@ -145,10 +147,34 @@ class AdService {
       }
 
       console.log('AdService: Attempting to show interstitial ad');
+      console.log('AdService: isAdLoaded:', this.isAdLoaded);
       
-      // Simple approach - just try to show the ad (like hint method)
+      // iOS-specific: Check if ad is ready before showing
+      if (Platform.OS === 'ios') {
+        if (!this.isAdLoaded) {
+          console.log('AdService: iOS - Ad not loaded yet, skipping to prevent failure');
+          return true;
+        }
+        
+        // Add longer delay for iOS to ensure UI is stable and prevent freezing
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Double-check ad is still loaded after delay
+        if (!this.isAdLoaded) {
+          console.log('AdService: iOS - Ad no longer loaded after delay, skipping');
+          return true;
+        }
+      }
+      
+      // Try to show the ad
       try {
-        await this.interstitialAd.show();
+        // iOS-specific: Add timeout to prevent hanging
+        const showAdPromise = this.interstitialAd.show();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Ad show timeout')), 10000) // 10 second timeout
+        );
+        
+        await Promise.race([showAdPromise, timeoutPromise]);
         console.log('AdService: Successfully showed interstitial ad');
         return true;
       } catch (showError) {
@@ -158,7 +184,6 @@ class AdService {
       
     } catch (error) {
       console.error('AdService: Failed to show interstitial ad:', error);
-      console.error('AdService: Error details:', error.message, error.stack);
       return true; // Return true so game flow continues
     }
   }
@@ -178,6 +203,22 @@ class AdService {
       }
 
       console.log('AdService: Attempting to show interstitial ad for hint');
+      
+      // iOS-specific: Add delay and checks for hint ads too
+      if (Platform.OS === 'ios') {
+        if (!this.isAdLoaded) {
+          console.log('AdService: iOS - Ad not loaded for hint, skipping');
+          return true;
+        }
+        
+        // Add small delay for iOS hint ads
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        if (!this.isAdLoaded) {
+          console.log('AdService: iOS - Ad no longer loaded after delay for hint, skipping');
+          return true;
+        }
+      }
       
       // Simple approach - just try to show the ad
       try {
@@ -212,6 +253,38 @@ class AdService {
   // Check if ads are ready
   areAdsReady() {
     return this.isInitialized && this.interstitialAd;
+  }
+
+  // Preload ad specifically for game completion (iOS optimization)
+  async preloadGameCompletionAd() {
+    try {
+      console.log('AdService: Preloading game completion ad...');
+      
+      if (!this.isInitialized || !this.interstitialAd) {
+        console.log('AdService: Cannot preload - not initialized');
+        return false;
+      }
+
+      // Force reload the ad to ensure it's fresh
+      this.loadInterstitialAd();
+      
+      // Wait a bit for the ad to load with timeout to prevent infinite loop
+      let attempts = 0;
+      const maxAttempts = 20; // Reduced from 50 to 2 seconds max
+      const checkInterval = 100; // 100ms intervals
+      
+      while (!this.isAdLoaded && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        attempts++;
+      }
+      
+      console.log('AdService: Game completion ad preloaded:', this.isAdLoaded, `(attempts: ${attempts})`);
+      return this.isAdLoaded;
+      
+    } catch (error) {
+      console.error('AdService: Failed to preload game completion ad:', error);
+      return false;
+    }
   }
 }
 

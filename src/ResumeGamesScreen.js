@@ -290,213 +290,137 @@ const ResumeGamesScreen = () => {
 
   const loadActiveAndWaitingGames = async (userId) => {
     try {
-      // Query only the current user's games to avoid permission issues and reduce load
-      const gamesQuery1 = query(
+      // Simplified query - only use playerIds to avoid conflicts
+      const gamesQuery = query(
         collection(db, 'games'),
         where('type', '==', 'pvp'),
         where('playerIds', 'array-contains', userId)
       );
-      const gamesQuery2 = query(
-        collection(db, 'games'),
-        where('type', '==', 'pvp'),
-        where('players', 'array-contains', userId)
-      );
 
-      const handleActiveSnapshot = (docs1, docs2) => {
-        const totalDocs = (docs1 ? docs1.length : 0) + (docs2 ? docs2.length : 0);
-        const activeGames = [];
-        const waitingGames = [];
+      const unsubscribeActive = onSnapshot(gamesQuery, (snapshot) => {
+        try {
+          const activeGames = [];
+          const waitingGames = [];
+          const completedPendingResults = [];
 
-        const uniqueDocs = new Map();
-        docs1.forEach(d => uniqueDocs.set(d.id, d));
-        docs2.forEach(d => uniqueDocs.set(d.id, d));
+          snapshot.docs.forEach(docSnap => {
+            const gameData = docSnap.data();
+            const gameId = docSnap.id;
+            const playersArray = gameData.playerIds || [];
+            if (!playersArray.includes(userId)) return;
 
-        Array.from(uniqueDocs.values()).forEach(docSnap => {
-          const gameData = docSnap.data();
-          const gameId = docSnap.id;
-          const playersArray = gameData.playerIds || gameData.players || [];
-          if (!playersArray.includes(userId)) return;
+            const playerIndex = playersArray.indexOf(userId);
+            const opponentIndex = playerIndex === 0 ? 1 : 0;
+            const opponentUid = playersArray[opponentIndex];
+            if (!opponentUid) return;
 
-          // Skip abandoned and completed in this list; completed are handled separately
-          if (gameData.status === 'abandoned' || gameData.status === 'completed') return;
+            const isPlayer1 = userId === playersArray[0];
+            const currentPlayerSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
+            const opponentSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
 
-          const playerIndex = playersArray.indexOf(userId);
-          const opponentIndex = playerIndex === 0 ? 1 : 0;
-          const opponentUid = playersArray[opponentIndex];
-          if (!opponentUid) return;
+            const base = {
+              gameId: docSnap.id, // Use the document ID as gameId
+              opponent: 'Loading...',
+              opponentUid,
+              wordLength: gameData.wordLength || 4,
+              lastActivity: gameData.lastActivity || gameData.createdAt,
+              gameMode: 'pvp',
+              gameStatus: gameData.status,
+              currentPlayerSolved: !!currentPlayerSolved,
+              opponentSolved: !!opponentSolved,
+              isMyTurn: !currentPlayerSolved
+            };
 
-          const isPlayer1 = userId === playersArray[0];
-          const currentPlayerSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
-          const opponentSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
-
-          const base = {
-            gameId,
-            opponent: 'Loading...',
-            opponentUid,
-            wordLength: gameData.wordLength || 4,
-            lastActivity: gameData.lastActivity || gameData.createdAt,
-            gameMode: 'pvp',
-            gameStatus: gameData.status,
-            currentPlayerSolved: !!currentPlayerSolved,
-            opponentSolved: !!opponentSolved,
-            // If status is waiting_for_opponent and I haven't solved, it's still my turn to play
-            isMyTurn: gameData.status === 'waiting_for_opponent' ? !currentPlayerSolved : !currentPlayerSolved
-          };
-
-          if (gameData.status === 'waiting_for_opponent') {
-            if (currentPlayerSolved && !opponentSolved) {
-              waitingGames.push({ ...base, gameType: 'waiting_for_opponent' });
-            } else {
-              // Opponent solved or neither solved: show as active for me (I can still play)
+            if (gameData.status === 'completed') {
+              const resultsSeenBy = Array.isArray(gameData.resultsSeenBy) ? gameData.resultsSeenBy : [];
+              if (!resultsSeenBy.includes(userId)) {
+                completedPendingResults.push({
+                  ...base,
+                  gameType: 'completed_pending_results'
+                });
+              }
+            } else if (gameData.status === 'waiting_for_opponent') {
+              if (currentPlayerSolved && !opponentSolved) {
+                waitingGames.push({ ...base, gameType: 'waiting_for_opponent' });
+              } else {
+                activeGames.push({
+                  ...base,
+                  gameType: 'active_game',
+                  message: base.isMyTurn ? 'Your turn' : 'Waiting'
+                });
+              }
+            } else if (gameData.status === 'active' || gameData.status === 'ready') {
               activeGames.push({
                 ...base,
                 gameType: 'active_game',
-                message: base.isMyTurn ? 'Your turn' : 'Waiting'
+                message: currentPlayerSolved ? 'Waiting for opponent' : (base.isMyTurn ? 'Your turn' : 'Waiting')
               });
             }
-          } else if (gameData.status === 'active' || gameData.status === 'ready') {
-            activeGames.push({
-              ...base,
-              gameType: 'active_game',
-              message: currentPlayerSolved ? 'Waiting for opponent' : (base.isMyTurn ? 'Your turn' : 'Waiting')
-            });
-          }
-        });
-
-        setPvpGames(activeGames);
-        setWaitingForOpponentGames(waitingGames);
-
-        // Populate opponent usernames
-        [...activeGames, ...waitingGames].forEach(async (g) => {
-          try {
-            const opponentDoc = await getDoc(doc(db, 'users', g.opponentUid));
-            if (opponentDoc.exists()) {
-              const opponentUsername = opponentDoc.data().username || 'Unknown Player';
-              if (g.gameType === 'waiting_for_opponent') {
-                setWaitingForOpponentGames(prev => prev.map(x => x.gameId === g.gameId ? { ...x, opponent: opponentUsername } : x));
-              } else {
-                setPvpGames(prev => prev.map(x => x.gameId === g.gameId ? { ...x, opponent: opponentUsername } : x));
-              }
-            }
-          } catch (e) {
-            console.error('Failed to get opponent username:', e);
-          }
-        });
-      };
-
-      let activeSnap1 = null;
-      let activeSnap2 = null;
-
-      const unsubscribeActive1 = onSnapshot(gamesQuery1, (snapshot) => {
-        activeSnap1 = snapshot.docs;
-        handleActiveSnapshot(activeSnap1 || [], activeSnap2 || []);
-      }, (error) => {
-        console.error('ResumeGamesScreen: Error in active games snapshot (playerIds):', error);
-      });
-
-      const unsubscribeActive2 = onSnapshot(gamesQuery2, (snapshot) => {
-        activeSnap2 = snapshot.docs;
-        handleActiveSnapshot(activeSnap1 || [], activeSnap2 || []);
-      }, (error) => {
-        console.error('ResumeGamesScreen: Error in active games snapshot (players):', error);
-      });
-
-      // Separate listener for completed games to find unseen results
-      const completedQuery1 = query(
-        collection(db, 'games'),
-        where('type', '==', 'pvp'),
-        where('playerIds', 'array-contains', userId),
-        where('status', '==', 'completed')
-      );
-      const completedQuery2 = query(
-        collection(db, 'games'),
-        where('type', '==', 'pvp'),
-        where('players', 'array-contains', userId),
-        where('status', '==', 'completed')
-      );
-
-      const handleCompletedSnapshot = (docs1, docs2) => {
-        const completedPendingResults = [];
-
-        const uniqueDocs = new Map();
-        docs1.forEach(d => uniqueDocs.set(d.id, d));
-        docs2.forEach(d => uniqueDocs.set(d.id, d));
-
-        Array.from(uniqueDocs.values()).forEach(docSnap => {
-          const gameData = docSnap.data();
-          if (gameData.status !== 'completed') return;
-          const playersArray = gameData.playerIds || gameData.players || [];
-          if (!playersArray.includes(userId)) return;
-          const resultsSeenBy = Array.isArray(gameData.resultsSeenBy) ? gameData.resultsSeenBy : [];
-          if (resultsSeenBy.includes(userId)) return; // already seen
-
-          const opponentUid = playersArray[playersArray[0] === userId ? 1 : 0];
-          completedPendingResults.push({
-            gameId: docSnap.id,
-            opponent: 'Loading...',
-            opponentUid,
-            wordLength: gameData.wordLength || 4,
-            lastActivity: gameData.lastActivity || gameData.completedAt || gameData.createdAt,
-            gameMode: 'pvp',
-            gameStatus: 'completed',
-            currentPlayerSolved: true,
-            opponentSolved: true,
-            isMyTurn: false,
-            gameType: 'completed_pending_results'
           });
-        });
 
-        // Sort newest first for visibility
-        completedPendingResults.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-        setCompletedUnseenGames(completedPendingResults);
+          // Sort completed games newest first
+          completedPendingResults.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
 
-        // Populate opponent usernames
-        completedPendingResults.forEach(async (g) => {
-          try {
-            const opponentDoc = await getDoc(doc(db, 'users', g.opponentUid));
-            if (opponentDoc.exists()) {
-              const opponentUsername = opponentDoc.data().username || 'Unknown Player';
-              setCompletedUnseenGames(prev => prev.map(x => x.gameId === g.gameId ? { ...x, opponent: opponentUsername } : x));
+          setPvpGames(activeGames);
+          setWaitingForOpponentGames(waitingGames);
+          setCompletedUnseenGames(completedPendingResults);
+
+          // Populate opponent usernames asynchronously
+          const allGames = [...activeGames, ...waitingGames, ...completedPendingResults];
+          allGames.forEach(async (g) => {
+            try {
+              const opponentDoc = await getDoc(doc(db, 'users', g.opponentUid));
+              if (opponentDoc.exists()) {
+                const opponentUsername = opponentDoc.data().username || 'Unknown Player';
+                
+                if (g.gameType === 'waiting_for_opponent') {
+                  setWaitingForOpponentGames(prev => 
+                    prev.map(x => x.gameId === g.gameId ? { ...x, opponent: opponentUsername } : x)
+                  );
+                } else if (g.gameType === 'completed_pending_results') {
+                  setCompletedUnseenGames(prev => 
+                    prev.map(x => x.gameId === g.gameId ? { ...x, opponent: opponentUsername } : x)
+                  );
+                } else {
+                  setPvpGames(prev => 
+                    prev.map(x => x.gameId === g.gameId ? { ...x, opponent: opponentUsername } : x)
+                  );
+                }
+              }
+            } catch (e) {
+              console.error('Failed to get opponent username:', e);
             }
-          } catch (e) {
-            console.error('Failed to get opponent username:', e);
-          }
-        });
-      };
-
-      let completedSnap1 = null;
-      let completedSnap2 = null;
-
-      const unsubscribeCompleted1 = onSnapshot(completedQuery1, (snapshot) => {
-        completedSnap1 = snapshot.docs;
-        handleCompletedSnapshot(completedSnap1 || [], completedSnap2 || []);
+          });
+        } catch (error) {
+          console.error('ResumeGamesScreen: Error processing games snapshot:', error);
+        }
       }, (error) => {
-        console.error('ResumeGamesScreen: Error in completed games snapshot (playerIds):', error);
+        console.error('ResumeGamesScreen: Error in games snapshot:', error);
+        setPvpGames([]);
+        setWaitingForOpponentGames([]);
+        setCompletedUnseenGames([]);
       });
 
-      const unsubscribeCompleted2 = onSnapshot(completedQuery2, (snapshot) => {
-        completedSnap2 = snapshot.docs;
-        handleCompletedSnapshot(completedSnap1 || [], completedSnap2 || []);
-      }, (error) => {
-        console.error('ResumeGamesScreen: Error in completed games snapshot (players):', error);
-      });
-
-      // Store unsubscribe function for cleanup
       return () => {
-        unsubscribeActive1 && unsubscribeActive1();
-        unsubscribeActive2 && unsubscribeActive2();
-        unsubscribeCompleted1 && unsubscribeCompleted1();
-        unsubscribeCompleted2 && unsubscribeCompleted2();
+        unsubscribeActive && unsubscribeActive();
       };
     } catch (error) {
       console.error('Failed to load active games:', error);
       setPvpGames([]);
       setWaitingForOpponentGames([]);
+      setCompletedUnseenGames([]);
     }
   };
 
   const handleGameAction = (game) => {
     try {
+      // Validate game object
+      if (!game || !game.gameType) {
+        console.error('Invalid game object:', game);
+        Alert.alert('Error', 'Invalid game data. Please try again.');
+        return;
+      }
+
       playSound('chime');
       
       switch (game.gameType) {
@@ -509,14 +433,18 @@ const ResumeGamesScreen = () => {
           // Show awaiting acceptance status
           Alert.alert(
             'Challenge Sent',
-            `Challenge sent to ${game.toUsername}. Waiting for their response.`,
+            `Challenge sent to ${game.toUsername || 'Unknown'}. Waiting for their response.`,
             [{ text: 'OK' }]
           );
           break;
           
         case 'active_game':
           // Resume active game
-          navigation.navigate('PvPGame', { gameId: game.gameId });
+          if (game.gameId) {
+            navigation.navigate('PvPGame', { gameId: game.gameId });
+          } else {
+            Alert.alert('Error', 'Game ID not found. Please try again.');
+          }
           break;
           
         case 'waiting_for_opponent':
@@ -528,7 +456,7 @@ const ResumeGamesScreen = () => {
             // Still waiting for opponent
             Alert.alert(
               'Waiting for Opponent',
-              `${game.opponent} is still solving their word. You'll be notified when they finish!`,
+              `${game.opponent || 'Your opponent'} is still solving their word. You'll be notified when they finish!`,
               [{ text: 'OK' }]
             );
           }
@@ -536,11 +464,16 @@ const ResumeGamesScreen = () => {
         
         case 'completed_pending_results':
           // Navigate to PvPGame to show consistent results popup and sound, then archive on OK
-          navigation.navigate('PvPGame', { gameId: game.gameId });
+          if (game.gameId) {
+            navigation.navigate('PvPGame', { gameId: game.gameId });
+          } else {
+            Alert.alert('Error', 'Game ID not found. Please try again.');
+          }
           break;
           
         default:
           console.warn('Unknown game type:', game.gameType);
+          Alert.alert('Error', 'Unknown game type. Please try again.');
       }
     } catch (error) {
       console.error('Failed to handle game action:', error);

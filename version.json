@@ -1,9 +1,10 @@
 {
-  "latestBuildNumber": 16,
-  "versionCode": 16,
-  "versionName": "1.0.1",
-  "releaseDate": "2025-09-21",
-  "updateMessage": "Bug fixes and improvements"
+  "latestBuildNumber": 24,
+  "versionCode": 24,
+  "versionName": "1.0.8",
+  "releaseDate": "2025-01-27",
+  "updateMessage": "iOS fixes, notification improvements, and Hard Mode updates - Fixed iOS game completion and ad issues, improved push notifications, updated Hard Mode unlock requirements"
 }
+
 
 

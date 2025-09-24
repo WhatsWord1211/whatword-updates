@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeContext';
@@ -12,7 +12,6 @@ import { getFeedback, isValidWord } from './gameLogic';
 import styles from './styles';
 import gameService from './gameService';
 import playerProfileService from './playerProfileService';
-import pushNotificationService from './pushNotificationService';
 import ThreeDPurpleRing from './ThreeDPurpleRing';
 import ThreeDGreenDot from './ThreeDGreenDot';
 
@@ -52,7 +51,7 @@ import ThreeDGreenDot from './ThreeDGreenDot';
 const PvPGameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { gameId } = route.params;
+  const { gameId } = route.params || {};
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   
@@ -119,6 +118,23 @@ const PvPGameScreen = () => {
   ];
   
   const getMaxGuesses = () => (game && game.maxAttempts) ? game.maxAttempts : 25;
+
+  // Preload game completion ad when game starts
+  const preloadGameAd = useCallback(async () => {
+    try {
+      console.log('PvPGameScreen: Preloading game completion ad...');
+      await adService.preloadGameCompletionAd();
+    } catch (error) {
+      console.error('PvPGameScreen: Failed to preload game completion ad:', error);
+    }
+  }, []);
+
+  // Preload game completion ad when game starts
+  useEffect(() => {
+    if (game && game.status === 'active') {
+      preloadGameAd();
+    }
+  }, [game, preloadGameAd]);
 
   // Keep refs in sync with state to avoid stale closures inside snapshot listener
   useEffect(() => {
@@ -288,18 +304,14 @@ const PvPGameScreen = () => {
               notificationService.sendGameCompletionNotification(player1Uid, gameId, messageFor(player1Uid)),
               notificationService.sendGameCompletionNotification(player2Uid, gameId, messageFor(player2Uid))
             ]);
-            // Send push notifications for both players in case of tie
-            await Promise.all([
-              pushNotificationService.sendGameCompletedNotification(player1Uid, gameData.player2?.username || 'Opponent', true),
-              pushNotificationService.sendGameCompletedNotification(player2Uid, gameData.player1?.username || 'Opponent', true)
-            ]);
+            // Push notifications removed to prevent freezing
           } else if (firstFinisher && (firstFinisher === player1Uid || firstFinisher === player2Uid)) {
             await notificationService.sendGameCompletionNotification(firstFinisher, gameId, messageFor(firstFinisher));
             // Send push notification to first finisher when game is complete
             const opponentUid = firstFinisher === player1Uid ? player2Uid : player1Uid;
             const opponentUsername = firstFinisher === player1Uid ? gameData.player2?.username : gameData.player1?.username;
             const firstFinisherWon = winnerId === firstFinisher;
-            await pushNotificationService.sendGameCompletedNotification(firstFinisher, opponentUsername || 'Opponent', firstFinisherWon);
+            // Push notification removed to prevent freezing
           }
           // Mark notifications sent
           await updateDoc(gameRef, { notificationsSent: true });
@@ -1045,6 +1057,26 @@ const PvPGameScreen = () => {
     return null;
   };
 
+  // Early return if gameId is missing
+  if (!gameId) {
+    return (
+      <SafeAreaView style={styles.screenContainer}>
+        <View style={styles.errorContainer}>
+          <Text style={[styles.errorTitle, { color: colors.textPrimary }]}>Invalid Game</Text>
+          <Text style={[styles.errorMessage, { color: colors.textSecondary }]}>
+            Game ID is missing. Please try again.
+          </Text>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.buttonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!game || !currentUser) {
     return (
       <SafeAreaView style={styles.screenContainer}>
@@ -1328,7 +1360,7 @@ const PvPGameScreen = () => {
                 }
               })()}
             </Text>
-            <TouchableOpacity
+              <TouchableOpacity
               style={styles.winButtonContainer}
               onPress={async () => {
                 try {
@@ -1339,17 +1371,25 @@ const PvPGameScreen = () => {
                     });
                   }
                   
-                  // Show interstitial ad after acknowledging results
-                  console.log('PvPGameScreen: Attempting to show interstitial ad...');
-                  try {
-                    await adService.showInterstitialAd();
-                    console.log('PvPGameScreen: Ad shown successfully');
-                  } catch (adErr) {
-                    console.error('PvPGameScreen: Failed to show interstitial ad:', adErr);
+                  // Show interstitial safely: on iOS, defer to HomeScreen to present after navigation;
+                  // on Android, fire-and-forget here without blocking UI.
+                  if (Platform.OS !== 'ios') {
+                    // Fire-and-forget on Android; do not await to avoid blocking UI
+                    setTimeout(() => {
+                      try {
+                        adService.showInterstitialAd();
+                      } catch (_) {
+                        // ignore ad errors
+                      }
+                    }, 200);
+                  } else {
+                    // iOS: navigate with flag so HomeScreen shows the ad after navigation
+                    navigation.navigate('Home', { showInterstitialAd: true });
+                    playSound('chime').catch(() => {});
+                    return;
                   }
                   
-                  // Navigate to home after ad (or if ad fails)
-                  console.log('PvPGameScreen: Navigating to home...');
+                  // Navigate to home immediately (Android path)
                   navigation.navigate('Home');
                   playSound('chime').catch(() => {});
                   

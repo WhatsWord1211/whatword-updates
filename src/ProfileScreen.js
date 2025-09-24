@@ -3,12 +3,13 @@ import { View, Text, TouchableOpacity, TextInput, Modal, Alert, ScrollView, Swit
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
 import { playSound } from './soundsUtil';
 import { useTheme } from './ThemeContext';
-import { checkUsernameAvailability } from './usernameValidation';
+import { checkUsernameAvailability, generateUsernameFromEmail } from './usernameValidation';
+import { validateUsernameContent, validateDisplayNameContent } from './profanityFilter';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -28,6 +29,11 @@ const ProfileScreen = () => {
     difficulty: '',
     averageScore: 0
   });
+  const [pvpStats, setPvpStats] = useState({
+    easy: { winPercentage: 0, gamesCount: 0 },
+    regular: { winPercentage: 0, gamesCount: 0 },
+    hard: { winPercentage: 0, gamesCount: 0 }
+  });
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -39,6 +45,39 @@ const ProfileScreen = () => {
 
     return unsubscribe;
   }, []);
+
+  // Load PvP stats when user changes
+  useEffect(() => {
+    if (user) {
+      loadPvpStats(user.uid);
+    }
+  }, [user]);
+
+  // Real-time profile updates
+  useEffect(() => {
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const profileData = docSnapshot.data();
+        setUserProfile(profileData);
+        
+        // Update edited profile if not currently editing
+        if (!isEditing) {
+          setEditedProfile({
+            username: profileData.username || '',
+            displayName: profileData.displayName || '',
+            email: profileData.email || ''
+          });
+        }
+      }
+    }, (error) => {
+      console.error('ProfileScreen: Real-time listener error:', error);
+    });
+
+    return () => unsubscribe();
+  }, [user, isEditing]);
 
   // Monitor profile changes for rank updates
   useEffect(() => {
@@ -63,6 +102,67 @@ const ProfileScreen = () => {
     }
   }, [userProfile, user]);
 
+  const loadPvpStats = async (userId) => {
+    try {
+      // Get all PvP game stats for this user (same logic as Leaderboard)
+      const pvpStatsQuery = query(
+        collection(db, 'gameStats'),
+        where('players', 'array-contains', userId),
+        where('type', '==', 'pvp')
+      );
+      
+      const pvpStatsSnapshot = await getDocs(pvpStatsQuery);
+      const allPvpStats = pvpStatsSnapshot.docs.map(doc => doc.data());
+      
+      const difficulties = ['easy', 'regular', 'hard'];
+      const newPvpStats = {};
+      
+      for (const difficulty of difficulties) {
+        // Filter by difficulty (same logic as Leaderboard)
+        const difficultyFiltered = allPvpStats.filter(stat => {
+          if (!stat) return false;
+          // Prefer wordLength if available (new format)
+          if (stat.wordLength !== undefined) {
+            if (difficulty === 'easy') return stat.wordLength === 4;
+            if (difficulty === 'hard') return stat.wordLength === 6;
+            return stat.wordLength === 5; // regular
+          }
+          // Fallback to difficulty string (legacy)
+          if (stat.difficulty !== undefined) {
+            if (difficulty === 'easy') return stat.difficulty === 'easy';
+            if (difficulty === 'hard') return stat.difficulty === 'hard';
+            return stat.difficulty === 'regular';
+          }
+          return false;
+        });
+
+        const sortedStats = difficultyFiltered
+          .filter(stat => (stat.completedAt || stat.timestamp))
+          .sort((a, b) => new Date(b.completedAt || b.timestamp) - new Date(a.completedAt || a.timestamp))
+          .slice(0, 15);
+
+        let wins = 0;
+        const totalGames = sortedStats.length;
+        for (const gameStats of sortedStats) {
+          if (gameStats.winnerId === userId) {
+            wins++;
+          }
+        }
+
+        const winPercentage = totalGames > 0 ? (wins / totalGames) * 100 : 0;
+        
+        newPvpStats[difficulty] = {
+          winPercentage: winPercentage,
+          gamesCount: totalGames
+        };
+      }
+      
+      setPvpStats(newPvpStats);
+    } catch (error) {
+      console.error('ProfileScreen: Failed to load PvP stats:', error);
+    }
+  };
+
   const loadUserProfile = async (currentUser) => {
     try {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -76,10 +176,11 @@ const ProfileScreen = () => {
         });
       } else {
         // Create profile if it doesn't exist
+        const safeUsername = currentUser.email ? await generateUsernameFromEmail(currentUser.email) : `Player${Math.floor(Math.random() * 10000)}`;
         const newProfile = {
           uid: currentUser.uid,
-          username: currentUser.email ? currentUser.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`,
-          displayName: currentUser.displayName || currentUser.email ? currentUser.email.split('@')[0] : 'Player',
+          username: safeUsername,
+          displayName: currentUser.displayName || safeUsername,
           email: currentUser.email || '',
           createdAt: new Date(),
           lastLogin: new Date(),
@@ -129,8 +230,31 @@ const ProfileScreen = () => {
       const usernameChanged = userProfile.username !== editedProfile.username.trim();
       
       if (usernameChanged) {
-        // Validate username availability
-        const usernameCheck = await checkUsernameAvailability(editedProfile.username.trim(), user.uid);
+        // Check if user is premium (only premium users can change username)
+        if (!userProfile.isPremium) {
+          Alert.alert(
+            'Premium Required', 
+            'Only premium users can change their username. Please upgrade to premium to change your username.',
+            [
+              { text: 'OK', style: 'default' },
+              { text: 'Upgrade', style: 'default', onPress: () => {
+                // TODO: Navigate to premium upgrade screen
+                Alert.alert('Coming Soon', 'Premium upgrade feature will be available soon!');
+              }}
+            ]
+          );
+          return;
+        }
+
+        // Validate username content (profanity filter) - manual edit
+        const usernameContentCheck = validateUsernameContent(editedProfile.username.trim());
+        if (!usernameContentCheck.isValid) {
+          Alert.alert('Username Error', usernameContentCheck.error);
+          return;
+        }
+
+        // Validate username availability (manual edit, so limit to 15 characters)
+        const usernameCheck = await checkUsernameAvailability(editedProfile.username.trim(), user.uid, true);
         
         if (!usernameCheck.isAvailable) {
           Alert.alert('Username Error', usernameCheck.error);
@@ -138,10 +262,17 @@ const ProfileScreen = () => {
         }
       }
 
+      // Validate display name content (profanity filter)
+      const displayNameContentCheck = validateDisplayNameContent(editedProfile.displayName.trim());
+      if (!displayNameContentCheck.isValid) {
+        Alert.alert('Display Name Error', displayNameContentCheck.error);
+        return;
+      }
+
       await updateDoc(doc(db, 'users', user.uid), {
         username: editedProfile.username.trim(),
         displayName: editedProfile.displayName.trim(),
-        email: editedProfile.email.trim()
+        email: editedProfile.email.trim() // Keep email but don't allow changes
       });
 
       setUserProfile(prev => ({
@@ -280,49 +411,6 @@ const ProfileScreen = () => {
     return 'Unranked';
   };
 
-  // Helper function to get level title based on games played and performance
-  const getLevelTitle = () => {
-    if (!userProfile) return 'Level 1 - Beginner';
-    
-    const totalGames = (userProfile.easyGamesPlayed || 0) + 
-                      (userProfile.regularGamesPlayed || 0) + 
-                      (userProfile.hardGamesPlayed || 0) + 
-                      (userProfile.pvpGamesPlayed || 0);
-    
-    const easyAvg = userProfile.easyAverageScore || 0;
-    const regularAvg = userProfile.regularAverageScore || 0;
-    const hardAvg = userProfile.hardAverageScore || 0;
-    
-    // Level 1: Beginner (0-4 games)
-    if (totalGames <= 4) return 'Level 1 - Beginner';
-    
-    // Level 2: Novice (5-9 games)
-    if (totalGames <= 9) return 'Level 2 - Novice';
-    
-    // Level 3: Apprentice (10-19 games)
-    if (totalGames <= 19) return 'Level 3 - Apprentice';
-    
-    // Level 4: Adept (20-39 games)
-    if (totalGames <= 39) return 'Level 4 - Adept';
-    
-    // Level 5: Skilled (40-69 games)
-    if (totalGames <= 69) return 'Level 5 - Skilled';
-    
-    // Level 6: Veteran (70-99 games)
-    if (totalGames <= 99) return 'Level 6 - Veteran';
-    
-    // Level 7: Elite (100-149 games)
-    if (totalGames <= 149) return 'Level 7 - Elite';
-    
-    // Level 8: Master (150-199 games)
-    if (totalGames <= 199) return 'Level 8 - Master';
-    
-    // Level 9: Grandmaster (200-299 games)
-    if (totalGames <= 299) return 'Level 9 - Grandmaster';
-    
-    // Level 10: Legend (300+ games)
-    return 'Level 10 - Legend';
-  };
 
 
 
@@ -342,10 +430,6 @@ const ProfileScreen = () => {
           <View style={styles.rankBadge}>
             <Text style={[styles.rankTitle, { color: colors.textPrimary }]}>🏆 {getRankTitle()}</Text>
             <Text style={[styles.rankSubtitle, { color: colors.textSecondary }]}>Your Current Rank</Text>
-          </View>
-          <View style={styles.levelBadge}>
-            <Text style={[styles.levelTitle, { color: colors.textPrimary }]}>⭐ {getLevelTitle()}</Text>
-            <Text style={[styles.levelSubtitle, { color: colors.textSecondary }]}>Your Current Level</Text>
           </View>
         </View>
 
@@ -384,32 +468,23 @@ const ProfileScreen = () => {
           {/* Easy Difficulty PvP Stats */}
           <View style={styles.difficultyStatsContainer}>
             <Text style={styles.difficultyTitle}>
-              🟢 Easy <Text style={styles.scoreHighlight}>{userProfile?.easyPvpWinPercentage ? userProfile.easyPvpWinPercentage.toFixed(1) : 0}%</Text> Win Rate
+              🟢 Easy <Text style={styles.scoreHighlight}>{pvpStats.easy.winPercentage.toFixed(1)}%</Text> Win Rate
             </Text>
           </View>
 
           {/* Regular Difficulty PvP Stats */}
           <View style={styles.difficultyStatsContainer}>
             <Text style={styles.difficultyTitle}>
-              🟡 Regular <Text style={styles.scoreHighlight}>{userProfile?.regularPvpWinPercentage ? userProfile.regularPvpWinPercentage.toFixed(1) : 0}%</Text> Win Rate
+              🟡 Regular <Text style={styles.scoreHighlight}>{pvpStats.regular.winPercentage.toFixed(1)}%</Text> Win Rate
             </Text>
           </View>
 
           {/* Hard Difficulty PvP Stats */}
           <View style={styles.difficultyStatsContainer}>
             <Text style={styles.difficultyTitle}>
-              🔴 Hard <Text style={styles.scoreHighlight}>{userProfile?.hardPvpWinPercentage ? userProfile.hardPvpWinPercentage.toFixed(1) : 0}%</Text> Win Rate
+              🔴 Hard <Text style={styles.scoreHighlight}>{pvpStats.hard.winPercentage.toFixed(1)}%</Text> Win Rate
             </Text>
           </View>
-
-          {/* Overall PvP Stats (if available) */}
-          {userProfile?.pvpGamesPlayed > 0 && (
-            <View style={styles.difficultyStatsContainer}>
-              <Text style={styles.difficultyTitle}>
-                Overall PvP <Text style={styles.scoreHighlight}>{userProfile?.pvpWinRate || 0}%</Text> Win Rate
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* Profile Information */}
@@ -434,6 +509,7 @@ const ProfileScreen = () => {
                 placeholderTextColor="#9CA3AF"
                 value={editedProfile.username}
                 onChangeText={(text) => setEditedProfile(prev => ({ ...prev, username: text }))}
+                maxLength={15}
               />
               <TextInput
                 style={styles.input}
@@ -441,16 +517,12 @@ const ProfileScreen = () => {
                 placeholderTextColor="#9CA3AF"
                 value={editedProfile.displayName}
                 onChangeText={(text) => setEditedProfile(prev => ({ ...prev, displayName: text }))}
+                maxLength={50}
               />
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                placeholderTextColor="#9CA3AF"
-                value={editedProfile.email}
-                onChangeText={(text) => setEditedProfile(prev => ({ ...prev, email: text }))}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
+              <View style={styles.readOnlyField}>
+                <Text style={styles.readOnlyLabel}>Email (Cannot be changed)</Text>
+                <Text style={styles.readOnlyValue}>{editedProfile.email}</Text>
+              </View>
               <TouchableOpacity
                 style={styles.saveButton}
                 onPress={handleSaveProfile}

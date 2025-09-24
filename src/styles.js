@@ -47,6 +47,28 @@ export default StyleSheet.create({
     borderColor: '#4B5563',
     fontFamily: 'Roboto-Regular',
   },
+  readOnlyField: {
+    width: '100%',
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#1F2937',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  readOnlyLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginBottom: 2,
+  },
+  readOnlyValue: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+  },
 
   firebaseStatus: {
     color: '#9CA3AF',
@@ -1607,20 +1629,6 @@ export default StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  levelBadge: {
-    flex: 1,
-    backgroundColor: '#374151',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#4B5563',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   rankTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -1630,20 +1638,6 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Bold',
   },
   rankSubtitle: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    fontFamily: 'Roboto-Regular',
-  },
-  levelTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#F59E0B',
-    marginBottom: 8,
-    textAlign: 'center',
-    fontFamily: 'Roboto-Bold',
-  },
-  levelSubtitle: {
     fontSize: 14,
     color: '#9CA3AF',
     textAlign: 'center',
@@ -2352,6 +2346,12 @@ export default StyleSheet.create({
     paddingVertical: 10,
   },
   // Error Section Styles
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
   errorSection: {
     width: '100%',
     backgroundColor: '#DC2626',
@@ -2373,6 +2373,13 @@ export default StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 15,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
   },
   retryButton: {
     backgroundColor: '#FFFFFF',

@@ -4,7 +4,7 @@ import { initializeAuth, getReactNativePersistence, GoogleAuthProvider } from 'f
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-// Firebase configuration from app.json extra section
+// Firebase configuration - using app.json extra section (environment variables are loaded via app.json)
 const firebaseConfig = {
   apiKey: Constants.expoConfig.extra.firebaseApiKey,
   authDomain: Constants.expoConfig.extra.firebaseAuthDomain,

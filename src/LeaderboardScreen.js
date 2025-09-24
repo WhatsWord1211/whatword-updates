@@ -56,10 +56,25 @@ const LeaderboardScreen = () => {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        setHardModeUnlocked(userData.hardModeUnlocked || false);
+        
+        // Check if user is premium
+        if (userData.isPremium) {
+          setHardModeUnlocked(true);
+          return;
+        }
+        
+        // Check if user has reached Word Expert rank (Regular mode average ≤ 10 AND 15+ games played)
+        const regularAvg = userData.regularAverageScore || 0;
+        const regularGamesCount = userData.regularGamesCount || 0;
+        if (regularAvg > 0 && regularAvg <= 10 && regularGamesCount >= 15) {
+          setHardModeUnlocked(true);
+        } else {
+          setHardModeUnlocked(false);
+        }
       }
     } catch (error) {
       console.error('LeaderboardScreen: Failed to check hard mode unlock status:', error);
+      setHardModeUnlocked(false);
     }
   };
 
@@ -69,7 +84,7 @@ const LeaderboardScreen = () => {
       // Show alert that hard mode is locked
       Alert.alert(
         'Hard Mode Locked',
-        'You need to win 10 regular mode games to unlock hard mode!',
+        'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
         [{ text: 'OK' }]
       );
       return;
@@ -143,57 +158,38 @@ const LeaderboardScreen = () => {
     try {
       const leaderboardData = [];
       
-      // Get solo games for all friends (including current user) for the selected difficulty
+      // Get solo averages for all friends (including current user) for the selected difficulty
       for (const friend of userFriends) {
         try {
+          // Use the stored average scores from the user profile (same as Profile Screen)
+          let runningAverage = 0;
+          let gamesCount = 0;
           
-          // Use simple query without orderBy to avoid index requirements
-          let leaderboardQuery;
           if (activeDifficulty === 'easy') {
-            leaderboardQuery = query(
-              collection(db, 'leaderboard'),
-              where('userId', '==', friend.uid),
-              where('mode', '==', 'solo'),
-              where('difficulty', '==', 'easy')
-            );
+            runningAverage = friend.easyAverageScore || 0;
+            gamesCount = friend.easyGamesCount || 0;
           } else if (activeDifficulty === 'hard') {
-            leaderboardQuery = query(
-              collection(db, 'leaderboard'),
-              where('userId', '==', friend.uid),
-              where('mode', '==', 'solo'),
-              where('difficulty', '==', 'hard')
-            );
+            runningAverage = friend.hardAverageScore || 0;
+            gamesCount = friend.hardGamesCount || 0;
           } else {
             // Regular difficulty (default)
-            leaderboardQuery = query(
-              collection(db, 'leaderboard'),
-              where('userId', '==', friend.uid),
-              where('mode', '==', 'solo'),
-              where('difficulty', '==', 'regular')
-            );
+            runningAverage = friend.regularAverageScore || 0;
+            gamesCount = friend.regularGamesCount || 0;
           }
           
-          const gamesSnapshot = await getDocs(leaderboardQuery);
-          const recentGames = gamesSnapshot.docs.map(doc => doc.data());
-          
-          if (recentGames.length > 0) {
-            // Sort manually and take last 15 games
-            const sortedGames = recentGames.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
-            const totalAttempts = sortedGames.reduce((sum, game) => sum + game.guesses, 0);
-            const runningAverage = totalAttempts / sortedGames.length;
-            
+          // Only include players who have played games in this difficulty
+          if (runningAverage > 0) {
             leaderboardData.push({
               uid: friend.uid,
               username: friend.username || friend.displayName || 'Unknown Player',
               displayName: friend.displayName || friend.username || 'Unknown Player',
               runningAverage: runningAverage,
-              gamesCount: sortedGames.length,
+              gamesCount: gamesCount,
               totalGames: friend.gamesPlayed || 0
             });
-            
           }
         } catch (error) {
-          console.error(`Failed to get solo games for user ${friend.uid}:`, error);
+          console.error(`Failed to get solo stats for user ${friend.uid}:`, error);
           // Continue with other users even if one fails
         }
       }
@@ -525,7 +521,7 @@ const LeaderboardScreen = () => {
             </Text>
             {!hardModeUnlocked && (
               <Text style={styles.lockedDifficultySubtext}>
-                Win 10 regular games
+                Reach Word Expert rank
               </Text>
             )}
           </TouchableOpacity>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal, ScrollView } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, getDocs, addDoc, getDoc } from 'firebase/firestore';
@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const FriendsManagementScreen = ({ onClearNotifications }) => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   
   // State for different tabs
@@ -522,6 +523,28 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
 
   return (
     <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      {/* Back Button - safe area aware */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          left: 12,
+          top: (insets?.top || 0) + 8,
+          height: 44,
+          minWidth: 44,
+          paddingHorizontal: 10,
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+        }}
+        onPress={() => {
+          try { playSound('backspace').catch(() => {}); } catch (_) {}
+          navigation.goBack();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
+        <Text style={{ color: '#F59E0B', fontSize: 16, fontWeight: '600' }}>‹ Back</Text>
+      </TouchableOpacity>
       <View style={[styles.friendsHeader, { backgroundColor: colors.background }]}>
         <Text style={styles.headerTitle}>
           Friends Management
@@ -713,7 +736,11 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 Loading requests...
               </Text>
             ) : (
-              <View>
+              <ScrollView
+                style={{ width: '100%' }}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+                showsVerticalScrollIndicator={true}
+              >
                 {pendingRequests.length > 0 && (
                   <View>
                     <Text style={[styles.sectionTitle, { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 16 }]}>
@@ -866,13 +893,13 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 )}
                 
                 {pendingRequests.length === 0 && sentRequests.length === 0 && (
-                  <View style={styles.emptyState}>
+                  <View style={[styles.emptyState, { paddingHorizontal: 16 }]}>
                     <Text style={styles.emptyStateText}>
                       No friend requests
                     </Text>
                   </View>
                 )}
-              </View>
+              </ScrollView>
             )}
           </View>
         )}

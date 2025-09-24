@@ -81,9 +81,16 @@ class FriendsService {
 
       // Send push notification
       console.log('🔍 [FriendsService] Sending push notification to:', toUserId);
-      await pushNotificationService.sendFriendRequestNotification(
+      await getNotificationService().sendPushNotification(
         toUserId,
-        userData.username || 'Someone'
+        'Friend Request',
+        `${userData.username || 'Someone'} sent you a friend request`,
+        {
+          type: 'friend_request',
+          fromUserId: this.currentUser.uid,
+          fromUsername: userData.username || 'Someone',
+          timestamp: new Date().toISOString()
+        }
       );
       console.log('🔍 [FriendsService] Push notification sent successfully');
 
@@ -137,7 +144,7 @@ class FriendsService {
       console.log('🔍 [FriendsService] Created mutual friendship');
 
       // Send push notification
-      await pushNotificationService.sendPushNotification(
+      await getNotificationService().sendPushNotification(
         fromUserId,
         'Friend Request Accepted',
         `${userData.username || 'Someone'} accepted your friend request`,
@@ -428,10 +435,19 @@ class FriendsService {
       );
 
       // Send game started push notification
-      await pushNotificationService.sendGameStartedNotification(
+      await getNotificationService().sendPushNotification(
         challengeData.fromUid,
-        userData.username || 'Someone',
-        challengeData.wordLength
+        'Game Started',
+        `Your challenge with ${userData.username || 'Someone'} has started!`,
+        {
+          type: 'game_started',
+          gameId,
+          challengeId,
+          opponentId: this.currentUser.uid,
+          opponentName: userData.username || 'Someone',
+          wordLength: challengeData.wordLength,
+          timestamp: new Date().toISOString()
+        }
       );
 
       return gameId;

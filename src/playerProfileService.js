@@ -405,10 +405,25 @@ class PlayerProfileService {
       const gameStatsSnapshot = await getDocs(gameStatsQuery);
       const allGames = gameStatsSnapshot.docs.map(doc => doc.data());
       
-      // Filter by difficulty and sort by timestamp in memory
+      // Filter by difficulty and sort by timestamp in memory (same logic as Leaderboard)
       const difficultyGames = allGames
-        .filter(game => game.difficulty === difficulty)
-        .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+        .filter(game => {
+          if (!game) return false;
+          // Prefer wordLength if available (new format)
+          if (game.wordLength !== undefined) {
+            if (difficulty === 'easy') return game.wordLength === 4;
+            if (difficulty === 'hard') return game.wordLength === 6;
+            return game.wordLength === 5; // regular
+          }
+          // Fallback to difficulty string (legacy)
+          if (game.difficulty !== undefined) {
+            if (difficulty === 'easy') return game.difficulty === 'easy';
+            if (difficulty === 'hard') return game.difficulty === 'hard';
+            return game.difficulty === 'regular';
+          }
+          return false;
+        })
+        .sort((a, b) => new Date(b.completedAt || b.timestamp) - new Date(a.completedAt || a.timestamp))
         .slice(0, 15); // Take last 15 games
       
       // Add the current game result

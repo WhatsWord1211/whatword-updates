@@ -9,7 +9,8 @@
 	<key>ANDROID_CLIENT_ID</key>
 	<string>1052433400571-nrr57ilqiph0k6fnbicp4rmin3q96irn.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
-	<string>AIzaSyCmoMenxHItEPXbKcD2EgeUN0epUa-UUAs</string>
+	<string>$(FIREBASE_API_KEY_IOS)</string>
+	<!-- Old API key (kept as fallback): AIzaSyCmoMenxHItEPXbKcD2EgeUN0epUa-UUAs -->
 	<key>GCM_SENDER_ID</key>
 	<string>1052433400571</string>
 	<key>PLIST_VERSION</key>
@@ -21,7 +22,7 @@
 	<key>STORAGE_BUCKET</key>
 	<string>whatword-a3f4b.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
-	<false></false>
+	<true></true>
 	<key>IS_ANALYTICS_ENABLED</key>
 	<false></false>
 	<key>IS_APPINVITE_ENABLED</key>

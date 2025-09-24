@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -160,8 +160,9 @@ const GameScreen = () => {
         return false;
       }
       
-      // Check if user has reached Word Expert rank (Regular mode average ≤ 8)
-      if (regularAvg > 0 && regularAvg <= 8) {
+      // Check if user has reached Word Expert rank (Regular mode average ≤ 10 AND 15+ games played)
+      const regularGamesCount = userData.regularGamesCount || 0;
+      if (regularAvg > 0 && regularAvg <= 10 && regularGamesCount >= 15) {
         return true;
       }
       
@@ -172,15 +173,28 @@ const GameScreen = () => {
     }
   };
 
+  // Preload game completion ad when game starts
+  const preloadGameAd = useCallback(async () => {
+    try {
+      console.log('GameScreen: Preloading game completion ad...');
+      await adService.preloadGameCompletionAd();
+    } catch (error) {
+      console.error('GameScreen: Failed to preload game completion ad:', error);
+    }
+  }, []);
+
   // Show interstitial ad after game completion
   const showGameCompletionAd = useCallback(async () => {
     try {
+      console.log('GameScreen: showGameCompletionAd called for gameMode:', gameMode);
+      console.log('GameScreen: Platform:', Platform?.OS);
       // Show ads for all game modes after completion
       await adService.showInterstitialAd();
+      console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
     }
-  }, []);
+  }, [gameMode]);
 
   const handleHint = useCallback(async () => {
     if (hintCount >= 3) {
@@ -447,6 +461,13 @@ const GameScreen = () => {
     };
   }, [gameMode, gameId, isCreator, playerId, gameState, auth.currentUser?.uid]);
 
+  // Preload game completion ad when game starts
+  useEffect(() => {
+    if (gameState === 'playing') {
+      preloadGameAd();
+    }
+  }, [gameState, preloadGameAd]);
+
   // Game state logic effect
   useEffect(() => {
     if (gameMode !== 'pvp' || !gameId || gameState !== 'playing') return;
@@ -683,13 +704,11 @@ const GameScreen = () => {
         if (dots === (wordLength || 5)) {
           setShowCongratsPopup(true);
           await playSound('congratulations').catch(() => {});
-          setTimeout(() => {
-            setShowCongratsPopup(false);
-          }, 2000);
+          
           if (gameMode === 'solo') {
+            // For solo games, set up the completion flow immediately
             setGameState('gameOver');
-            setShowWinPopup(true);
-            await playSound('victory').catch(() => {});
+            
             // Calculate score with hint penalty (each hint = 3 guesses)
             const nonHintGuesses = guesses.filter(guess => !guess.isHint);
             const usedHints = guesses.filter(guess => guess.isHint).length;
@@ -702,6 +721,21 @@ const GameScreen = () => {
               setDifficulty(defaultDifficulty);
             }
             
+            // Show congratulations popup for 2 seconds, then show win popup
+            setTimeout(() => {
+              setShowCongratsPopup(false);
+              setShowWinPopup(true);
+              playSound('victory').catch(() => {});
+            }, 2000);
+          } else {
+            // For non-solo games, just show congratulations popup
+            setTimeout(() => {
+              setShowCongratsPopup(false);
+            }, 2000);
+          }
+          
+          // Save game data for solo games
+          if (gameMode === 'solo') {
             try {
               // Always save to local storage for all users
               try {
@@ -894,7 +928,7 @@ const GameScreen = () => {
       if (!isUnlocked) {
         Alert.alert(
           'Hard Mode Locked 🔒',
-          'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n💎 Getting premium access',
+          'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
@@ -1008,7 +1042,7 @@ const GameScreen = () => {
                 // Show unlock popup for locked hard mode
                 Alert.alert(
                   'Hard Mode Locked 🔒',
-                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play Regular mode games (5 letters)\n• Achieve an average of 8 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
+                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play 15+ Regular mode games (5 letters)\n• Achieve an average of 10 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
@@ -1032,7 +1066,7 @@ const GameScreen = () => {
                 🔒 You need to unlock Hard Mode first
               </Text>
               <Text style={[styles.lockStatusSubtext, { color: colors.textMuted }]}>
-                Reach Word Expert rank or get premium access
+                Play 15+ Regular games with avg ≤10 or get premium
               </Text>
             </View>
           )}
@@ -1264,8 +1298,17 @@ const GameScreen = () => {
                     await showGameCompletionAd();
                     // Clean up completed solo game from saved games
                     await cleanupCompletedSoloGame();
-                    navigation.navigate('Home');
-                    playSound('chime').catch(() => {});
+                    
+                    // iOS-specific: Add small delay before navigation to ensure UI is stable
+                    if (Platform.OS === 'ios') {
+                      setTimeout(() => {
+                        navigation.navigate('Home');
+                        playSound('chime').catch(() => {});
+                      }, 100);
+                    } else {
+                      navigation.navigate('Home');
+                      playSound('chime').catch(() => {});
+                    }
                   }}
                 >
                   <Text style={styles.buttonText}>Main Menu</Text>
@@ -1277,13 +1320,27 @@ const GameScreen = () => {
                       setShowWinPopup(false);
                       // Show ad before starting new game
                       await showGameCompletionAd();
-                      setGuesses([]);
-                      setInputWord('');
-                      setAlphabet(Array(26).fill('unknown'));
-                      setHintCount(0);
-                      setUsedHintLetters([]);
-                      setGameState('playing');
-                      setIsLoading(true);
+                      
+                      // iOS-specific: Add small delay before resetting game state
+                      if (Platform.OS === 'ios') {
+                        setTimeout(() => {
+                          setGuesses([]);
+                          setInputWord('');
+                          setAlphabet(Array(26).fill('unknown'));
+                          setHintCount(0);
+                          setUsedHintLetters([]);
+                          setGameState('playing');
+                          setIsLoading(true);
+                        }, 100);
+                      } else {
+                        setGuesses([]);
+                        setInputWord('');
+                        setAlphabet(Array(26).fill('unknown'));
+                        setHintCount(0);
+                        setUsedHintLetters([]);
+                        setGameState('playing');
+                        setIsLoading(true);
+                      }
                       try {
                         const word = await selectRandomWord(wordLength || 5);
                         const upperWord = word.toUpperCase();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from './firebase';
 import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
@@ -12,6 +12,7 @@ const SetWordScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { challenge, isAccepting } = route.params;
+  const insets = useSafeAreaInsets();
   
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -129,6 +130,28 @@ const SetWordScreen = () => {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
+      {/* Back Button - safe area aware and always visible */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          left: 12,
+          top: (insets?.top || 0) + 8,
+          height: 44,
+          minWidth: 44,
+          paddingHorizontal: 10,
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+        }}
+        onPress={() => {
+          playSound('backspace').catch(() => {});
+          navigation.goBack();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
+        <Text style={{ color: '#F59E0B', fontSize: 16, fontWeight: '600' }}>‹ Back</Text>
+      </TouchableOpacity>
       <View style={styles.difficultyContainer}>
         {showDifficultySelection ? (
           <>

@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Image, StatusBar } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
+import { generateUsernameFromEmail } from './usernameValidation';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './styles';
@@ -18,6 +19,7 @@ import * as Notifications from 'expo-notifications';
 const HomeScreen = () => {
   const navigation = useNavigation();
   const { colors } = useTheme();
+  const route = useRoute();
   const insets = useSafeAreaInsets();
 
   const [navigationReady, setNavigationReady] = useState(false);
@@ -64,10 +66,12 @@ const HomeScreen = () => {
         deleteDoc(doc(db, 'notifications', notificationId))
       );
       await Promise.all(deletePromises);
-      // Dismiss from device center as well
-      try {
-        await Promise.all(notificationIds.map(id => Notifications.dismissNotificationAsync(id)));
-      } catch (_) {}
+      
+      // Use the new permanent dismissal method
+      const notificationService = getNotificationService();
+      for (const id of notificationIds) {
+        await notificationService.dismissNotificationPermanently(id);
+      }
     } catch (error) {
       console.error('Failed to permanently delete notifications:', error);
     }
@@ -105,7 +109,7 @@ const HomeScreen = () => {
           displayNameToUse = userData.username.trim();
         } else if (currentUser.email) {
           // Use email prefix as fallback
-          displayNameToUse = currentUser.email.split('@')[0];
+          displayNameToUse = await generateUsernameFromEmail(currentUser.email);
         }
         
         setDisplayName(displayNameToUse);
@@ -325,7 +329,7 @@ const HomeScreen = () => {
         
       } else {
         // Create user profile if it doesn't exist
-        const username = currentUser.email ? currentUser.email.split('@')[0] : `Player${Math.floor(Math.random() * 10000)}`;
+        const username = currentUser.email ? await generateUsernameFromEmail(currentUser.email) : `Player${Math.floor(Math.random() * 10000)}`;
         await setDoc(doc(db, 'users', currentUser.uid), {
           uid: currentUser.uid,
           username: username,
@@ -358,7 +362,7 @@ const HomeScreen = () => {
       console.error('HomeScreen: Failed to load user profile:', error);
       // Fallback to email prefix if available
       if (currentUser.email) {
-        const emailName = currentUser.email.split('@')[0];
+        const emailName = await generateUsernameFromEmail(currentUser.email);
         setDisplayName(emailName);
       } else {
         setDisplayName('Player');
@@ -594,16 +598,16 @@ const HomeScreen = () => {
         return;
       }
       
-      // Initialize the push notification service
-      const pushToken = await pushNotificationService.initialize();
-      
-      if (pushToken) {
-        // Save the push token to the user's Firestore document
-        await pushNotificationService.savePushTokenToFirestore(userId, pushToken);
-        console.log('HomeScreen: Push notifications initialized successfully');
+        // Initialize the push notification service
+        const pushToken = await pushNotificationService.initialize();
         
-        // Set up notification listeners
-        pushNotificationService.setupNotificationListeners();
+        if (pushToken) {
+          // Save the push token to the user's Firestore document
+          await pushNotificationService.savePushTokenToFirestore(userId, pushToken);
+          console.log('HomeScreen: Push notifications initialized successfully');
+          
+          // Set up notification listeners
+          pushNotificationService.setupNotificationListeners();
         
         // Show success message to user (only on first setup)
         Alert.alert(
@@ -722,6 +726,29 @@ const HomeScreen = () => {
     </View>
   );
 
+  // If navigated here with a flag to show an interstitial (e.g., after PvP completion on iOS),
+  // present it once without blocking UI.
+  useEffect(() => {
+    try {
+      const shouldShowAd = route?.params?.showInterstitialAd;
+      if (shouldShowAd) {
+        // Clear the flag to avoid repeat on re-render
+        navigation.setParams({ showInterstitialAd: undefined });
+        // Slight delay to ensure screen is mounted and stable
+        setTimeout(async () => {
+          try {
+            const { default: adService } = await import('./adService');
+            await adService.showInterstitialAd();
+          } catch (_) {
+            // Ignore ad errors
+          }
+        }, 250);
+      }
+    } catch (_) {
+      // ignore
+    }
+  }, [route?.params?.showInterstitialAd]);
+
   return (
     <>
       {/* FAB - Positioned outside SafeAreaView to avoid any container constraints */}
@@ -798,6 +825,25 @@ const HomeScreen = () => {
                 await permanentlyDeleteNotifications(notificationIds);
               }
               
+              // Best-effort: clear delivered notifications and reset app badge on device
+              try {
+                const delivered = await Notifications.getDeliveredNotificationsAsync();
+                const deliveredIds = (delivered || []).map(n => n.request?.identifier).filter(Boolean);
+                if (deliveredIds.length > 0) {
+                await Notifications.dismissAllNotificationsAsync();
+                console.log('HomeScreen: Cleared all device notifications');
+              }
+            } catch (error) {
+              console.error('HomeScreen: Failed to clear device notifications:', error);
+            }
+            try {
+              // Reset badge count to zero on platforms that support it
+              await Notifications.setBadgeCountAsync(0);
+              console.log('HomeScreen: Reset badge count to 0');
+            } catch (error) {
+              console.error('HomeScreen: Failed to reset badge count:', error);
+            }
+
               // Clear the badge when user acknowledges by clicking Resume
               setBadgeCleared(true);
               
@@ -873,9 +919,10 @@ const HomeScreen = () => {
               style={[styles.button, { backgroundColor: '#8B5CF6' }]}
               onPress={async () => {
                 try {
-                  const success = await pushNotificationService.sendTestNotification();
+                  console.log('HomeScreen: Testing push notification...');
+                  const success = await pushNotificationService.testPushNotification(userId);
                   if (success) {
-                    Alert.alert('Test Sent', 'Push notification sent! Check your notification bar.');
+                    Alert.alert('Test Sent', 'Push notification sent! Check your notification bar and console logs.');
                   } else {
                     Alert.alert('Test Failed', 'Could not send test notification. Check console for details.');
                   }

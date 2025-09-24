@@ -620,6 +620,9 @@ class NotificationService {
    * Set up all notification reception listeners
    */
   setupNotificationListeners() {
+    // Clean up existing listeners first to prevent duplicates
+    this.cleanup();
+
     // Foreground message listener (when app is open and active)
     // this.foregroundListener = onMessage(this.messaging, (remoteMessage) => {
     //   this.handleForegroundNotification(remoteMessage);
@@ -872,6 +875,45 @@ class NotificationService {
   }
 
   /**
+   * Dismiss a notification permanently from device notification center
+   * @param {string} notificationId - The notification ID to dismiss
+   */
+  async dismissNotificationPermanently(notificationId) {
+    try {
+      // Mark as read in Firestore
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        read: true,
+        readAt: new Date().toISOString(),
+        dismissed: true,
+        dismissedAt: new Date().toISOString()
+      });
+      
+      // Dismiss from device notification center
+      await Notifications.dismissNotificationAsync(notificationId);
+      
+      console.log('NotificationService: Permanently dismissed notification:', notificationId);
+      return true;
+    } catch (error) {
+      console.error('NotificationService: Failed to permanently dismiss notification:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Clear all notifications from device notification center
+   */
+  async clearAllDeviceNotifications() {
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+      console.log('NotificationService: Cleared all device notifications');
+      return true;
+    } catch (error) {
+      console.error('NotificationService: Failed to clear all device notifications:', error);
+      return false;
+    }
+  }
+
+  /**
    * Cancel all scheduled notifications
    */
   async cancelAllNotifications() {
@@ -883,6 +925,7 @@ class NotificationService {
       return false;
     }
   }
+
 
   /**
    * Get all pending notifications
@@ -1337,7 +1380,10 @@ class NotificationService {
       // Attempt to dismiss from device notification center as well
       try {
         await Notifications.dismissNotificationAsync(notificationId);
-      } catch (_) {}
+        console.log('NotificationService: Dismissed notification from device center:', notificationId);
+      } catch (error) {
+        console.error('NotificationService: Failed to dismiss notification from device:', error);
+      }
       return true;
     } catch (error) {
       console.error('NotificationService: Failed to mark notification as read:', error);

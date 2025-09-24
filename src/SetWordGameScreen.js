@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
 import { addDoc, updateDoc, doc, collection, arrayUnion, getDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import { isValidWord } from './gameLogic';
-import pushNotificationService from './pushNotificationService';
+import { getNotificationService } from './notificationService';
 import styles from './styles';
 
 const SetWordGameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { challenge, isAccepting } = route.params;
+  const insets = useSafeAreaInsets();
   
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -105,8 +106,9 @@ const SetWordGameScreen = () => {
         return false;
       }
       
-      // Check if user has reached Word Expert rank (Regular mode average ≤ 8)
-      if (regularAvg > 0 && regularAvg <= 8) {
+      // Check if user has reached Word Expert rank (Regular mode average ≤ 10 AND 15+ games played)
+      const regularGamesCount = userData.regularGamesCount || 0;
+      if (regularAvg > 0 && regularAvg <= 10 && regularGamesCount >= 15) {
         return true;
       }
       
@@ -140,8 +142,9 @@ const SetWordGameScreen = () => {
         return false;
       }
       
-      // Check if user has reached Word Expert rank (Regular mode average ≤ 8)
-      if (regularAvg > 0 && regularAvg <= 8) {
+      // Check if user has reached Word Expert rank (Regular mode average ≤ 10 AND 15+ games played)
+      const regularGamesCount = userData.regularGamesCount || 0;
+      if (regularAvg > 0 && regularAvg <= 10 && regularGamesCount >= 15) {
         return true;
       }
       
@@ -245,10 +248,18 @@ const SetWordGameScreen = () => {
         // Send push notification to Player 1 that the game has started
         try {
           const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
-          await pushNotificationService.sendGameStartedNotification(
+          await getNotificationService().sendPushNotification(
             challenge.from,
-            challenge.toUsername || 'Player 2',
-            wordLength
+            'Game Started',
+            `Your challenge with ${challenge.toUsername || 'Player 2'} has started!`,
+            {
+              type: 'game_started',
+              gameId: gameRef.id,
+              opponentId: challenge.to,
+              opponentName: challenge.toUsername || 'Player 2',
+              wordLength: wordLength,
+              timestamp: new Date().toISOString()
+            }
           );
         } catch (notificationError) {
           console.error('🔍 Failed to send game start push notification:', notificationError);
@@ -285,10 +296,18 @@ const SetWordGameScreen = () => {
         // Send push notification for game challenge
         try {
           const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
-          await pushNotificationService.sendGameChallengeNotification(
+          await getNotificationService().sendPushNotification(
             challenge.to,
-            challenge.fromUsername,
-            wordLength
+            'Game Challenge',
+            `${challenge.fromUsername} challenged you to a game!`,
+            {
+              type: 'challenge',
+              challengeId: challengeRef.id,
+              senderId: challenge.from,
+              senderName: challenge.fromUsername,
+              wordLength: wordLength,
+              timestamp: new Date().toISOString()
+            }
           );
         } catch (notificationError) {
           console.error('Failed to send game challenge push notification:', notificationError);
@@ -327,7 +346,7 @@ const SetWordGameScreen = () => {
       if (!isUnlocked) {
         Alert.alert(
           'Hard Mode Locked 🔒',
-          'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n💎 Getting premium access',
+                  'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
@@ -369,15 +388,27 @@ const SetWordGameScreen = () => {
   if (showDifficultySelection) {
     return (
       <SafeAreaView style={styles.screenContainer}>
-        {/* Back Button */}
+        {/* Back Button - safe area aware and always visible */}
         <TouchableOpacity
-          style={[styles.backButton, { alignSelf: 'flex-start', marginLeft: 20, marginTop: 20 }]}
+          style={{
+            position: 'absolute',
+            left: 12,
+            top: (insets?.top || 0) + 8,
+            height: 44,
+            minWidth: 44,
+            paddingHorizontal: 10,
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+          }}
           onPress={() => {
             playSound('backspace').catch(() => {});
             navigation.goBack();
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Text style={{ color: '#F59E0B', fontSize: 16, fontWeight: '600' }}>‹ Back</Text>
         </TouchableOpacity>
         
         <View style={styles.difficultyContainer}>
@@ -415,7 +446,7 @@ const SetWordGameScreen = () => {
                 // Show unlock popup for locked hard mode
                 Alert.alert(
                   'Hard Mode Locked 🔒',
-                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play Regular mode games (5 letters)\n• Achieve an average of 8 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
+                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play 15+ Regular mode games (5 letters)\n• Achieve an average of 10 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
@@ -425,7 +456,7 @@ const SetWordGameScreen = () => {
                 // Show popup explaining opponent doesn't have access
                 Alert.alert(
                   'Opponent Cannot Play Hard Mode 🔒',
-                  'The player you want to challenge does not have Hard Mode unlocked yet.\n\nThey need to either:\n\n🏆 Reach Word Expert Rank\n• Play Regular mode games (5 letters)\n• Achieve an average of 8 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n\nPlease choose Easy or Regular difficulty instead, or wait for them to unlock Hard Mode.',
+                  'The player you want to challenge does not have Hard Mode unlocked yet.\n\nThey need to either:\n\n🏆 Reach Word Expert Rank\n• Play 15+ Regular mode games (5 letters)\n• Achieve an average of 10 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n\nPlease choose Easy or Regular difficulty instead, or wait for them to unlock Hard Mode.',
                   [{ text: 'OK', style: 'default' }]
                 );
               }
@@ -456,8 +487,8 @@ const SetWordGameScreen = () => {
               </Text>
               <Text style={styles.lockStatusSubtext}>
                 {!hardModeUnlocked 
-                  ? 'Reach Word Expert rank or get premium access'
-                  : 'They need to reach Word Expert rank or get premium access'
+                  ? 'Play 15+ Regular games with avg ≤10 or get premium'
+                  : 'They need to play 15+ Regular games with avg ≤10 or get premium'
                 }
               </Text>
             </View>
