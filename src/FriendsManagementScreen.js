@@ -9,6 +9,7 @@ import styles from './styles';
 import logger from './logger';
 import { useTheme } from './ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import friendsService from './friendsService';
 
 const FriendsManagementScreen = ({ onClearNotifications }) => {
   const navigation = useNavigation();
@@ -39,6 +40,13 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
   // Load requests tab badge cleared state from AsyncStorage
   useEffect(() => {
     loadRequestsTabBadgeState();
+  }, []);
+
+  // Initialize friendsService with current user
+  useEffect(() => {
+    if (auth.currentUser) {
+      friendsService.setCurrentUser(auth.currentUser);
+    }
   }, []);
 
   const loadRequestsTabBadgeState = async () => {
@@ -152,14 +160,14 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       // Load incoming requests with real-time listener
       const incomingQuery = query(
         collection(db, 'friendRequests'),
-        where('to', '==', auth.currentUser.uid),
+        where('toUid', '==', auth.currentUser.uid),
         where('status', '==', 'pending')
       );
       
       // Load outgoing requests with real-time listener
       const outgoingQuery = query(
         collection(db, 'friendRequests'),
-        where('from', '==', auth.currentUser.uid),
+        where('fromUid', '==', auth.currentUser.uid),
         where('status', '==', 'pending')
       );
       
@@ -174,7 +182,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         const requestsWithUsernames = await Promise.all(
           incoming.map(async (request) => {
             try {
-              const userDoc = await getDoc(doc(db, 'users', request.from));
+              const userDoc = await getDoc(doc(db, 'users', request.fromUid));
               if (userDoc.exists()) {
                 const userData = userDoc.data();
                 return {
@@ -216,7 +224,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         const requestsWithUsernames = await Promise.all(
           outgoing.map(async (request) => {
             try {
-              const userDoc = await getDoc(doc(db, 'users', request.to));
+              const userDoc = await getDoc(doc(db, 'users', request.toUid));
               if (userDoc.exists()) {
                 const userData = userDoc.data();
                 return {
@@ -262,19 +270,30 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
     
     try {
       setSearching(true);
-      const usersQuery = query(
-        collection(db, 'users'),
-        where('username', '>=', searchQuery.toLowerCase()),
-        where('username', '<=', searchQuery.toLowerCase() + '\uf8ff')
-      );
+      console.log('🔍 [FriendsManagementScreen] Searching for username:', searchQuery);
       
-      const snapshot = await getDocs(usersQuery);
-      const results = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(user => user.uid !== auth.currentUser.uid);
+      // Use the friendsService searchUsers function which has better error handling
+      const users = await friendsService.searchUsers(searchQuery);
       
-      setSearchResults(results);
+      console.log('🔍 [FriendsManagementScreen] Search results from friendsService:', users.length);
+      users.forEach(user => {
+        console.log('🔍 [FriendsManagementScreen] Found user:', user.username, 'ID:', user.id);
+      });
+
+      // Convert to the format expected by this component
+      const formattedUsers = users.map(user => ({
+        id: user.id,
+        uid: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        friendshipStatus: user.friendshipStatus
+      }));
+
+      console.log('🔍 [FriendsManagementScreen] Formatted users:', formattedUsers.length);
+      setSearchResults(formattedUsers);
     } catch (error) {
+      console.error('🔍 [FriendsManagementScreen] Search failed:', error);
       logger.error('Failed to search users:', error);
       Alert.alert('Error', 'Failed to search users');
     } finally {
@@ -288,17 +307,12 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
       console.log('🔍 [FriendsManagementScreen] Target user:', user.uid, user.username || user.displayName);
       
-      // Check if users are already friends
+      // Check if users are already friends using friendsService
       console.log('🔍 [FriendsManagementScreen] Checking if users are already friends...');
-      const friendCheckQuery = query(
-        collection(db, 'users', auth.currentUser.uid, 'friends'),
-        where('uid', '==', user.uid)
-      );
+      const areFriends = await friendsService.areFriends(auth.currentUser.uid, user.uid);
+      console.log('🔍 [FriendsManagementScreen] Friend check results:', areFriends);
       
-      const friendCheckSnapshot = await getDocs(friendCheckQuery);
-      console.log('🔍 [FriendsManagementScreen] Friend check results:', friendCheckSnapshot.docs.length, 'documents found');
-      
-      if (!friendCheckSnapshot.empty) {
+      if (areFriends) {
         console.log('🔍 [FriendsManagementScreen] Users are already friends - preventing send');
         Alert.alert('Already Friends', `You are already friends with ${user.username || user.displayName}.`);
         return;
@@ -308,8 +322,8 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] Checking for existing friend request...');
       const existingRequestQuery = query(
         collection(db, 'friendRequests'),
-        where('from', '==', auth.currentUser.uid),
-        where('to', '==', user.uid),
+        where('fromUid', '==', auth.currentUser.uid),
+        where('toUid', '==', user.uid),
         where('status', '==', 'pending')
       );
       
@@ -325,9 +339,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] No existing request found - proceeding with new request');
 
       const requestData = {
-        from: auth.currentUser.uid,
+        fromUid: auth.currentUser.uid,
         fromUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
-        to: user.uid,
+        toUid: user.uid,
         toUsername: user.username || user.displayName || 'Unknown',
         status: 'pending',
         timestamp: new Date()
@@ -371,8 +385,8 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] Clearing redundant friend requests...');
       const redundantRequestsQuery = query(
         collection(db, 'friendRequests'),
-        where('from', '==', auth.currentUser.uid),
-        where('to', '==', request.fromUid || request.from),
+        where('fromUid', '==', auth.currentUser.uid),
+        where('toUid', '==', request.fromUid || request.from),
         where('status', '==', 'pending')
       );
       
@@ -496,55 +510,90 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
     </View>
   );
 
-  const renderSearchResult = ({ item }) => (
-    <View style={[styles.searchResultItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.searchResultInfo}>
-        <Text style={[styles.searchResultUsername, { color: colors.primary }]}>
-          {item.username || item.displayName || 'Unknown User'}
-        </Text>
-      </View>
-      <TouchableOpacity
-        style={[
-          styles.addButton, 
-          { 
+  const renderSearchResult = ({ item }) => {
+    const getButtonText = () => {
+      switch (item.friendshipStatus) {
+        case 'accepted':
+          return 'Friends';
+        case 'pending':
+          return 'Pending';
+        case 'declined':
+          return 'Add';
+        case 'blocked':
+          return 'Blocked';
+        default:
+          return 'Add';
+      }
+    };
+
+    const getButtonStyle = () => {
+      switch (item.friendshipStatus) {
+        case 'accepted':
+          return {
+            backgroundColor: colors.success || '#4CAF50',
+            borderColor: colors.success || '#4CAF50',
+          };
+        case 'pending':
+          return {
+            backgroundColor: colors.warning || '#FF9800',
+            borderColor: colors.warning || '#FF9800',
+          };
+        case 'blocked':
+          return {
+            backgroundColor: colors.error || '#F44336',
+            borderColor: colors.error || '#F44336',
+          };
+        default:
+          return {
             backgroundColor: colors.primary,
             borderColor: colors.primary,
-          }
-        ]}
-        onPress={() => sendFriendRequest(item)}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.buttonText, { color: '#FFFFFF', fontWeight: '600' }]}>
-          Add
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+          };
+      }
+    };
+
+    const isButtonDisabled = () => {
+      return item.friendshipStatus === 'accepted' || 
+             item.friendshipStatus === 'pending' || 
+             item.friendshipStatus === 'blocked';
+    };
+
+    return (
+      <View style={[styles.searchResultItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.searchResultInfo}>
+          <Text style={[styles.searchResultUsername, { color: colors.primary }]}>
+            {item.username || item.displayName || 'Unknown User'}
+          </Text>
+          {item.friendshipStatus === 'accepted' && (
+            <Text style={[styles.friendshipStatus, { color: colors.success || '#4CAF50' }]}>
+              You are already friends
+            </Text>
+          )}
+          {item.friendshipStatus === 'pending' && (
+            <Text style={[styles.friendshipStatus, { color: colors.warning || '#FF9800' }]}>
+              Friend request pending
+            </Text>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[
+            styles.addButton, 
+            getButtonStyle(),
+            isButtonDisabled() && { opacity: 0.6 }
+          ]}
+          onPress={() => !isButtonDisabled() && sendFriendRequest(item)}
+          activeOpacity={0.7}
+          disabled={isButtonDisabled()}
+        >
+          <Text style={[styles.buttonText, { color: '#FFFFFF', fontWeight: '600' }]}>
+            {getButtonText()}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
-      {/* Back Button - safe area aware */}
-      <TouchableOpacity
-        style={{
-          position: 'absolute',
-          left: 12,
-          top: (insets?.top || 0) + 8,
-          height: 44,
-          minWidth: 44,
-          paddingHorizontal: 10,
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
-        }}
-        onPress={() => {
-          try { playSound('backspace').catch(() => {}); } catch (_) {}
-          navigation.goBack();
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Go back"
-      >
-        <Text style={{ color: '#F59E0B', fontSize: 16, fontWeight: '600' }}>‹ Back</Text>
-      </TouchableOpacity>
       <View style={[styles.friendsHeader, { backgroundColor: colors.background }]}>
         <Text style={styles.headerTitle}>
           Friends Management

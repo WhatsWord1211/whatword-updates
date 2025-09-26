@@ -1,5 +1,6 @@
 import { Platform, Linking, Alert } from 'react-native';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 
 class AppUpdateService {
   constructor() {

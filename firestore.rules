@@ -39,12 +39,28 @@ service cloud.firestore {
       // Other authenticated users can read user data for friend system and leaderboards
       allow read: if request.auth != null;
 
-      // Allow the other party to update only the 'friends' field (for friend acceptance)
+      // Allow cross-user updates for specific fields only
       allow update: if request.auth != null &&
         request.auth.uid != userId &&
-        // Only 'friends' can be changed in this cross-user update
-        resource.data.diff(request.resource.data).changedKeys().hasOnly(['friends']) &&
-        request.resource.data.friends is list;
+        // Allow updates to friends field (for friend management)
+        (resource.data.diff(request.resource.data).changedKeys().hasOnly(['friends']) ||
+         // Allow updates to activeGames field (for game tracking)
+         resource.data.diff(request.resource.data).changedKeys().hasOnly(['activeGames']) ||
+         // Allow updates to game statistics fields
+         resource.data.diff(request.resource.data).changedKeys().hasOnly(['easyScore', 'mediumScore', 'hardScore']) ||
+         resource.data.diff(request.resource.data).changedKeys().hasOnly(['easyPvpScore', 'mediumPvpScore', 'hardPvpScore']) ||
+         resource.data.diff(request.resource.data).changedKeys().hasOnly(['easyGamesCount', 'mediumGamesCount', 'hardGamesCount']) ||
+         resource.data.diff(request.resource.data).changedKeys().hasOnly(['easyPvpGamesCount', 'mediumPvpGamesCount', 'hardPvpGamesCount']) ||
+         // Allow updates to achievements field
+         resource.data.diff(request.resource.data).changedKeys().hasOnly(['achievements']) ||
+         // Allow multiple related fields together
+         resource.data.diff(request.resource.data).changedKeys().hasAll(['friends', 'lastUpdated']) ||
+         resource.data.diff(request.resource.data).changedKeys().hasAll(['activeGames', 'lastUpdated']) ||
+         // Allow push token fields (but only from the device owner)
+         (resource.data.diff(request.resource.data).changedKeys().hasOnly(['expoPushToken', 'pushTokenUpdatedAt', 'pushNotificationsEnabled']) &&
+          request.auth.uid == userId) ||
+         (resource.data.diff(request.resource.data).changedKeys().hasOnly(['pushToken', 'pushTokenUpdatedAt', 'pushNotificationsEnabled']) &&
+          request.auth.uid == userId));
     }
     
     // Games - only participants can access
@@ -94,26 +110,20 @@ service cloud.firestore {
     
     // Challenges - only the sender and recipient can access
     match /challenges/{challengeId} {
-      // Allow read for existing challenges (handle both field naming conventions)
+      // Allow read for existing challenges (using correct field names)
       allow read: if request.auth != null && 
         (request.auth.uid == resource.data.fromUid || 
-         request.auth.uid == resource.data.toUid ||
-         request.auth.uid == resource.data.from || 
-         request.auth.uid == resource.data.to);
+         request.auth.uid == resource.data.toUid);
       
-      // Allow create for new challenges (handle both field naming conventions)
+      // Allow create for new challenges (using correct field names)
       allow create: if request.auth != null && 
         (request.auth.uid == request.resource.data.fromUid || 
-         request.auth.uid == request.resource.data.toUid ||
-         request.auth.uid == request.resource.data.from || 
-         request.auth.uid == request.resource.data.to);
+         request.auth.uid == request.resource.data.toUid);
       
-      // Allow update/delete for existing challenges (handle both field naming conventions)
+      // Allow update/delete for existing challenges (using correct field names)
       allow update, delete: if request.auth != null && 
         (request.auth.uid == resource.data.fromUid || 
-         request.auth.uid == resource.data.toUid ||
-         request.auth.uid == resource.data.from || 
-         request.auth.uid == resource.data.to);
+         request.auth.uid == resource.data.toUid);
     }
     
     // Game statistics - users can read for leaderboards, but only modify their own
@@ -136,51 +146,52 @@ service cloud.firestore {
     
     // Friend requests - only the sender and recipient can access
     match /friendRequests/{requestId} {
-      // Allow read for existing friend requests (handle both field naming conventions)
+      // Allow read for existing friend requests (using correct field names)
       allow read: if request.auth != null && 
         (request.auth.uid == resource.data.fromUid || 
-         request.auth.uid == resource.data.toUid ||
-         request.auth.uid == resource.data.from || 
-         request.auth.uid == resource.data.to);
+         request.auth.uid == resource.data.toUid);
       
-      // Allow create for new friend requests (handle both field naming conventions)
+      // Allow create for new friend requests (using correct field names)
       allow create: if request.auth != null && 
         (request.auth.uid == request.resource.data.fromUid || 
-         request.auth.uid == request.resource.data.toUid ||
-         request.auth.uid == request.resource.data.from || 
-         request.auth.uid == request.resource.data.to);
+         request.auth.uid == request.resource.data.toUid);
       
-      // Allow update/delete for existing friend requests (handle both field naming conventions)
+      // Allow update/delete for existing friend requests (using correct field names)
       allow update, delete: if request.auth != null && 
         (request.auth.uid == resource.data.fromUid || 
-         request.auth.uid == resource.data.toUid ||
-         request.auth.uid == resource.data.from || 
-         request.auth.uid == resource.data.to);
+         request.auth.uid == resource.data.toUid);
     }
     
-    // Notifications - only the recipient can access
+    // Notifications - enhanced security
     match /notifications/{notificationId} {
-      // Allow read for existing notifications (handle both field naming conventions)
+      // Allow read for existing notifications (using correct field names)
       allow read: if request.auth != null && 
-        (resource.data.to == request.auth.uid || resource.data.toUid == request.auth.uid);
+        (resource.data.toUid == request.auth.uid);
       
-      // Allow create for new notifications (anyone can create notifications for others)
-      allow create: if request.auth != null;
+      // Enhanced create rule - prevent spam
+      allow create: if request.auth != null &&
+        request.resource.data.toUid != null &&
+        (request.resource.data.fromUid == request.auth.uid ||
+         // Allow game-related notifications from participants
+         (request.resource.data.type in ['game_challenge', 'game_started', 'game_completed', 'game_move'] &&
+          request.resource.data.participants is list &&
+          request.auth.uid in request.resource.data.participants));
       
-      // Allow update/delete for existing notifications (handle both field naming conventions)
+      // Allow update/delete for existing notifications (using correct field names)
       allow update, delete: if request.auth != null && 
-        (resource.data.to == request.auth.uid || resource.data.toUid == request.auth.uid);
+        (resource.data.toUid == request.auth.uid);
     }
     
-    // Leaderboard - anyone can read, users can only modify their own scores
+    // Leaderboard - enhanced validation
     match /leaderboard/{scoreId} {
       // Anyone can read leaderboard data
       allow read: if request.auth != null;
       
-      // Users can only create/update their own scores
+      // Enhanced create/update rule - validate required fields
       allow create, update: if request.auth != null && 
         (scoreId.matches('score_.*') && 
-         request.resource.data.userId == request.auth.uid);
+         request.resource.data.userId == request.auth.uid &&
+         request.resource.data.keys().hasAll(['userId', 'score', 'timestamp']));
       
       // Users can only delete their own scores
       allow delete: if request.auth != null && 
@@ -190,26 +201,20 @@ service cloud.firestore {
     
     // Game invites - only the sender and recipient can access
     match /gameInvites/{inviteId} {
-      // Allow read for existing game invites (handle both field naming conventions)
+      // Allow read for existing game invites (using correct field names)
       allow read: if request.auth != null && 
         (request.auth.uid == resource.data.fromUid || 
-         request.auth.uid == resource.data.toUid ||
-         request.auth.uid == resource.data.from || 
-         request.auth.uid == resource.data.to);
+         request.auth.uid == resource.data.toUid);
       
-      // Allow create for new game invites (handle both field naming conventions)
+      // Allow create for new game invites (using correct field names)
       allow create: if request.auth != null && 
         (request.auth.uid == request.resource.data.fromUid || 
-         request.auth.uid == request.resource.data.toUid ||
-         request.auth.uid == request.resource.data.from || 
-         request.auth.uid == request.resource.data.to);
+         request.auth.uid == request.resource.data.toUid);
       
-      // Allow update/delete for existing game invites (handle both field naming conventions)
+      // Allow update/delete for existing game invites (using correct field names)
       allow update, delete: if request.auth != null && 
         (request.auth.uid == resource.data.fromUid || 
-         request.auth.uid == resource.data.toUid ||
-         request.auth.uid == resource.data.from || 
-         request.auth.uid == resource.data.to);
+         request.auth.uid == resource.data.toUid);
     }
     
     // Word lists - anyone can read (these are public game data)

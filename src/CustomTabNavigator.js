@@ -116,12 +116,12 @@ const CustomTabNavigator = () => {
     
     const requestsQuery = query(
       collection(db, 'friendRequests'),
-      where('to', '==', auth.currentUser.uid),
+      where('toUid', '==', auth.currentUser.uid),
       where('status', '==', 'pending')
     );
 
     console.log('🔍 [CustomTabNavigator] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
-    console.log('🔍 [CustomTabNavigator] Query: where("to", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
+    console.log('🔍 [CustomTabNavigator] Query: where("toUid", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
 
     const requestsUnsubscribe = onSnapshot(requestsQuery, (snapshot) => {
       console.log('🔍 [CustomTabNavigator] Friend request listener triggered');
@@ -228,7 +228,7 @@ const CustomTabNavigator = () => {
         // Manually check for friend requests
         const requestsQuery = query(
           collection(db, 'friendRequests'),
-          where('to', '==', auth.currentUser.uid),
+          where('toUid', '==', auth.currentUser.uid),
           where('status', '==', 'pending')
         );
         

@@ -5,6 +5,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from './ThemeContext';
 import { db, auth } from './firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // Audio mode is now handled in soundsUtil.js
 import { playSound } from './soundsUtil';
 import adService from './adService';
@@ -74,10 +75,12 @@ const PvPGameScreen = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingResultData, setPendingResultData] = useState(null);
   const [resultSoundPlayed, setResultSoundPlayed] = useState(false);
+  const [opponentGuessCountOnSolve, setOpponentGuessCountOnSolve] = useState(null);
   const showGameOverPopupRef = useRef(false);
   const resultSoundPlayedRef = useRef(false);
   const handledCompletionRef = useRef(false);
   const showCongratulationsPopupRef = useRef(false);
+  const hasRestoredStateRef = useRef(false);
   
   const scrollViewRef = useRef(null);
   
@@ -129,12 +132,104 @@ const PvPGameScreen = () => {
     }
   }, []);
 
+  // Save PvP game state including alphabet
+  const savePvPGameState = async () => {
+    if (!game || !game.id || !currentUser) return;
+    
+    try {
+      const gameData = {
+        gameMode: 'pvp',
+        gameId: game.id,
+        playerId: currentUser.uid,
+        isCreator: game.creatorId === currentUser.uid,
+        guesses: guesses.map(guess => ({
+          word: guess.word,
+          dots: guess.dots || 0,
+          circles: guess.circles || 0,
+          feedback: guess.feedback,
+          isCorrect: guess.isCorrect,
+          isHint: guess.isHint || false
+        })),
+        inputWord,
+        alphabet,
+        targetWord: game.playerWord || game.opponentWord,
+        gameState: 'playing',
+        hintCount: 0, // PvP games don't use hints
+        usedHintLetters: [],
+        opponentGuessCountOnSolve: game.opponentGuessCountOnSolve,
+        difficulty: 'regular', // PvP games are always regular difficulty
+        timestamp: new Date().toISOString(),
+      };
+      
+      let games = [];
+      const savedGames = await AsyncStorage.getItem('savedGames');
+      games = savedGames ? JSON.parse(savedGames) : [];
+      const gameIndex = games.findIndex(g => g.gameId === gameData.gameId);
+      if (gameIndex >= 0) {
+        games[gameIndex] = gameData;
+      } else {
+        games.push(gameData);
+      }
+      await AsyncStorage.setItem('savedGames', JSON.stringify(games));
+      console.log('PvPGameScreen: Saved PvP game state with alphabet');
+    } catch (error) {
+      console.error('PvPGameScreen: Failed to save PvP game state:', error);
+    }
+  };
+
+  // Restore PvP game state including alphabet
+  const restorePvPGameState = async () => {
+    if (!game || !game.id || !currentUser || hasRestoredStateRef.current) return;
+    
+    try {
+      const savedGames = await AsyncStorage.getItem('savedGames');
+      if (savedGames) {
+        const games = JSON.parse(savedGames);
+        const savedGame = games.find(g => g.gameId === game.id && g.gameMode === 'pvp');
+        
+        if (savedGame) {
+          console.log('PvPGameScreen: Restoring PvP game state with alphabet');
+          setGuesses(savedGame.guesses || []);
+          setInputWord(savedGame.inputWord || '');
+          setAlphabet(savedGame.alphabet || Array(26).fill('unknown'));
+          setOpponentGuessCountOnSolve(savedGame.opponentGuessCountOnSolve);
+          hasRestoredStateRef.current = true;
+        }
+      }
+    } catch (error) {
+      console.error('PvPGameScreen: Failed to restore PvP game state:', error);
+    }
+  };
+
   // Preload game completion ad when game starts
   useEffect(() => {
     if (game && game.status === 'active') {
       preloadGameAd();
     }
   }, [game, preloadGameAd]);
+
+  // Auto-save PvP game state when alphabet or other state changes
+  useEffect(() => {
+    if (game && game.status === 'active' && currentUser) {
+      savePvPGameState();
+    }
+  }, [guesses, inputWord, alphabet, game, currentUser]);
+
+  // Restore PvP game state when game loads
+  useEffect(() => {
+    if (game && game.status === 'active' && currentUser) {
+      restorePvPGameState();
+    }
+  }, [game, currentUser]);
+
+  // Save game state when component unmounts or user navigates away
+  useEffect(() => {
+    return () => {
+      if (game && game.status === 'active' && currentUser) {
+        savePvPGameState();
+      }
+    };
+  }, [game, currentUser]);
 
   // Keep refs in sync with state to avoid stale closures inside snapshot listener
   useEffect(() => {
@@ -151,6 +246,7 @@ const PvPGameScreen = () => {
     handledCompletionRef.current = false;
     resultSoundPlayedRef.current = false;
     setResultSoundPlayed(false);
+    hasRestoredStateRef.current = false; // Reset restore flag for new game
   }, [gameId]);
 
   // Helper functions to get player data
@@ -1371,22 +1467,11 @@ const PvPGameScreen = () => {
                     });
                   }
                   
-                  // Show interstitial safely: on iOS, defer to HomeScreen to present after navigation;
-                  // on Android, fire-and-forget here without blocking UI.
-                  if (Platform.OS !== 'ios') {
-                    // Fire-and-forget on Android; do not await to avoid blocking UI
-                    setTimeout(() => {
-                      try {
-                        adService.showInterstitialAd();
-                      } catch (_) {
-                        // ignore ad errors
-                      }
-                    }, 200);
-                  } else {
-                    // iOS: navigate with flag so HomeScreen shows the ad after navigation
-                    navigation.navigate('Home', { showInterstitialAd: true });
-                    playSound('chime').catch(() => {});
-                    return;
+                  // Show interstitial ad for both platforms
+                  try {
+                    await adService.showInterstitialAd();
+                  } catch (error) {
+                    console.log('PvPGameScreen: Failed to show interstitial ad:', error);
                   }
                   
                   // Navigate to home immediately (Android path)

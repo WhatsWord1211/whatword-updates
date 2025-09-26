@@ -3338,6 +3338,12 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Bold',
     marginBottom: 4,
   },
+  friendshipStatus: {
+    fontSize: 14,
+    fontWeight: '500',
+    fontFamily: 'Roboto-Medium',
+    marginTop: 2,
+  },
   searchResultEmail: {
     fontSize: 14,
     color: '#9CA3AF',

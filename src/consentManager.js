@@ -48,20 +48,27 @@ export async function initializeConsentAndAds() {
 
     // After consent, set request configuration
     if (mobileAds && MaxAdContentRating) {
-      console.log('ConsentManager: Setting AdMob request configuration...');
-      await mobileAds().setRequestConfiguration({
-        maxAdContentRating: MaxAdContentRating.T,
-        // tagForUnderAgeOfConsent: false, // add if needed
-        // tagForChildDirectedTreatment: false, // add if needed
-      });
+      try {
+        console.log('ConsentManager: Setting AdMob request configuration...');
+        await mobileAds().setRequestConfiguration({
+          maxAdContentRating: MaxAdContentRating.T,
+          // tagForUnderAgeOfConsent: false, // add if needed
+          // tagForChildDirectedTreatment: false, // add if needed
+        });
+      } catch (configError) {
+        console.warn('ConsentManager: Failed to set request configuration:', configError);
+      }
     }
 
     // Initialize the SDK (prepares ads per adService logic)
     try {
       if (mobileAds) {
         await mobileAds().initialize();
+        console.log('ConsentManager: AdMob SDK initialized successfully');
       }
-    } catch (_) {}
+    } catch (initError) {
+      console.warn('ConsentManager: Failed to initialize AdMob SDK:', initError);
+    }
 
     // Determine personalization status for callers
     let personalizedAllowed = false;

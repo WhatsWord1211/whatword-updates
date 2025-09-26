@@ -619,12 +619,7 @@ const ResumeGamesScreen = () => {
         { 
           text: 'See Results', 
           onPress: async () => {
-            // Show ad after PvP game completion
-            try {
-              await adService.showInterstitialAd();
-            } catch (error) {
-              console.error('Failed to show ad:', error);
-            }
+            // No ad needed - this is just viewing results
             
             // Navigate to results screen or show results modal
             // For now, we'll show a simple alert with basic info

@@ -4,7 +4,7 @@
     "slug": "whatword",
     "scheme": "whatword",
     "owner": "wilderbssmstr",
-    "version": "1.0.8",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/WhatWord-Icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 24,
+      "versionCode": 29,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/WhatWord-Icon.png",
         "backgroundColor": "#FFFFFF"
@@ -42,7 +42,7 @@
       "eas": {
         "projectId": "b189d504-5441-4ee4-977f-2ad58d77659d"
       },
-      "firebaseApiKey": "AIzaSyC0ceckaysOdcG6jiVYMVSQBTi3aHBnzYI",
+      "firebaseApiKey": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
       "firebaseAuthDomain": "whatword-a3f4b.firebaseapp.com",
       "firebaseProjectId": "whatword-a3f4b",
       "firebaseStorageBucket": "whatword-a3f4b.firebasestorage.app",
@@ -72,7 +72,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.whatword.app",
       "googleServicesFile": "./firebase/GoogleService-Info.plist",
-      "buildNumber": "24",
+      "buildNumber": "29",
       "infoPlist": {
         "NSUserTrackingUsageDescription": "Your data will be used to deliver personalized ads and to measure ad performance.",
         "NSUserNotificationsUsageDescription": "Allow notifications to alert you about new challenges, friend requests, and game updates.",
@@ -106,14 +106,14 @@
         {
           "icon": "./assets/images/WhatWord-Icon.png",
           "color": "#8B5CF6",
-          "defaultChannel": "default"
+          "defaultChannel": "default",
+          "sounds": ["./assets/sounds/chime.mp3", "./assets/sounds/congratulations.mp3"],
+          "mode": "production"
         }
       ],
       "expo-tracking-transparency"
     ],
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "runtimeVersion": "1.1.1",
     "updates": {
       "url": "https://u.expo.dev/b189d504-5441-4ee4-977f-2ad58d77659d"
     }

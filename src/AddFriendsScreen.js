@@ -7,6 +7,7 @@ import { collection, query, where, orderBy, limit, getDocs, addDoc, onSnapshot, 
 import { playSound } from './soundsUtil';
 import styles from './styles';
 import { getNotificationService } from './notificationService';
+import friendsService from './friendsService';
 
 // ⚠️ SYSTEM MISMATCH WARNING ⚠️
 // This file uses the OLD friendRequests collection system
@@ -15,6 +16,7 @@ import { getNotificationService } from './notificationService';
 console.warn('🚨 [AddFriendsScreen] Using OLD friendRequests collection system - this may cause issues with other screens');
 
 const AddFriendsScreen = () => {
+  console.log('🔍 [AddFriendsScreen] Component rendering');
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('add'); // 'add' or 'requests'
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,12 +32,12 @@ const AddFriendsScreen = () => {
       
       const requestsQuery = query(
         collection(db, 'friendRequests'),
-        where('to', '==', auth.currentUser.uid),
+        where('toUid', '==', auth.currentUser.uid),
         where('status', '==', 'pending')
       );
 
       console.log('🔍 [AddFriendsScreen] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
-      console.log('🔍 [AddFriendsScreen] Query: where("to", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
+      console.log('🔍 [AddFriendsScreen] Query: where("toUid", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
 
       const unsubscribe = onSnapshot(requestsQuery, (snapshot) => {
         console.log('🔍 [AddFriendsScreen] Friend request listener triggered');
@@ -60,7 +62,11 @@ const AddFriendsScreen = () => {
   }, [activeTab]);
 
   const searchUsers = async () => {
+    console.log('🔍 [AddFriendsScreen] searchUsers function called!');
+    console.log('🔍 [AddFriendsScreen] searchQuery:', searchQuery);
+    
     if (!searchQuery.trim()) {
+      console.log('🔍 [AddFriendsScreen] Empty search query, showing alert');
       Alert.alert('Error', 'Please enter a username to search for.');
       return;
     }
@@ -68,26 +74,31 @@ const AddFriendsScreen = () => {
     setLoading(true);
     try {
       const trimmedQuery = searchQuery.trim();
+      console.log('🔍 [AddFriendsScreen] Searching for username:', trimmedQuery);
       
-      // Query users by username
-      const usersQuery = query(
-        collection(db, 'users'),
-        where('username', '>=', trimmedQuery),
-        where('username', '<=', trimmedQuery + '\uf8ff'),
-        orderBy('username'),
-        limit(10)
-      );
+      // Use the friendsService searchUsers function which has better error handling
+      const users = await friendsService.searchUsers(trimmedQuery);
+      
+      console.log('🔍 [AddFriendsScreen] Search results from friendsService:', users.length);
+      users.forEach(user => {
+        console.log('🔍 [AddFriendsScreen] Found user:', user.username, 'ID:', user.id);
+      });
 
-      const querySnapshot = await getDocs(usersQuery);
-      const users = querySnapshot.docs.map(doc => ({
-        uid: doc.id,
-        ...doc.data()
+      // Convert to the format expected by this component
+      const formattedUsers = users.map(user => ({
+        uid: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        friendshipStatus: user.friendshipStatus
       }));
 
-      setSearchResults(users);
+      console.log('🔍 [AddFriendsScreen] Formatted users:', formattedUsers.length);
+      setSearchResults(formattedUsers);
     } catch (error) {
-      console.error('Search failed:', error);
-      Alert.alert('Search Failed', 'Please try again.');
+      console.error('🔍 [AddFriendsScreen] Search failed:', error);
+      console.error('🔍 [AddFriendsScreen] Error details:', error.message, error.code);
+      Alert.alert('Search Failed', `Please try again. Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -157,8 +168,8 @@ const AddFriendsScreen = () => {
       console.log('🔍 [AddFriendsScreen] Checking for existing friend request...');
       const existingRequestQuery = query(
         collection(db, 'friendRequests'),
-        where('from', '==', auth.currentUser.uid),
-        where('to', '==', user.uid),
+        where('fromUid', '==', auth.currentUser.uid),
+        where('toUid', '==', user.uid),
         where('status', '==', 'pending')
       );
       
@@ -174,9 +185,9 @@ const AddFriendsScreen = () => {
       console.log('🔍 [AddFriendsScreen] No existing request found - proceeding with new request');
       
       const requestData = {
-        from: auth.currentUser.uid,
+        fromUid: auth.currentUser.uid,
         fromUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
-        to: user.uid,
+        toUid: user.uid,
         toUsername: user.username || user.displayName || 'Unknown',
         status: 'pending',
         timestamp: new Date()
@@ -202,7 +213,7 @@ const AddFriendsScreen = () => {
 
   const acceptFriendRequest = async (request) => {
     try {
-      console.log('🔍 [AddFriendsScreen] Accepting friend request from:', request.from);
+      console.log('🔍 [AddFriendsScreen] Accepting friend request from:', request.fromUid);
       
       // Update request status
       await updateDoc(doc(db, 'friendRequests', request.id), {
@@ -215,8 +226,8 @@ const AddFriendsScreen = () => {
       console.log('🔍 [AddFriendsScreen] Clearing redundant friend requests...');
       const redundantRequestsQuery = query(
         collection(db, 'friendRequests'),
-        where('from', '==', auth.currentUser.uid),
-        where('to', '==', request.from),
+        where('fromUid', '==', auth.currentUser.uid),
+        where('toUid', '==', request.fromUid),
         where('status', '==', 'pending')
       );
       
@@ -230,12 +241,12 @@ const AddFriendsScreen = () => {
 
       // Update current user's friends list
       await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-        friends: arrayUnion(request.from)
+        friends: arrayUnion(request.fromUid)
       });
       console.log('🔍 [AddFriendsScreen] Updated current user friends list');
 
       // Also update the other user's friends list for mutual friendship
-      await updateDoc(doc(db, 'users', request.from), {
+      await updateDoc(doc(db, 'users', request.fromUid), {
         friends: arrayUnion(auth.currentUser.uid)
       });
       console.log('🔍 [AddFriendsScreen] Updated other user friends list');
@@ -335,6 +346,7 @@ const AddFriendsScreen = () => {
 
       {activeTab === 'add' ? (
         <>
+          {console.log('🔍 [AddFriendsScreen] Rendering search section, activeTab:', activeTab)}
           {/* Search Section */}
           <View style={styles.searchSection}>
             <View style={styles.searchContainer}>
@@ -349,7 +361,12 @@ const AddFriendsScreen = () => {
               />
               <TouchableOpacity
                 style={[styles.searchButton, loading && styles.disabledButton]}
-                onPress={searchUsers}
+                onPress={() => {
+                  console.log('🔍 [AddFriendsScreen] Search button pressed!');
+                  console.log('🔍 [AddFriendsScreen] Loading state:', loading);
+                  console.log('🔍 [AddFriendsScreen] Search query:', searchQuery);
+                  searchUsers();
+                }}
                 disabled={loading}
               >
                 <Text style={styles.searchButtonText}>

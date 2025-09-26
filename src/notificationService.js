@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// import { getMessaging, getToken, onMessage, onTokenRefresh, onBackgroundMessage } from 'firebase/messaging';
+import { getMessaging, getToken, onMessage, onTokenRefresh, onBackgroundMessage } from 'firebase/messaging';
 import { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { playSound } from './soundsUtil';
@@ -23,10 +23,22 @@ Notifications.setNotificationHandler({
 // Background message handler for FCM
 if (Platform.OS === 'android') {
   // This will be called when the app is in the background
-  // onBackgroundMessage(getMessaging(), async (remoteMessage) => {
-  //   // Handle background notification here
-  //   // Note: This only works on Android when the app is in background
-  // });
+  try {
+    onBackgroundMessage(getMessaging(), async (remoteMessage) => {
+      console.log('NotificationService: Background message received:', remoteMessage);
+      // Handle background notification here
+      // Note: This only works on Android when the app is in background
+      
+      // Play sound for background notifications
+      try {
+        await playSound('chime');
+      } catch (error) {
+        console.warn('NotificationService: Failed to play background notification sound:', error);
+      }
+    });
+  } catch (error) {
+    console.warn('NotificationService: Failed to set up background message handler:', error);
+  }
 }
 
 class NotificationService {
@@ -44,6 +56,11 @@ class NotificationService {
     this.appStateListener = null;
     this.lastNotification = null;
     
+    // Permission retry logic
+    this.permissionRetryCount = 0;
+    this.maxPermissionRetries = 3;
+    this.permissionRetryDelay = 2000; // 2 seconds
+    
     // Local notification settings
     this.notificationSettings = {
       sound: true,
@@ -60,7 +77,13 @@ class NotificationService {
   async initialize(userId = null) {
     try {
       // Initialize Firebase messaging
-      // this.messaging = getMessaging();
+      try {
+        this.messaging = getMessaging();
+        console.log('NotificationService: Firebase messaging initialized');
+      } catch (error) {
+        console.warn('NotificationService: Failed to initialize Firebase messaging:', error);
+        this.messaging = null;
+      }
       
       // Check current permission status
       const { status } = await Notifications.getPermissionsAsync();
@@ -109,18 +132,27 @@ class NotificationService {
    * Set up token refresh listener to automatically update Firestore
    */
   setupTokenRefreshListener() {
-    // if (!this.messaging) return;
+    if (!this.messaging) {
+      console.warn('NotificationService: Firebase messaging not available, skipping token refresh listener');
+      return;
+    }
     
-    // this.onTokenRefreshUnsubscribe = onTokenRefresh(this.messaging, async (token) => {
-      
-    //   // Update current token
-    //   this.currentToken = token;
-      
-    //   // Save new token to Firestore if user ID is available
-    //   if (this.currentUserId) {
-    //     await this.saveTokenToFirestore(this.currentUserId, token);
-    //   }
-    // });
+    try {
+      this.onTokenRefreshUnsubscribe = onTokenRefresh(this.messaging, async (token) => {
+        console.log('NotificationService: FCM token refreshed:', token);
+        
+        // Update current token
+        this.currentToken = token;
+        
+        // Save new token to Firestore if user ID is available
+        if (this.currentUserId) {
+          await this.saveTokenToFirestore(this.currentUserId, token);
+        }
+      });
+      console.log('NotificationService: Token refresh listener set up');
+    } catch (error) {
+      console.error('NotificationService: Failed to set up token refresh listener:', error);
+    }
   }
 
   /**
@@ -602,14 +634,17 @@ class NotificationService {
 
   async getFCMToken() {
     try {
-      // if (!this.messaging) return null;
+      if (!this.messaging) {
+        console.warn('NotificationService: Firebase messaging not available');
+        return null;
+      }
       
-      // const token = await getToken(this.messaging, {
-      //   vapidKey: 'BN_CPeFYRM3c6IuuBz-l8xdJGiN2C8G5vb9rdH8f20apmzFz5_PcTOB3A11FfZ8lzYOezFR_llCNGFQj1_ycg8E'
-      // });
+      const token = await getToken(this.messaging, {
+        vapidKey: 'BN_CPeFYRM3c6IuuBz-l8xdJGiN2C8G5vb9rdH8f20apmzFz5_PcTOB3A11FfZ8lzYOezFR_llCNGFQj1_ycg8E'
+      });
       
-      // return token;
-      return null; // Placeholder as messaging is commented out
+      console.log('NotificationService: FCM token obtained:', token ? 'Success' : 'Failed');
+      return token;
     } catch (error) {
       console.error('NotificationService: Failed to get FCM token:', error);
       return null;
@@ -624,9 +659,19 @@ class NotificationService {
     this.cleanup();
 
     // Foreground message listener (when app is open and active)
-    // this.foregroundListener = onMessage(this.messaging, (remoteMessage) => {
-    //   this.handleForegroundNotification(remoteMessage);
-    // });
+    if (this.messaging) {
+      try {
+        this.foregroundListener = onMessage(this.messaging, (remoteMessage) => {
+          console.log('NotificationService: Foreground message received:', remoteMessage);
+          this.handleForegroundNotification(remoteMessage);
+        });
+        console.log('NotificationService: Foreground message listener set up');
+      } catch (error) {
+        console.error('NotificationService: Failed to set up foreground message listener:', error);
+      }
+    } else {
+      console.warn('NotificationService: Firebase messaging not available, skipping foreground listener');
+    }
 
     // Notification response listener (when user taps notification)
     this.notificationResponseListener = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -888,8 +933,10 @@ class NotificationService {
         dismissedAt: new Date().toISOString()
       });
       
-      // Dismiss from device notification center
-      await Notifications.dismissNotificationAsync(notificationId);
+      // Dismiss from device notification center (if available)
+      if (Notifications.dismissNotificationAsync) {
+        await Notifications.dismissNotificationAsync(notificationId);
+      }
       
       console.log('NotificationService: Permanently dismissed notification:', notificationId);
       return true;
@@ -1431,6 +1478,53 @@ class NotificationService {
   }
 
   /**
+   * Retry permission request with exponential backoff
+   * @param {Function} permissionRequestFn - Function to request permissions
+   * @param {Object} options - Permission request options
+   * @returns {Promise<Object>} Permission result
+   */
+  async retryPermissionRequest(permissionRequestFn, options = {}) {
+    const { showExplanation = true, forceRequest = false, silent = false } = options;
+    
+    for (let attempt = 1; attempt <= this.maxPermissionRetries; attempt++) {
+      try {
+        console.log(`NotificationService: Permission request attempt ${attempt}/${this.maxPermissionRetries}`);
+        
+        const result = await permissionRequestFn();
+        
+        if (result.status === 'granted') {
+          console.log('NotificationService: ✅ Permissions granted on attempt', attempt);
+          this.permissionRetryCount = 0; // Reset on success
+          return result;
+        }
+        
+        if (result.status === 'denied' && !forceRequest) {
+          console.log('NotificationService: ❌ Permissions denied, not retrying');
+          return result;
+        }
+        
+        if (attempt < this.maxPermissionRetries) {
+          const delay = this.permissionRetryDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(`NotificationService: Permission request failed, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+      } catch (error) {
+        console.error(`NotificationService: Permission request attempt ${attempt} failed:`, error);
+        
+        if (attempt < this.maxPermissionRetries) {
+          const delay = this.permissionRetryDelay * Math.pow(2, attempt - 1);
+          console.log(`NotificationService: Retrying permission request in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    console.error('NotificationService: All permission request attempts failed');
+    return { status: 'denied', error: 'Max retries exceeded' };
+  }
+
+  /**
    * Utility function to handle notification permissions at app startup or user login
    * This is the main function you should call to request permissions
    * @param {Object} options - Configuration options
@@ -1487,14 +1581,23 @@ class NotificationService {
         };
       }
 
-      // Request permissions based on options
+      // Request permissions based on options with retry logic
       let finalStatus;
       if (forceRequest) {
-        finalStatus = await this.requestPermissionWithFallback(true);
+        finalStatus = await this.retryPermissionRequest(
+          () => this.requestPermissionWithFallback(true),
+          { showExplanation, forceRequest, silent }
+        );
       } else if (showExplanation) {
-        finalStatus = await this.requestPermission(true);
+        finalStatus = await this.retryPermissionRequest(
+          () => this.requestPermission(true),
+          { showExplanation, forceRequest, silent }
+        );
       } else {
-        finalStatus = await this.requestPermission(false);
+        finalStatus = await this.retryPermissionRequest(
+          () => this.requestPermission(false),
+          { showExplanation, forceRequest, silent }
+        );
       }
 
       if (finalStatus === 'granted') {

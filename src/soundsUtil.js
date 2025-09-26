@@ -39,18 +39,25 @@ export const loadSounds = async () => {
       playThroughEarpieceAndroid: false,
     });
 
-    for (const [key, soundFile] of Object.entries(soundFiles)) {
+    // Load sounds with better error handling
+    const soundPromises = Object.entries(soundFiles).map(async ([key, soundFile]) => {
       try {
         const { sound } = await Audio.Sound.createAsync(soundFile);
         loadedSounds[key] = sound;
+        console.log(`soundsUtil: Loaded sound ${key}`);
       } catch (error) {
-        console.error(`soundsUtil: Failed to load sound ${key}`, error);
+        console.warn(`soundsUtil: Failed to load sound ${key}:`, error.message);
+        // Don't fail the entire loading process for individual sounds
       }
-    }
+    });
+
+    await Promise.allSettled(soundPromises);
     soundsLoaded = true;
-    console.log('soundsUtil: All sounds loaded successfully');
+    console.log('soundsUtil: Sound loading completed');
   } catch (error) {
     console.error('soundsUtil: Failed to set audio mode', error);
+    // Still mark as loaded to prevent infinite retries
+    soundsLoaded = true;
   }
 };
 
@@ -67,17 +74,24 @@ export const playSound = async (key, options = {}) => {
 
     const sound = loadedSounds[key];
     if (!sound) {
-      console.error(`soundsUtil: Sound ${key} not loaded`);
+      console.warn(`soundsUtil: Sound ${key} not loaded, skipping play`);
       return;
     }
 
-    if (options.volume !== undefined) {
-      await sound.setVolumeAsync(options.volume);
+    // Check if sound is still valid before playing
+    try {
+      if (options.volume !== undefined) {
+        await sound.setVolumeAsync(options.volume);
+      }
+      
+      await sound.replayAsync();
+    } catch (playError) {
+      console.warn(`soundsUtil: Failed to play sound ${key}:`, playError.message);
+      // Remove invalid sound from cache
+      delete loadedSounds[key];
     }
-    
-    await sound.replayAsync();
   } catch (error) {
-    console.error(`soundsUtil: Failed to play sound ${key}`, error);
+    console.warn(`soundsUtil: Failed to play sound ${key}:`, error.message);
     // Don't throw - just log and continue
   }
 };

@@ -14,6 +14,7 @@ import { useTheme } from './ThemeContext';
 import { getNotificationService } from './notificationService';
 import pushNotificationService from './pushNotificationService';
 import appUpdateService from './appUpdateService';
+import * as Updates from 'expo-updates';
 import * as Notifications from 'expo-notifications';
 
 const HomeScreen = () => {
@@ -118,7 +119,7 @@ const HomeScreen = () => {
         setUserProfile(userData);
         
         // Set up listeners for all authenticated users
-        setTimeout(() => {
+        const setupListeners = () => {
           try {
             // Set up game invites listener - TEMPORARILY DISABLED TO TEST
             // const invitesQuery = query(
@@ -325,7 +326,8 @@ const HomeScreen = () => {
           } catch (error) {
             console.error('HomeScreen: Failed to set up listeners:', error);
           }
-        }, 100); // Small delay to ensure UI is responsive
+        }; // Call immediately instead of setTimeout to prevent memory leaks
+        setupListeners();
         
       } else {
         // Create user profile if it doesn't exist
@@ -389,7 +391,8 @@ const HomeScreen = () => {
               checkFirstLaunch(),
               clearStuckGameState(), // Clear any stuck game state
               checkForResumableSoloGames(currentUser.uid), // Check for resumable solo games
-              appUpdateService.checkForUpdates() // Check for app updates
+              appUpdateService.checkForUpdates(), // Check for Google Play Store updates
+              checkForEASUpdates() // Check for EAS Updates
             ]).catch(console.error);
           }
           return;
@@ -474,6 +477,34 @@ const HomeScreen = () => {
       }
     } catch (error) {
       console.error('HomeScreen: Failed to check first launch:', error);
+    }
+  };
+
+  const checkForEASUpdates = async () => {
+    try {
+      console.log('HomeScreen: EAS Updates check starting...');
+      console.log('HomeScreen: __DEV__:', __DEV__);
+      console.log('HomeScreen: Updates.isEnabled:', Updates.isEnabled);
+      
+      if (!__DEV__ && Updates.isEnabled) {
+        console.log('HomeScreen: Checking for EAS Updates...');
+        const update = await Updates.checkForUpdateAsync();
+        
+        console.log('HomeScreen: Update check result:', update);
+        
+        if (update.isAvailable) {
+          console.log('HomeScreen: EAS Update available, downloading...');
+          await Updates.fetchUpdateAsync();
+          console.log('HomeScreen: EAS Update downloaded, restarting app...');
+          await Updates.reloadAsync();
+        } else {
+          console.log('HomeScreen: No EAS Updates available');
+        }
+      } else {
+        console.log('HomeScreen: EAS Updates disabled - __DEV__:', __DEV__, 'Updates.isEnabled:', Updates.isEnabled);
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to check for EAS Updates:', error);
     }
   };
 
@@ -726,28 +757,7 @@ const HomeScreen = () => {
     </View>
   );
 
-  // If navigated here with a flag to show an interstitial (e.g., after PvP completion on iOS),
-  // present it once without blocking UI.
-  useEffect(() => {
-    try {
-      const shouldShowAd = route?.params?.showInterstitialAd;
-      if (shouldShowAd) {
-        // Clear the flag to avoid repeat on re-render
-        navigation.setParams({ showInterstitialAd: undefined });
-        // Slight delay to ensure screen is mounted and stable
-        setTimeout(async () => {
-          try {
-            const { default: adService } = await import('./adService');
-            await adService.showInterstitialAd();
-          } catch (_) {
-            // Ignore ad errors
-          }
-        }, 250);
-      }
-    } catch (_) {
-      // ignore
-    }
-  }, [route?.params?.showInterstitialAd]);
+  // iOS PvP completion ad handling removed - now handled directly in PvPGameScreen
 
   return (
     <>
@@ -777,7 +787,7 @@ const HomeScreen = () => {
       <View
         style={{ flex: 1, width: '100%', paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
       >
-        <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
+        <Text style={[styles.header, { marginBottom: 40, color: '#FF0000' }]}>Welcome, {displayName}</Text>
         
         {/* Player Rank Display - Clickable to show rank ladder */}
         <TouchableOpacity
@@ -827,15 +837,22 @@ const HomeScreen = () => {
               
               // Best-effort: clear delivered notifications and reset app badge on device
               try {
-                const delivered = await Notifications.getDeliveredNotificationsAsync();
-                const deliveredIds = (delivered || []).map(n => n.request?.identifier).filter(Boolean);
-                if (deliveredIds.length > 0) {
-                await Notifications.dismissAllNotificationsAsync();
+                // Check if getDeliveredNotificationsAsync is available (not in Expo Go)
+                if (Notifications.getDeliveredNotificationsAsync) {
+                  const delivered = await Notifications.getDeliveredNotificationsAsync();
+                  const deliveredIds = (delivered || []).map(n => n.request?.identifier).filter(Boolean);
+                  if (deliveredIds.length > 0) {
+                    await Notifications.dismissAllNotificationsAsync();
+                  }
+                } else {
+                  // Fallback for Expo Go - just dismiss all
+                  await Notifications.dismissAllNotificationsAsync();
+                }
                 console.log('HomeScreen: Cleared all device notifications');
+              } catch (error) {
+                console.error('HomeScreen: Failed to clear device notifications:', error);
               }
-            } catch (error) {
-              console.error('HomeScreen: Failed to clear device notifications:', error);
-            }
+            
             try {
               // Reset badge count to zero on platforms that support it
               await Notifications.setBadgeCountAsync(0);
@@ -844,10 +861,10 @@ const HomeScreen = () => {
               console.error('HomeScreen: Failed to reset badge count:', error);
             }
 
-              // Clear the badge when user acknowledges by clicking Resume
-              setBadgeCleared(true);
+            // Clear the badge when user acknowledges by clicking Resume
+            setBadgeCleared(true);
               
-              handleButtonPress('ResumeGames');
+            handleButtonPress('ResumeGames');
             }}
           >
             <Text style={styles.buttonText}>Resume</Text>

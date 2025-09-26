@@ -53,6 +53,18 @@ const GameScreen = () => {
   const [difficulty, setDifficulty] = useState(null);
   const [inputWord, setInputWord] = useState(savedInputWord || '');
   const [guesses, setGuesses] = useState(savedGuesses || []);
+  const [guessesLoaded, setGuessesLoaded] = useState(false);
+  
+  // Debug wrapper for setGuesses
+  const setGuessesWithLog = (newGuesses) => {
+    console.log('GameScreen: setGuesses called:', { 
+      oldLength: guesses.length, 
+      newLength: Array.isArray(newGuesses) ? newGuesses.length : 'not array',
+      newGuesses: Array.isArray(newGuesses) ? newGuesses : newGuesses,
+      stackTrace: new Error().stack?.split('\n').slice(1, 4)
+    });
+    setGuesses(newGuesses);
+  };
   const [targetWord, setTargetWord] = useState(savedTargetWord || '');
   const [gameState, setGameState] = useState(savedGameState || (showDifficulty ? 'selectDifficulty' : gameMode === 'pvp' ? 'selectDifficulty' : 'playing'));
 
@@ -66,6 +78,7 @@ const GameScreen = () => {
   const [showLosePopup, setShowLosePopup] = useState(false);
   const [showTiePopup, setShowTiePopup] = useState(false);
   const [showCongratsPopup, setShowCongratsPopup] = useState(false);
+  const [isFirstPlayerToSolve, setIsFirstPlayerToSolve] = useState(false);
   const [showStartGamePopup, setShowStartGamePopup] = useState(false);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showQuitConfirmPopup, setShowQuitConfirmPopup] = useState(false);
@@ -83,6 +96,14 @@ const GameScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [soundsLoaded, setSoundsLoaded] = useState(false);
   const [gameId, setGameId] = useState(initialGameId || `solo_${Date.now()}`);
+  
+  // Update gameId when initialGameId changes (important for resume games)
+  useEffect(() => {
+    if (initialGameId && initialGameId !== gameId) {
+      console.log('GameScreen: Updating gameId from route params:', { oldGameId: gameId, newGameId: initialGameId });
+      setGameId(initialGameId);
+    }
+  }, [initialGameId, gameId]);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const scrollViewRef = useRef(null);
   const soundsInitialized = useRef(false);
@@ -183,16 +204,19 @@ const GameScreen = () => {
     }
   }, []);
 
-  // Show interstitial ad after game completion
+  // Show interstitial ad after game completion with iOS-safe timeout
   const showGameCompletionAd = useCallback(async () => {
     try {
       console.log('GameScreen: showGameCompletionAd called for gameMode:', gameMode);
       console.log('GameScreen: Platform:', Platform?.OS);
-      // Show ads for all game modes after completion
+      
+      // Let adService handle its own timeouts - Grok's suggestion
       await adService.showInterstitialAd();
+      
       console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
+      // Don't throw - continue game flow even if ad fails
     }
   }, [gameMode]);
 
@@ -200,7 +224,6 @@ const GameScreen = () => {
     if (hintCount >= 3) {
       setShowHintLimitPopup(true);
       await playSound('invalidWord').catch(() => {});
-      setTimeout(() => setShowHintLimitPopup(false), 2000);
       return;
     }
 
@@ -225,7 +248,6 @@ const GameScreen = () => {
       if (availableLetters.length === 0) {
         setShowHintLimitPopup(true);
         await playSound('invalidWord').catch(() => {});
-        setTimeout(() => setShowHintLimitPopup(false), 2000);
         return;
       }
 
@@ -245,12 +267,11 @@ const GameScreen = () => {
       });
       setUsedHintLetters(prev => [...prev, hintLetter]);
       if (gameMode === 'solo') {
-        setGuesses((prev) => [...prev, { word: 'HINT', isHint: true }]);
+        setGuessesWithLog((prev) => [...prev, { word: 'HINT', isHint: true }]);
       }
       setHintLetter(hintLetter);
       setHintCount(prev => prev + 1);
       setShowHintPopup(true);
-      setTimeout(() => setShowHintPopup(false), 2000);
     } catch (error) {
       console.error('GameScreen: Failed to process hint', error);
     }
@@ -280,18 +301,74 @@ const GameScreen = () => {
   // Load saved game state for resume mode
   useEffect(() => {
     const loadSavedGameState = async () => {
-      if ((gameMode === 'resume' || resumeGame) && gameId) {
+      if ((gameMode === 'resume' || resumeGame) && gameId && initialGameId) {
+        console.log('GameScreen: Resume conditions met:', { gameMode, resumeGame, gameId, initialGameId });
         try {
           const savedGames = await AsyncStorage.getItem('savedGames');
           if (savedGames) {
             const games = JSON.parse(savedGames);
-            const savedGame = games.find(game => game.gameId === gameId);
+            // Use initialGameId if available, otherwise use current gameId
+            const searchGameId = initialGameId || gameId;
+            console.log('GameScreen: Searching for saved game with ID:', searchGameId);
+            const savedGame = games.find(game => game.gameId === searchGameId);
             
-            if (savedGame && savedGame.gameMode === 'solo') {
-              console.log('GameScreen: Loading saved solo game state:', savedGame.gameId);
+            if (savedGame) {
+              console.log('GameScreen: Loading saved game state:', savedGame.gameId, 'mode:', savedGame.gameMode);
               
-              // Restore game state
-              setGuesses(savedGame.guesses || []);
+              // Restore common game state for both solo and PvP
+              // Validate and clean guesses data
+              const validatedGuesses = (savedGame.guesses || []).map((guess, index) => {
+                console.log(`GameScreen: Processing guess ${index}:`, guess);
+                
+                if (!guess || typeof guess !== 'object') {
+                  console.warn('GameScreen: Invalid guess object found:', guess);
+                  return null;
+                }
+                
+                // If feedback data is missing or corrupted, regenerate it
+                let dots = guaranteeCircles(guess.dots);
+                let circles = guaranteeCircles(guess.circles);
+                let feedback = guess.feedback || [];
+                
+                // Regenerate feedback if data is corrupted or missing
+                if ((dots === 0 && circles === 0 && guess.word && !guess.isHint) || 
+                    !Array.isArray(feedback) || feedback.length === 0 ||
+                    guess.dots === undefined || guess.circles === undefined) {
+                  console.log('GameScreen: Regenerating feedback for guess:', guess.word, 'Original data:', { dots: guess.dots, circles: guess.circles });
+                  const regeneratedFeedback = getFeedback(guess.word, savedGame.targetWord);
+                  dots = regeneratedFeedback.dots;
+                  circles = regeneratedFeedback.circles;
+                  feedback = regeneratedFeedback.feedback;
+                  console.log('GameScreen: Regenerated feedback:', { dots, circles, feedback });
+                }
+                
+                const validatedGuess = {
+                  word: guess.word || '',
+                  dots: dots,
+                  circles: circles,
+                  feedback: feedback,
+                  isCorrect: Boolean(guess.isCorrect),
+                  isHint: Boolean(guess.isHint)
+                };
+                
+                console.log(`GameScreen: Validated guess ${index}:`, validatedGuess);
+                return validatedGuess;
+              }).filter(guess => {
+                const isValid = guess !== null;
+                if (!isValid) {
+                  console.warn('GameScreen: Filtering out invalid guess:', guess);
+                }
+                return isValid;
+              });
+              
+              console.log('GameScreen: Setting guesses from saved data:', {
+                originalGuesses: savedGame.guesses,
+                validatedGuesses: validatedGuesses,
+                validatedLength: validatedGuesses.length
+              });
+              
+              setGuessesWithLog(validatedGuesses);
+              setGuessesLoaded(true);
               setInputWord(savedGame.inputWord || '');
               setAlphabet(savedGame.alphabet || Array(26).fill('unknown'));
               setTargetWord(savedGame.targetWord);
@@ -309,9 +386,17 @@ const GameScreen = () => {
                 setDifficulty(inferredDifficulty);
               }
               
-              console.log('GameScreen: Solo game state restored successfully');
+              // Restore PvP-specific state if it's a PvP game
+              if (savedGame.gameMode === 'pvp') {
+                setPlayerId(savedGame.playerId);
+                setIsCreator(savedGame.isCreator);
+                setOpponentGuessCountOnSolve(savedGame.opponentGuessCountOnSolve);
+                console.log('GameScreen: PvP game state restored successfully');
+              } else {
+                console.log('GameScreen: Solo game state restored successfully');
+              }
             } else {
-              console.warn('GameScreen: No saved solo game found for gameId:', gameId);
+              console.warn('GameScreen: No saved game found for gameId:', gameId);
               // Navigate back if no saved game found
               navigation.goBack();
             }
@@ -328,7 +413,7 @@ const GameScreen = () => {
     };
 
     loadSavedGameState();
-  }, [gameMode, gameId, navigation]);
+  }, [gameMode, gameId, initialGameId, navigation]);
 
   // Firebase subscription effect
   useEffect(() => {
@@ -382,7 +467,7 @@ const GameScreen = () => {
             if (data.wordLength) navigation.setParams({ wordLength: data.wordLength });
             setShowStartGamePopup(true);
             playSound('startGame').catch(() => {});
-            setTimeout(() => setShowStartGamePopup(false), 2000);
+            // Start game popup will be dismissed when user clicks OK button
             setDoc(gameRef, { status: 'active' }, { merge: true }).catch(error => {
               console.error('GameScreen: Failed to update game status to active', error);
             });
@@ -468,6 +553,16 @@ const GameScreen = () => {
     }
   }, [gameState, preloadGameAd]);
 
+  // Clean up completed solo games immediately when game ends
+  useEffect(() => {
+    if (gameState === 'gameOver' && gameMode === 'solo') {
+      console.log('GameScreen: Game ended, cleaning up solo game immediately');
+      cleanupCompletedSoloGame().catch(error => {
+        console.error('GameScreen: Failed to cleanup solo game:', error);
+      });
+    }
+  }, [gameState, gameMode]);
+
   // Game state logic effect
   useEffect(() => {
     if (gameMode !== 'pvp' || !gameId || gameState !== 'playing') return;
@@ -485,26 +580,36 @@ const GameScreen = () => {
       setGameState('gameOver');
       const playerGuessCount = guesses.length;
       const opponentGuessCount = opponentGuessCountOnSolve || opponentGuesses.length;
-      if (playerHasCorrect && opponentHasCorrect) {
-        if (playerGuessCount < opponentGuessCount) {
+      
+      // Check if this is the second player to solve (opponent already solved)
+      const isSecondPlayerToSolve = opponentHasCorrect && !isFirstPlayerToSolve;
+      
+      if (isSecondPlayerToSolve) {
+        // Second player to solve - don't show results popup yet, let congrats popup handle it
+        // The results popup will be shown when congrats popup is dismissed
+      } else {
+        // First player to solve or solo mode - show results popup immediately
+        if (playerHasCorrect && opponentHasCorrect) {
+          if (playerGuessCount < opponentGuessCount) {
+            setShowWinPopup(true);
+            playSound('victory').catch(() => {});
+          } else if (playerGuessCount > opponentGuessCount) {
+            setShowLosePopup(true);
+            playSound('lose').catch(() => {});
+          } else {
+            setShowTiePopup(true);
+            playSound('tie').catch(() => {});
+          }
+        } else if (playerHasCorrect && !opponentHasCorrect) {
           setShowWinPopup(true);
           playSound('victory').catch(() => {});
-        } else if (playerGuessCount > opponentGuessCount) {
+        } else if (!playerHasCorrect && opponentHasCorrect) {
           setShowLosePopup(true);
           playSound('lose').catch(() => {});
         } else {
           setShowTiePopup(true);
           playSound('tie').catch(() => {});
         }
-      } else if (playerHasCorrect && !opponentHasCorrect) {
-        setShowWinPopup(true);
-        playSound('victory').catch(() => {});
-      } else if (!playerHasCorrect && opponentHasCorrect) {
-        setShowLosePopup(true);
-        playSound('lose').catch(() => {});
-      } else {
-        setShowTiePopup(true);
-        playSound('tie').catch(() => {});
       }
     } else if (guesses.length >= MAX_GUESSES && !playerHasCorrect) {
       setGameState('maxGuesses');
@@ -597,21 +702,24 @@ const GameScreen = () => {
 
   useEffect(() => {
     if (!targetWord || gameState === 'selectDifficulty' || gameState === 'waiting' || gameMode === 'resume') return;
+    // Don't save if guesses haven't been loaded yet (for resume games)
+    if (guessesLoaded === false && (gameMode === 'resume' || resumeGame)) return;
     saveGameState();
-  }, [guesses, inputWord, targetWord, gameState, hintCount, gameMode, gameId, isCreator, opponentGuessCountOnSolve, usedHintLetters]);
+  }, [guesses, inputWord, targetWord, gameState, hintCount, gameMode, gameId, isCreator, opponentGuessCountOnSolve, usedHintLetters, alphabet, guessesLoaded, resumeGame]);
 
   // Auto-scroll to bottom when guesses change
   useEffect(() => {
     if (guesses.length > 0 && scrollViewRef.current) {
-      // Small delay to ensure content is rendered
+      // For resume games, add a longer delay to ensure content is fully rendered
+      const delay = (gameMode === 'resume' || resumeGame) ? 300 : 100;
       const timer = setTimeout(() => {
         if (scrollViewRef.current) {
           scrollViewRef.current.scrollToEnd({ animated: true });
         }
-      }, 100);
+      }, delay);
       return () => clearTimeout(timer);
     }
-  }, [guesses]);
+  }, [guesses, gameMode, resumeGame]);
 
   const handleLetterInput = (letter) => {
     if (inputWord.length < (wordLength || 5) && gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
@@ -685,18 +793,20 @@ const GameScreen = () => {
       } else if (gameState === 'playing') {
         const { dots, circles, feedback } = getFeedback(upperInput, targetWord);
         const newGuess = { word: upperInput, dots, circles, feedback, isCorrect: dots === (wordLength || 5) };
-        setGuesses(guesses => [...guesses, newGuess]);
+        setGuessesWithLog(guesses => [...guesses, newGuess]);
         setInputWord('');
 
         if (gameMode === 'pvp' && gameId) {
+          // Use the updated guesses array after setGuesses
+          const updatedGuesses = [...guesses, newGuess];
           const updateData = isCreator
             ? { 
-                playerGuesses: [...guesses, newGuess], 
-                playerGuessCountOnSolve: newGuess.isCorrect ? guesses.length + 1 : null 
+                playerGuesses: updatedGuesses, 
+                playerGuessCountOnSolve: newGuess.isCorrect ? updatedGuesses.length : null 
               }
             : { 
-                opponentGuesses: [...guesses, newGuess], 
-                opponentGuessCountOnSolve: newGuess.isCorrect ? guesses.length + 1 : null 
+                opponentGuesses: updatedGuesses, 
+                opponentGuessCountOnSolve: newGuess.isCorrect ? updatedGuesses.length : null 
               };
           await setDoc(doc(db, 'games', gameId), updateData, { merge: true });
         }
@@ -705,38 +815,32 @@ const GameScreen = () => {
           setShowCongratsPopup(true);
           await playSound('congratulations').catch(() => {});
           
+          // For PvP games, check if this is the first player to solve
+          if (gameMode === 'pvp') {
+            // Check if opponent has already solved
+            const opponentHasSolved = opponentGuesses.some(g => g.isCorrect);
+            setIsFirstPlayerToSolve(!opponentHasSolved);
+          }
+          
           if (gameMode === 'solo') {
-            // For solo games, set up the completion flow immediately
+            // Solo: go straight to detailed win popup and sound
             setGameState('gameOver');
-            
-            // Calculate score with hint penalty (each hint = 3 guesses)
-            const nonHintGuesses = guesses.filter(guess => !guess.isHint);
-            const usedHints = guesses.filter(guess => guess.isHint).length;
-            const hintPenalty = usedHints * 3; // Each hint counts as 3 guesses
-            const newScore = nonHintGuesses.length + hintPenalty + 1;
-            
-            // Ensure difficulty is set for solo games
-            if (!difficulty) {
-              const defaultDifficulty = wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular';
-              setDifficulty(defaultDifficulty);
-            }
-            
-            // Show congratulations popup for 2 seconds, then show win popup
-            setTimeout(() => {
-              setShowCongratsPopup(false);
-              setShowWinPopup(true);
-              playSound('victory').catch(() => {});
-            }, 2000);
+            setShowWinPopup(true);
+            playSound('congratulations').catch(() => {});
           } else {
             // For non-solo games, just show congratulations popup
-            setTimeout(() => {
-              setShowCongratsPopup(false);
-            }, 2000);
+            // Popup will be dismissed when user clicks OK button
           }
           
           // Save game data for solo games
           if (gameMode === 'solo') {
             try {
+              // Calculate score with hint penalty (each hint = 3 guesses)
+              const nonHintGuesses = guesses.filter(guess => !guess.isHint);
+              const usedHints = guesses.filter(guess => guess.isHint).length;
+              const hintPenalty = usedHints * 3; // Each hint counts as 3 guesses
+              const newScore = nonHintGuesses.length + hintPenalty + 1;
+              
               // Always save to local storage for all users
               try {
                 const leaderboard = await AsyncStorage.getItem('leaderboard') || '[]';
@@ -897,10 +1001,7 @@ const GameScreen = () => {
       }
       setShowWordRevealPopup(true);
       await playSound('chime').catch(() => {});
-      setTimeout(async () => {
-        setShowWordRevealPopup(false);
-        navigation.navigate('Home');
-      }, 4000);
+      // Word reveal popup will be dismissed when user clicks OK button
     } catch (error) {
       console.error('GameScreen: Failed to quit game', error);
       setShowWordRevealPopup(false);
@@ -1209,6 +1310,16 @@ const GameScreen = () => {
             contentContainerStyle={{ flexGrow: 1 }}
           >
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Your Guesses</Text>
+            {(() => {
+              // Debug logging for guesses array
+              console.log('GameScreen: Rendering guesses array:', {
+                guessesLength: guesses.length,
+                guesses: guesses.map(g => ({ word: g.word, isHint: g.isHint, dots: g.dots, circles: g.circles })),
+                gameMode: gameMode,
+                resumeGame: resumeGame
+              });
+              return null;
+            })()}
             <View style={styles.guessGrid}>
               {guesses.map((g, idx) => (
                 <View key={`guess-${idx}`} style={styles.guessRow}>
@@ -1228,6 +1339,22 @@ const GameScreen = () => {
                   </View>
                   {!g.isHint && (
                     <View style={styles.feedbackContainer}>
+                      {(() => {
+                        const circles = guaranteeCircles(g.circles);
+                        const dots = guaranteeCircles(g.dots);
+                        // Debug logging for feedback display issues
+                        if (circles === 0 && dots === 0 && g.word && g.word !== 'HINT') {
+                          console.warn('GameScreen: No feedback indicators for guess:', { 
+                            word: g.word, 
+                            originalCircles: g.circles, 
+                            originalDots: g.dots,
+                            processedCircles: circles,
+                            processedDots: dots,
+                            guessIndex: idx
+                          });
+                        }
+                        return null;
+                      })()}
                       {[...Array(guaranteeCircles(g.circles))].map((_, i) => (
                         <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={15} ringWidth={2} style={{ marginRight: 6 }} />
                       ))}
@@ -1262,15 +1389,43 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showCongratsPopup} transparent animationType="fade">
+          <Modal visible={!!showCongratsPopup && gameMode !== 'solo'} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.congratsPopup, styles.modalShadow]}>
                 <Text style={[styles.congratsTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
                 <Text style={[styles.congratsMessage, { color: colors.textSecondary }]}>You solved the word!</Text>
                 <TouchableOpacity
                   style={styles.congratsButtonContainer}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowCongratsPopup(false);
+                    
+                    if (gameMode === 'pvp' && isFirstPlayerToSolve) {
+                      // Show ad for first player to solve in PvP mode, then navigate to home
+                      await showGameCompletionAd();
+                      navigation.navigate('Home');
+                    } else if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
+                      // Second player to solve - show results popup after congrats
+                      const playerGuessCount = guesses.length;
+                      const opponentGuessCount = opponentGuessCountOnSolve || opponentGuesses.length;
+                      const opponentHasCorrect = opponentGuesses.some(g => g.isCorrect);
+                      
+                      if (opponentHasCorrect) {
+                        if (playerGuessCount < opponentGuessCount) {
+                          setShowWinPopup(true);
+                          playSound('victory').catch(() => {});
+                        } else if (playerGuessCount > opponentGuessCount) {
+                          setShowLosePopup(true);
+                          playSound('lose').catch(() => {});
+                        } else {
+                          setShowTiePopup(true);
+                          playSound('tie').catch(() => {});
+                        }
+                      } else {
+                        // Opponent didn't solve, player wins
+                        setShowWinPopup(true);
+                        playSound('victory').catch(() => {});
+                      }
+                    }
                     playSound('chime').catch(() => {});
                   }}
                 >
@@ -1294,10 +1449,10 @@ const GameScreen = () => {
                   style={styles.winButtonContainer}
                   onPress={async () => {
                     setShowWinPopup(false);
-                    // Show ad after game completion
-                    await showGameCompletionAd();
-                    // Clean up completed solo game from saved games
-                    await cleanupCompletedSoloGame();
+                    // Show ad only for second player to solve in PvP mode, or for solo mode
+                    if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
+                      await showGameCompletionAd();
+                    }
                     
                     // iOS-specific: Add small delay before navigation to ensure UI is stable
                     if (Platform.OS === 'ios') {
@@ -1318,13 +1473,15 @@ const GameScreen = () => {
                     style={styles.winButtonContainer}
                     onPress={async () => {
                       setShowWinPopup(false);
-                      // Show ad before starting new game
-                      await showGameCompletionAd();
+                      // Show ad before starting new game (solo mode only)
+                      if (gameMode === 'solo') {
+                        await showGameCompletionAd();
+                      }
                       
                       // iOS-specific: Add small delay before resetting game state
                       if (Platform.OS === 'ios') {
                         setTimeout(() => {
-                          setGuesses([]);
+                          setGuessesWithLog([]);
                           setInputWord('');
                           setAlphabet(Array(26).fill('unknown'));
                           setHintCount(0);
@@ -1333,7 +1490,7 @@ const GameScreen = () => {
                           setIsLoading(true);
                         }, 100);
                       } else {
-                        setGuesses([]);
+                        setGuessesWithLog([]);
                         setInputWord('');
                         setAlphabet(Array(26).fill('unknown'));
                         setHintCount(0);
@@ -1371,10 +1528,10 @@ const GameScreen = () => {
                   style={styles.loseButtonContainer}
                   onPress={async () => {
                     setShowLosePopup(false);
-                    // Show ad after game completion
-                    await showGameCompletionAd();
-                    // Clean up completed solo game from saved games
-                    await cleanupCompletedSoloGame();
+                    // Show ad only for second player to solve in PvP mode, or for solo mode
+                    if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
+                      await showGameCompletionAd();
+                    }
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}
@@ -1397,10 +1554,10 @@ const GameScreen = () => {
                   style={styles.opponentGuessesButtonContainer}
                   onPress={async () => {
                     setShowTiePopup(false);
-                    // Show ad after game completion
-                    await showGameCompletionAd();
-                    // Clean up completed solo game from saved games
-                    await cleanupCompletedSoloGame();
+                    // Show ad only for second player to solve in PvP mode, or for solo mode
+                    if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
+                      await showGameCompletionAd();
+                    }
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}
@@ -1572,10 +1729,10 @@ const GameScreen = () => {
                   onPress={async () => {
                     setShowMaxGuessesPopup(false);
                     await saveGameState();
-                    // Show ad after max guesses reached
-                    await showGameCompletionAd();
-                    // Clean up completed solo game from saved games
-                    await cleanupCompletedSoloGame();
+                    // Show ad after max guesses reached (solo mode only)
+                    if (gameMode === 'solo') {
+                      await showGameCompletionAd();
+                    }
                     navigation.navigate('Home');
                     playSound('chime').catch(() => {});
                   }}

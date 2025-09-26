@@ -143,6 +143,25 @@ class FriendsService {
       });
       console.log('🔍 [FriendsService] Created mutual friendship');
 
+      // Also update OLD friendRequests collection for backward compatibility
+      console.log('🔍 [FriendsService] Updating OLD friendRequests collection...');
+      const oldSystemQuery = query(
+        collection(db, 'friendRequests'),
+        where('fromUid', '==', fromUserId),
+        where('toUid', '==', this.currentUser.uid),
+        where('status', '==', 'pending')
+      );
+      const oldSystemSnapshot = await getDocs(oldSystemQuery);
+      
+      if (oldSystemSnapshot.docs.length > 0) {
+        const oldSystemDoc = oldSystemSnapshot.docs[0];
+        await updateDoc(oldSystemDoc.ref, {
+          status: 'accepted',
+          acceptedAt: new Date().toISOString()
+        });
+        console.log('🔍 [FriendsService] Updated OLD system request to accepted');
+      }
+
       // Send push notification
       await getNotificationService().sendPushNotification(
         fromUserId,
@@ -275,11 +294,66 @@ class FriendsService {
     }
   }
 
-  // Check if two users are friends
+
+  // Check if two users are friends (check both NEW and OLD systems)
   async areFriends(userId1, userId2) {
     try {
+      console.log('🔍 [FriendsService] Checking if users are friends:', userId1, 'and', userId2);
+      
+      // Check NEW subcollection system first
       const friendDoc = await getDoc(doc(db, 'users', userId1, 'friends', userId2));
-      return friendDoc.exists() && friendDoc.data().status === 'accepted';
+      console.log('🔍 [FriendsService] NEW system - Friend doc exists:', friendDoc.exists());
+      if (friendDoc.exists()) {
+        const data = friendDoc.data();
+        console.log('🔍 [FriendsService] NEW system - Friend doc data:', data);
+        const isAccepted = data.status === 'accepted';
+        console.log('🔍 [FriendsService] NEW system - Status is accepted:', isAccepted);
+        if (isAccepted) return true;
+      }
+      
+      // Check OLD friendRequests collection as fallback
+      console.log('🔍 [FriendsService] Checking OLD friendRequests collection...');
+      
+      // Check for any non-pending status (accepted, confirmed, friends, etc.)
+      const oldSystemQuery = query(
+        collection(db, 'friendRequests'),
+        where('fromUid', '==', userId1),
+        where('toUid', '==', userId2)
+      );
+      const oldSystemSnapshot = await getDocs(oldSystemQuery);
+      console.log('🔍 [FriendsService] OLD system - All requests found:', oldSystemSnapshot.docs.length);
+      
+      // Check each document to see if it's a friendship (not pending)
+      for (const docSnapshot of oldSystemSnapshot.docs) {
+        const data = docSnapshot.data();
+        console.log('🔍 [FriendsService] OLD system - Request status:', data.status);
+        if (data.status && data.status !== 'pending' && data.status !== 'declined') {
+          console.log('🔍 [FriendsService] OLD system - Found friendship with status:', data.status);
+          return true;
+        }
+      }
+      
+      // Also check reverse direction in OLD system
+      const reverseQuery = query(
+        collection(db, 'friendRequests'),
+        where('fromUid', '==', userId2),
+        where('toUid', '==', userId1)
+      );
+      const reverseSnapshot = await getDocs(reverseQuery);
+      console.log('🔍 [FriendsService] OLD system - Reverse requests found:', reverseSnapshot.docs.length);
+      
+      // Check each reverse document
+      for (const docSnapshot of reverseSnapshot.docs) {
+        const data = docSnapshot.data();
+        console.log('🔍 [FriendsService] OLD system - Reverse request status:', data.status);
+        if (data.status && data.status !== 'pending' && data.status !== 'declined') {
+          console.log('🔍 [FriendsService] OLD system - Found reverse friendship with status:', data.status);
+          return true;
+        }
+      }
+      
+      console.log('🔍 [FriendsService] No friendship found in either system');
+      return false;
     } catch (error) {
       console.error('FriendsService: Failed to check friendship status:', error);
       return false;
@@ -303,30 +377,60 @@ class FriendsService {
   // Friend Search
   async searchUsers(usernameQuery) {
     try {
-      if (!usernameQuery || usernameQuery.length < 2) return [];
+      // Trim whitespace from the query
+      const trimmedQuery = usernameQuery?.trim();
+      if (!trimmedQuery || trimmedQuery.length < 2) return [];
+      
+      console.log('🔍 [FriendsService] Searching for username:', trimmedQuery);
+      console.log('🔍 [FriendsService] Current user:', this.currentUser?.uid);
       
       const usersRef = collection(db, 'users');
-      const searchQuery = query(
-        usersRef,
-        where('username', '>=', usernameQuery),
-        where('username', '<=', usernameQuery + '\uf8ff'),
-        orderBy('username'),
-        limit(10)
-      );
       
-      const querySnapshot = await getDocs(searchQuery);
-      const results = querySnapshot.docs
+      // Skip indexed query and go straight to fallback to see all users
+      console.log('🔍 [FriendsService] Using fallback method to see all users');
+      
+      // Get all users and filter client-side
+      const allUsersQuery = query(usersRef, limit(100)); // Limit to prevent large downloads
+      const querySnapshot = await getDocs(allUsersQuery);
+      
+      console.log('🔍 [FriendsService] Total users in database:', querySnapshot.docs.length);
+      
+      const allUsers = querySnapshot.docs
         .map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }))
         .filter(user => user.id !== this.currentUser?.uid);
       
+      console.log('🔍 [FriendsService] After filtering current user:', allUsers.length, 'users');
+      console.log('🔍 [FriendsService] All usernames in database:', allUsers.map(u => u.username));
+      
+      // Filter by username on client side
+      console.log('🔍 [FriendsService] Filtering with query:', trimmedQuery.toLowerCase());
+      
+      const filteredUsers = allUsers.filter(user => {
+        if (!user.username) {
+          return false;
+        }
+        const userLower = user.username.toLowerCase();
+        const queryLower = trimmedQuery.toLowerCase();
+        const matches = userLower.startsWith(queryLower);
+        return matches;
+      }).slice(0, 10); // Limit to 10 results
+      
+      console.log('🔍 [FriendsService] After username filtering:', filteredUsers.length, 'users');
+      console.log('🔍 [FriendsService] Filtered users:', filteredUsers.map(u => u.username));
+      
       // Add friendship status to search results
-      for (const user of results) {
+      for (const user of filteredUsers) {
         user.friendshipStatus = await this.getFriendshipStatus(this.currentUser.uid, user.id);
       }
       
-      return results;
+      return filteredUsers;
     } catch (error) {
-      console.error('FriendsService: Failed to search users:', error);
+      console.error('🔍 [FriendsService] Failed to search users:', error);
+      console.error('🔍 [FriendsService] Error details:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      });
       return [];
     }
   }

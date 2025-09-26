@@ -2567,6 +2567,7 @@ export const hardWordList = [
   'scroll',
   'scrubs',
   'sealed',
+  'sealer',
   'seaman',
   'search',
   'season',

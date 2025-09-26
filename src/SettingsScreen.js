@@ -58,6 +58,20 @@ const SettingsScreen = () => {
   const requestNotificationPermissions = async () => {
     try {
       console.log('SettingsScreen: Requesting notification permissions...');
+      
+      // Check current permission status first
+      const { status: currentStatus } = await Notifications.getPermissionsAsync();
+      console.log('SettingsScreen: Current permission status:', currentStatus);
+      
+      if (currentStatus === 'granted') {
+        Alert.alert(
+          '✅ Notifications Already Enabled',
+          'You are already receiving push notifications for friend requests, game challenges, and updates.',
+          [{ text: 'Great!' }]
+        );
+        return;
+      }
+      
       const pushToken = await pushNotificationService.initialize();
       
       if (pushToken) {
@@ -69,13 +83,10 @@ const SettingsScreen = () => {
       } else {
         Alert.alert(
           '❌ Permission Denied',
-          'Please enable notifications in your device settings to receive push notifications.',
+          'Please enable notifications in your device settings to receive push notifications.\n\nGo to Settings > Apps > WhatWord > Notifications and enable them.',
           [
             { text: 'Cancel' },
-            { text: 'Open Settings', onPress: () => {
-              // This would open device settings, but we can't do that directly
-              Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
-            }}
+            { text: 'Try Again', onPress: requestNotificationPermissions }
           ]
         );
       }
