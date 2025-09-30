@@ -31,21 +31,13 @@ export const loadSounds = async () => {
   if (soundsLoaded) return;
   
   try {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: false,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-
     // Load sounds with better error handling
     const soundPromises = Object.entries(soundFiles).map(async ([key, soundFile]) => {
-      try {
-        const { sound } = await Audio.Sound.createAsync(soundFile);
-        loadedSounds[key] = sound;
-        console.log(`soundsUtil: Loaded sound ${key}`);
-      } catch (error) {
+             try {
+               const { sound } = await Audio.Sound.createAsync(soundFile);
+               loadedSounds[key] = sound;
+               console.log(`soundsUtil: Loaded sound ${key}`);
+             } catch (error) {
         console.warn(`soundsUtil: Failed to load sound ${key}:`, error.message);
         // Don't fail the entire loading process for individual sounds
       }
@@ -55,7 +47,7 @@ export const loadSounds = async () => {
     soundsLoaded = true;
     console.log('soundsUtil: Sound loading completed');
   } catch (error) {
-    console.error('soundsUtil: Failed to set audio mode', error);
+    console.error('soundsUtil: Failed to load sounds', error);
     // Still mark as loaded to prevent infinite retries
     soundsLoaded = true;
   }
@@ -78,14 +70,14 @@ export const playSound = async (key, options = {}) => {
       return;
     }
 
-    // Check if sound is still valid before playing
-    try {
-      if (options.volume !== undefined) {
-        await sound.setVolumeAsync(options.volume);
-      }
-      
-      await sound.replayAsync();
-    } catch (playError) {
+           // Check if sound is still valid before playing
+           try {
+             if (options.volume !== undefined) {
+               await sound.setVolumeAsync(options.volume);
+             }
+             
+             await sound.replayAsync();
+           } catch (playError) {
       console.warn(`soundsUtil: Failed to play sound ${key}:`, playError.message);
       // Remove invalid sound from cache
       delete loadedSounds[key];

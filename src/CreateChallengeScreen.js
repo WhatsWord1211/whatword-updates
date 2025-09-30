@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, BackHandler } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
@@ -26,6 +26,19 @@ const CreateChallengeScreen = () => {
 
     return unsubscribe;
   }, []);
+
+  // Prevent back button from going to word submission page - always go to main screen
+  useEffect(() => {
+    const backAction = () => {
+      // Always navigate to main screen instead of going back
+      navigation.navigate('MainTabs');
+      return true; // Prevent default back behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [navigation]);
 
   const loadFriends = async (userId) => {
     try {
@@ -129,7 +142,7 @@ const CreateChallengeScreen = () => {
           style={[styles.backButton, { alignSelf: 'flex-start', marginLeft: 0 }]}
           onPress={() => {
             playSound('chime');
-            navigation.goBack();
+            navigation.navigate('MainTabs');
           }}
         >
           <Text style={styles.backButtonText}>← Back</Text>
@@ -191,7 +204,7 @@ const CreateChallengeScreen = () => {
                style={styles.button}
                onPress={() => {
                  setShowMenuPopup(false);
-                 navigation.navigate('Home');
+                 navigation.navigate('MainTabs');
                }}
              >
                <Text style={styles.buttonText}>Return to Home</Text>

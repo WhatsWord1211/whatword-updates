@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -594,21 +594,30 @@ const GameScreen = () => {
             setShowWinPopup(true);
             playSound('victory').catch(() => {});
           } else if (playerGuessCount > opponentGuessCount) {
-            setShowLosePopup(true);
-            playSound('lose').catch(() => {});
+            if (gameMode !== 'solo') {
+              setShowLosePopup(true);
+              playSound('lose').catch(() => {});
+            }
           } else {
-            setShowTiePopup(true);
-            playSound('tie').catch(() => {});
+            if (gameMode !== 'solo') {
+              setShowTiePopup(true);
+              playSound('tie').catch(() => {});
+            }
           }
         } else if (playerHasCorrect && !opponentHasCorrect) {
           setShowWinPopup(true);
           playSound('victory').catch(() => {});
         } else if (!playerHasCorrect && opponentHasCorrect) {
-          setShowLosePopup(true);
-          playSound('lose').catch(() => {});
+          if (gameMode !== 'solo') {
+            setShowLosePopup(true);
+            playSound('lose').catch(() => {});
+          }
         } else {
-          setShowTiePopup(true);
-          playSound('tie').catch(() => {});
+          // No tie state in solo mode; in PvP, both unsolved implies tie when game ends
+          if (gameMode !== 'solo') {
+            setShowTiePopup(true);
+            playSound('tie').catch(() => {});
+          }
         }
       }
     } else if (guesses.length >= MAX_GUESSES && !playerHasCorrect) {
@@ -873,7 +882,8 @@ const GameScreen = () => {
                     mode: gameMode,
                     difficulty: gameDifficulty, // Save difficulty level
                     wordLength: wordLength || 5, // Save word length
-                    guesses: newScore, // Includes hint penalty (each hint = 3 guesses)
+                    score: newScore, // Includes hint penalty (each hint = 3 guesses) - changed from 'guesses' to 'score' for Firestore rules
+                    guesses: newScore, // Keep both for compatibility
                     usedHints: usedHints, // Track number of hints used
                     timestamp: new Date().toISOString(), 
                     userId: auth.currentUser.uid,
@@ -1005,7 +1015,7 @@ const GameScreen = () => {
     } catch (error) {
       console.error('GameScreen: Failed to quit game', error);
       setShowWordRevealPopup(false);
-      navigation.navigate('Home');
+      navigation.navigate('MainTabs');
     }
   };
 
@@ -1013,12 +1023,12 @@ const GameScreen = () => {
     try {
       await saveGameState();
       setShowMenuPopup(false);
-      navigation.navigate('Home');
+      navigation.navigate('MainTabs');
       await playSound('chime').catch(() => {});
     } catch (error) {
       console.error('GameScreen: Failed to save game', error);
       setShowMenuPopup(false);
-      navigation.navigate('Home');
+      navigation.navigate('MainTabs');
     }
   };
 
@@ -1182,7 +1192,7 @@ const GameScreen = () => {
             style={[styles.button, { marginTop: 20 }]} 
             onPress={() => {
               playSound('backspace').catch(() => {});
-              navigation.navigate('Home');
+              navigation.navigate('MainTabs');
             }}
           >
             <Text style={styles.buttonText}>Back to Home</Text>
@@ -1402,7 +1412,7 @@ const GameScreen = () => {
                     if (gameMode === 'pvp' && isFirstPlayerToSolve) {
                       // Show ad for first player to solve in PvP mode, then navigate to home
                       await showGameCompletionAd();
-                      navigation.navigate('Home');
+                      navigation.navigate('MainTabs');
                     } else if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
                       // Second player to solve - show results popup after congrats
                       const playerGuessCount = guesses.length;
@@ -1449,21 +1459,14 @@ const GameScreen = () => {
                   style={styles.winButtonContainer}
                   onPress={async () => {
                     setShowWinPopup(false);
-                    // Show ad only for second player to solve in PvP mode, or for solo mode
+                    // iOS-safe: wait for UI to settle before showing ad
+                    await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                    await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
                     if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
                       await showGameCompletionAd();
                     }
-                    
-                    // iOS-specific: Add small delay before navigation to ensure UI is stable
-                    if (Platform.OS === 'ios') {
-                      setTimeout(() => {
-                        navigation.navigate('Home');
-                        playSound('chime').catch(() => {});
-                      }, 100);
-                    } else {
-                      navigation.navigate('Home');
-                      playSound('chime').catch(() => {});
-                    }
+                    navigation.navigate('MainTabs');
+                    playSound('chime').catch(() => {});
                   }}
                 >
                   <Text style={styles.buttonText}>Main Menu</Text>
@@ -1473,12 +1476,13 @@ const GameScreen = () => {
                     style={styles.winButtonContainer}
                     onPress={async () => {
                       setShowWinPopup(false);
-                      // Show ad before starting new game (solo mode only)
+                      // iOS-safe: wait for UI to settle before showing ad
+                      await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                      await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
                       if (gameMode === 'solo') {
                         await showGameCompletionAd();
                       }
                       
-                      // iOS-specific: Add small delay before resetting game state
                       if (Platform.OS === 'ios') {
                         setTimeout(() => {
                           setGuessesWithLog([]);
@@ -1515,6 +1519,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
+          {gameMode !== 'solo' && (
           <Modal visible={!!showLosePopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.losePopup, styles.modalShadow]}>
@@ -1528,11 +1533,11 @@ const GameScreen = () => {
                   style={styles.loseButtonContainer}
                   onPress={async () => {
                     setShowLosePopup(false);
-                    // Show ad only for second player to solve in PvP mode, or for solo mode
-                    if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
+                    // Show ad only for second player to solve in PvP mode
+                    if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
                       await showGameCompletionAd();
                     }
-                    navigation.navigate('Home');
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >
@@ -1541,6 +1546,8 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
+          )}
+          {gameMode !== 'solo' && (
           <Modal visible={!!showTiePopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
@@ -1554,11 +1561,11 @@ const GameScreen = () => {
                   style={styles.opponentGuessesButtonContainer}
                   onPress={async () => {
                     setShowTiePopup(false);
-                    // Show ad only for second player to solve in PvP mode, or for solo mode
-                    if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
+                    // Show ad only for second player to solve in PvP mode
+                    if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
                       await showGameCompletionAd();
                     }
-                    navigation.navigate('Home');
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >
@@ -1567,6 +1574,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
+          )}
           <Modal visible={!!showStartGamePopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
@@ -1647,9 +1655,11 @@ const GameScreen = () => {
                   style={styles.wordRevealButtonContainer}
                   onPress={async () => {
                     setShowWordRevealPopup(false);
-                    // Show ad after quit confirmation
+                    // iOS-safe: wait for UI to settle before showing ad
+                    await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                    await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
                     await showGameCompletionAd();
-                    navigation.navigate('Home');
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >
@@ -1721,24 +1731,85 @@ const GameScreen = () => {
             <View style={styles.modalOverlay}>
               <View style={[styles.maxGuessesPopup, styles.modalShadow]}>
                 <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
-                <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}>
-                  You've reached the maximum of {MAX_GUESSES} guesses. Waiting for opponent to finish.
+                <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}> 
+                  {gameMode === 'solo'
+                    ? `You've reached the maximum of ${MAX_GUESSES} guesses.`
+                    : `You've reached the maximum of ${MAX_GUESSES} guesses. Waiting for ${opponentUsername} to finish.`}
                 </Text>
-                <TouchableOpacity
-                  style={styles.maxGuessesButtonContainer}
-                  onPress={async () => {
-                    setShowMaxGuessesPopup(false);
-                    await saveGameState();
-                    // Show ad after max guesses reached (solo mode only)
-                    if (gameMode === 'solo') {
-                      await showGameCompletionAd();
-                    }
-                    navigation.navigate('Home');
-                    playSound('chime').catch(() => {});
-                  }}
-                >
-                  <Text style={styles.buttonText}>Main Menu</Text>
-                </TouchableOpacity>
+                {gameMode === 'solo' ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.maxGuessesButtonContainer}
+                      onPress={async () => {
+                        setShowMaxGuessesPopup(false);
+                        await saveGameState();
+                        // iOS-safe: wait for UI to settle before showing ad
+                        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                        await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
+                        await showGameCompletionAd();
+                        // Start a new solo game
+                        // iOS-specific: Add small delay before resetting game state
+                        if (Platform.OS === 'ios') {
+                          setTimeout(() => {
+                            setGuessesWithLog([]);
+                            setInputWord('');
+                            setAlphabet(Array(26).fill('unknown'));
+                            setHintCount(0);
+                            setUsedHintLetters([]);
+                            setGameState('playing');
+                            setIsLoading(true);
+                          }, 100);
+                        } else {
+                          setGuessesWithLog([]);
+                          setInputWord('');
+                          setAlphabet(Array(26).fill('unknown'));
+                          setHintCount(0);
+                          setUsedHintLetters([]);
+                          setGameState('playing');
+                          setIsLoading(true);
+                        }
+                        try {
+                          const word = await selectRandomWord(wordLength || 5);
+                          const upperWord = word.toUpperCase();
+                          setTargetWord(upperWord);
+                        } catch (error) {
+                          console.error('GameScreen: Failed to select random word after max guesses', error);
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }}
+                    >
+                      <Text style={styles.buttonText}>Play Again</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.maxGuessesButtonContainer}
+                      onPress={async () => {
+                        setShowMaxGuessesPopup(false);
+                        await saveGameState();
+                        // iOS-safe: wait for UI to settle before showing ad
+                        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                        await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
+                        await showGameCompletionAd();
+                        navigation.navigate('MainTabs');
+                        playSound('chime').catch(() => {});
+                      }}
+                    >
+                      <Text style={styles.buttonText}>Main Menu</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.maxGuessesButtonContainer}
+                    onPress={async () => {
+                      setShowMaxGuessesPopup(false);
+                      await saveGameState();
+                      navigation.navigate('MainTabs');
+                      playSound('chime').catch(() => {});
+                    }}
+                  >
+                    <Text style={styles.buttonText}>Return to Home</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </Modal>

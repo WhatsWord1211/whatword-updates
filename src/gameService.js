@@ -133,27 +133,47 @@ class GameService {
       
       await updateDoc(doc(db, 'games', gameId), updates);
       
-      // Send notification to opponent when word is set
-      const opponentId = gameData.playerIds.find(id => id !== this.getCurrentUser().uid);
-      if (opponentId) {
-        try {
-          const currentUserDoc = await getDoc(doc(db, 'users', this.getCurrentUser().uid));
-          const currentUserData = currentUserDoc.data();
-          
-          await getNotificationService().sendPushNotification(
-            opponentId,
-            'Game Ready!',
-            `${currentUserData.username || 'Your opponent'} has set their word. The game is ready to begin!`,
-            { 
-              type: 'game_ready', 
-              gameId,
-              senderId: this.getCurrentUser().uid, 
-              senderName: currentUserData.username 
-            }
-          );
-        } catch (notificationError) {
-          console.error('GameService: Failed to send notification to opponent:', notificationError);
-          // Don't throw error - word setting should still succeed even if notification fails
+      // Send "Game Started" notification when both players have set their words (game becomes active)
+      // Only notify the first player (the one who set their word first), not the second player who just set their word
+      if (updates.status === 'active') {
+        const currentUserId = this.getCurrentUser().uid;
+        const isCreator = currentUserId === gameData.creatorId;
+        
+        // Determine who was the first player (the one who needs the notification)
+        let firstPlayerId = null;
+        if (isCreator && gameData.opponentWord) {
+          // Creator just set their word, but opponent already had their word set
+          // So the creator (current user) is the second player - don't notify them
+          // Instead, notify the opponent who was waiting
+          firstPlayerId = gameData.playerIds.find(id => id !== currentUserId);
+        } else if (!isCreator && gameData.playerWord) {
+          // Non-creator just set their word, but creator already had their word set
+          // So the non-creator (current user) is the second player - don't notify them
+          // Instead, notify the creator who was waiting
+          firstPlayerId = gameData.creatorId;
+        }
+        
+        if (firstPlayerId) {
+          try {
+            const currentUserDoc = await getDoc(doc(db, 'users', currentUserId));
+            const currentUserData = currentUserDoc.data();
+            
+            await getNotificationService().sendPushNotification(
+              firstPlayerId,
+              'Game Started',
+              `Your battle with ${currentUserData.username || currentUserData.displayName || 'your opponent'} has begun`,
+              {
+                type: 'game_started',
+                gameId,
+                opponentName: currentUserData.username || currentUserData.displayName || 'your opponent',
+                wordLength: gameData.wordLength || 5,
+                timestamp: new Date().toISOString()
+              }
+            );
+          } catch (notificationError) {
+            console.error('GameService: Failed to send game started notification:', notificationError);
+            // Don't throw error - word setting should still succeed even if notification fails
+          }
         }
       }
       
@@ -566,16 +586,36 @@ class GameService {
   // Forfeit game
   async forfeitGame(gameId) {
     try {
-      if (!this.getCurrentUser()) throw new Error('User not authenticated');
+      console.log('GameService: Starting forfeit game for:', gameId);
+      console.log('GameService: Auth object:', auth);
+      console.log('GameService: Auth currentUser:', auth.currentUser);
       
+      if (!this.getCurrentUser()) {
+        console.error('GameService: User not authenticated');
+        throw new Error('User not authenticated');
+      }
+      
+      console.log('GameService: Current user:', this.getCurrentUser().uid);
+      console.log('GameService: Database object:', db);
+      
+      console.log('GameService: Attempting to get game document...');
       const gameDoc = await getDoc(doc(db, 'games', gameId));
-      if (!gameDoc.exists()) throw new Error('Game not found');
+      console.log('GameService: Game document retrieved, exists:', gameDoc.exists());
+      
+      if (!gameDoc.exists()) {
+        console.error('GameService: Game not found:', gameId);
+        throw new Error('Game not found');
+      }
       
       const gameData = gameDoc.data();
+      console.log('GameService: Game data:', gameData);
       
       // Verify user is a player in this game (handle both field naming conventions)
       const playersArray = gameData.playerIds || gameData.players;
+      console.log('GameService: Players array:', playersArray);
+      
       if (!playersArray || !playersArray.includes(this.getCurrentUser().uid)) {
+        console.error('GameService: Access denied - user not in players list');
         throw new Error('Access denied: You are not a player in this game');
       }
       
@@ -593,7 +633,11 @@ class GameService {
         resultsSeenBy: [this.getCurrentUser().uid]
       };
       
+      console.log('GameService: Updating game document with:', updates);
+      console.log('GameService: About to call updateDoc...');
+      
       await updateDoc(doc(db, 'games', gameId), updates);
+      console.log('GameService: Successfully updated game document');
       
       // Send game completion notification only to the opponent (winner)
       try {
@@ -618,6 +662,11 @@ class GameService {
       return true;
     } catch (error) {
       console.error('GameService: Failed to forfeit game:', error);
+      console.error('GameService: Error type:', typeof error);
+      console.error('GameService: Error constructor:', error.constructor.name);
+      console.error('GameService: Error message:', error.message);
+      console.error('GameService: Error code:', error.code);
+      console.error('GameService: Error stack:', error.stack);
       throw error;
     }
   }

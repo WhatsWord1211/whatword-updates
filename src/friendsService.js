@@ -81,16 +81,9 @@ class FriendsService {
 
       // Send push notification
       console.log('🔍 [FriendsService] Sending push notification to:', toUserId);
-      await getNotificationService().sendPushNotification(
+      await getNotificationService().sendFriendRequestNotification(
         toUserId,
-        'Friend Request',
-        `${userData.username || 'Someone'} sent you a friend request`,
-        {
-          type: 'friend_request',
-          fromUserId: this.currentUser.uid,
-          fromUsername: userData.username || 'Someone',
-          timestamp: new Date().toISOString()
-        }
+        userData.username || userData.displayName || 'Someone'
       );
       console.log('🔍 [FriendsService] Push notification sent successfully');
 
@@ -163,11 +156,9 @@ class FriendsService {
       }
 
       // Send push notification
-      await getNotificationService().sendPushNotification(
+      await getNotificationService().sendFriendRequestAcceptedNotification(
         fromUserId,
-        'Friend Request Accepted',
-        `${userData.username || 'Someone'} accepted your friend request`,
-        { type: 'friend_request_accepted', senderId: this.currentUser.uid, senderName: userData.username }
+        userData.username || userData.displayName || 'Someone'
       );
       console.log('🔍 [FriendsService] Sent push notification');
 
@@ -184,6 +175,16 @@ class FriendsService {
       
       // Delete the friend document from recipient's subcollection
       await deleteDoc(doc(db, 'users', this.currentUser.uid, 'friends', fromUserId));
+
+      // Get current user data for notification
+      const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
+      const userData = userDoc.data();
+
+      // Send push notification
+      await getNotificationService().sendFriendRequestDeclinedNotification(
+        fromUserId,
+        userData.username || userData.displayName || 'Someone'
+      );
 
       return true;
     } catch (error) {

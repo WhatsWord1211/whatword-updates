@@ -1,9 +1,9 @@
 {
-  "latestBuildNumber": 29,
-  "versionCode": 29,
-  "versionName": "1.1.1",
-  "releaseDate": "2025-01-27",
-  "updateMessage": "Push notification fixes and FCM integration - Fixed project ID lookup, implemented FCM for Android, added permission retry logic, consolidated notification handlers, improved error handling and token refresh"
+  "latestBuildNumber": 32,
+  "versionCode": 32,
+  "versionName": "1.1.4",
+  "releaseDate": "2025-01-29",
+  "updateMessage": "Major bug fixes and improvements - Fixed quit game functionality for waiting opponents, resolved navigation back button issues, improved Firestore rules, enhanced error handling and logging, fixed sound system with expo-av, resolved notification spam issues"
 }
 
 

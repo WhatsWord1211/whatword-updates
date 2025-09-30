@@ -19,10 +19,14 @@ class PlayerProfileService {
   // Update game statistics
   async updateGameStats(uid, gameResult) {
     try {
+      console.log(`PlayerProfileService: Starting updateGameStats for uid=${uid}, gameResult=`, gameResult);
+      
       const updates = {
         gamesPlayed: increment(1),
         lastGamePlayed: new Date().toISOString()
       };
+      
+      console.log(`PlayerProfileService: Initial updates object:`, updates);
 
       // Track hint usage
       if (gameResult.usedHints && gameResult.usedHints > 0) {
@@ -60,12 +64,17 @@ class PlayerProfileService {
         updates.averageScore = Math.round(newTotal / newGames);
       }
 
-              await updateDoc(doc(db, 'users', uid), updates);
+      console.log(`PlayerProfileService: About to update user document with updates:`, updates);
+      await updateDoc(doc(db, 'users', uid), updates);
+      console.log(`PlayerProfileService: Successfully updated user document`);
         
-        // Update rolling averages for difficulty-specific ranking
-        if (gameResult.difficulty) {
-          await this.updateDifficultyRollingAverages(uid, gameResult.difficulty, gameResult.score);
-        }
+      // Update rolling averages for difficulty-specific ranking
+      if (gameResult.difficulty) {
+        console.log(`PlayerProfileService: Calling updateDifficultyRollingAverages for difficulty=${gameResult.difficulty}, score=${gameResult.score}`);
+        await this.updateDifficultyRollingAverages(uid, gameResult.difficulty, gameResult.score);
+      } else {
+        console.log(`PlayerProfileService: No difficulty provided, skipping rolling averages update`);
+      }
         
         // Check for achievements
         await this.checkAchievements(uid, updates);
@@ -322,6 +331,7 @@ class PlayerProfileService {
   // Calculate and update rolling averages for the last 15 games per difficulty level
   async updateDifficultyRollingAverages(uid, difficulty, newScore) {
     try {
+      console.log(`PlayerProfileService: Starting updateDifficultyRollingAverages for uid=${uid}, difficulty=${difficulty}, newScore=${newScore}`);
       
       // Use a simpler query that doesn't require a composite index
       // Get all games for this user and difficulty, then filter and sort in memory
@@ -332,8 +342,10 @@ class PlayerProfileService {
         // Removed difficulty filter and orderBy to avoid index requirements
       );
       
+      console.log(`PlayerProfileService: Querying leaderboard collection for user ${uid}`);
       const leaderboardSnapshot = await getDocs(leaderboardQuery);
       const allGames = leaderboardSnapshot.docs.map(doc => doc.data());
+      console.log(`PlayerProfileService: Found ${allGames.length} total games for user`);
       
       // Filter by difficulty and sort by timestamp in memory
       const difficultyGames = allGames
@@ -354,16 +366,20 @@ class PlayerProfileService {
       const totalAttempts = last15Games.reduce((sum, game) => sum + game.guesses, 0);
       const rollingAverage = totalAttempts / last15Games.length;
       
+      console.log(`PlayerProfileService: Calculated rolling average: ${rollingAverage} from ${last15Games.length} games`);
       
       // Update the user profile with the new rolling average
       const difficultyField = `${difficulty}AverageScore`;
+      const gamesCountField = `${difficulty}GamesCount`;
+      console.log(`PlayerProfileService: Updating user profile with ${difficultyField}=${rollingAverage}, ${gamesCountField}=${last15Games.length}`);
+      
       await updateDoc(doc(db, 'users', uid), {
         [difficultyField]: rollingAverage,
-        [`${difficulty}GamesCount`]: last15Games.length,
+        [gamesCountField]: last15Games.length,
         lastUpdated: new Date().toISOString()
       });
       
-      
+      console.log(`PlayerProfileService: Successfully updated user profile for ${difficulty} difficulty`);
       return rollingAverage;
     } catch (error) {
       console.error(`PlayerProfileService: Failed to update ${difficulty} rolling averages:`, error);

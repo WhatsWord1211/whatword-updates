@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal, ScrollView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, getDocs, addDoc, getDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
@@ -107,6 +107,18 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       }
     };
   }, []); // Empty dependency array - load once on mount
+
+  // Clear search results when navigating away from the Friends screen
+  useFocusEffect(
+    React.useCallback(() => {
+      // This runs when the screen comes into focus
+      return () => {
+        // This cleanup function runs when the screen loses focus
+        setSearchResults([]);
+        setSearchQuery('');
+      };
+    }, [])
+  );
 
   const loadFriends = async () => {
     try {
@@ -610,6 +622,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
           ]}
           onPress={() => {
             setActiveTab('friends');
+            // Clear search results when switching away from Add Friends tab
+            setSearchResults([]);
+            setSearchQuery('');
             playSound('toggleTab').catch(() => {});
           }}
         >
@@ -633,6 +648,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
           ]}
           onPress={async () => {
             setActiveTab('requests');
+            // Clear search results when switching away from Add Friends tab
+            setSearchResults([]);
+            setSearchQuery('');
             // Clear the requests tab badge when clicked
             clearRequestsTabBadge();
             playSound('toggleTab').catch(() => {});
@@ -733,23 +751,47 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
             autoCorrect={false}
             autoCapitalize="none"
           />
-          <TouchableOpacity
-            style={{
-              backgroundColor: colors.primary,
-              paddingVertical: 10,
-              paddingHorizontal: 20,
-              borderRadius: 6,
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 120,
-            }}
-            onPress={searchUsers}
-            disabled={searching}
-          >
-            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
-              {searching ? 'Searching...' : 'Search'}
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.primary,
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: 6,
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 120,
+              }}
+              onPress={searchUsers}
+              disabled={searching}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+                {searching ? 'Searching...' : 'Search'}
+              </Text>
+            </TouchableOpacity>
+            {searchResults.length > 0 && (
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.error || '#EF4444',
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: 6,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 80,
+                }}
+                onPress={() => {
+                  setSearchResults([]);
+                  setSearchQuery('');
+                  playSound('backspace').catch(() => {});
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+                  Clear
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       )}
 

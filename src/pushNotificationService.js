@@ -5,8 +5,19 @@ import { Platform, Alert, InteractionManager } from 'react-native';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
-// Note: Notification handler is set up in notificationService.js to avoid conflicts
-// This service focuses on token management and sending notifications
+// Configure notification behavior for background and foreground
+Notifications.setNotificationHandler({
+  handleNotification: async (notification) => {
+    console.log('PushNotificationService: Notification received:', notification);
+    return {
+      // Use modern notification handler properties
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    };
+  },
+});
 
 class PushNotificationService {
   constructor() {
@@ -15,6 +26,7 @@ class PushNotificationService {
     this.responseListener = null;
     this.isInitialized = false;
     this.isInitializing = false;
+    this.currentUserId = null;
     
     // Queue and throttling
     this.notificationQueue = [];
@@ -26,7 +38,6 @@ class PushNotificationService {
     this.tokenRefreshPromise = null;
     this.lastTokenRefresh = 0;
     this.tokenRefreshInterval = 24 * 60 * 60 * 1000; // 24 hours
-    this.tokenRefreshListener = null;
     
     // Request timeout
     this.requestTimeout = 5000; // 5 seconds
@@ -35,7 +46,7 @@ class PushNotificationService {
   /**
    * Initialize push notifications and get Expo push token
    */
-  async initialize() {
+  async initialize(userId = null) {
     // Prevent multiple simultaneous initializations
     if (this.isInitialized) {
       return this.expoPushToken;
@@ -50,6 +61,12 @@ class PushNotificationService {
     try {
       console.log('PushNotificationService: Initializing...');
       
+      // Set current user ID if provided
+      if (userId) {
+        this.currentUserId = userId;
+        console.log('PushNotificationService: Current user ID set:', userId);
+      }
+      
       // Register for push notifications
       const token = await this.registerForPushNotificationsAsync();
       if (token) {
@@ -57,11 +74,13 @@ class PushNotificationService {
         this.isInitialized = true;
         console.log('PushNotificationService: Expo push token obtained:', token);
         
+        // Save token to Firestore if we have a user ID
+        if (this.currentUserId) {
+          await this.savePushTokenToFirestore(this.currentUserId, token);
+        }
+        
         // Set up listeners asynchronously
         this.setupNotificationListeners();
-        
-        // Set up token refresh listener
-        this.setupTokenRefreshListener();
         
         // Reset app badge on successful initialization
         try {
@@ -87,14 +106,7 @@ class PushNotificationService {
   async registerForPushNotificationsAsync() {
     let token;
 
-    console.log('🔍 === PUSH NOTIFICATION REGISTRATION DEBUG ===');
-    console.log('Platform:', Platform.OS);
-    console.log('Is Device:', Device.isDevice);
-    console.log('Device Name:', Device.deviceName);
-    console.log('Device Type:', Device.deviceType);
-
     if (Platform.OS === 'android') {
-      console.log('📱 Setting up Android notification channels...');
       // Create notification channels for Android
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Default Notifications',
@@ -128,10 +140,20 @@ class PushNotificationService {
         enableLights: true,
         showBadge: true,
       });
-      console.log('✅ Android notification channels created');
     }
 
     if (Device.isDevice) {
+      console.log('🔍 === PUSH NOTIFICATION REGISTRATION DEBUG ===');
+      console.log('Platform:', Platform.OS);
+      console.log('Is Device:', Device.isDevice);
+      console.log('Device Name:', Device.deviceName);
+      console.log('Device Type:', Device.deviceType);
+      
+      if (Platform.OS === 'android') {
+        console.log('📱 Setting up Android notification channels...');
+        console.log('✅ Android notification channels created');
+      }
+      
       console.log('📱 Physical device detected, proceeding with token generation...');
       
       // Check current permissions
@@ -176,73 +198,71 @@ class PushNotificationService {
         }
       } else {
         console.log('PushNotificationService: ✅ Notification permissions already granted');
+        console.log('PushNotificationService: ✅ Notification permissions granted, proceeding with token generation');
       }
       
       if (finalStatus !== 'granted') {
-        console.log('PushNotificationService: ❌ Cannot proceed without notification permissions');
-        console.log('PushNotificationService: Permission status:', finalStatus);
+        console.log('PushNotificationService: Cannot proceed without notification permissions');
         return null;
       }
       
-      console.log('PushNotificationService: ✅ Notification permissions granted, proceeding with token generation');
-      
       try {
-        // Dynamic project ID lookup with comprehensive fallbacks
-        const getProjectId = () => {
-          // Primary: EAS project ID from expo config
-          if (Constants.expoConfig?.extra?.eas?.projectId) {
-            console.log('PushNotificationService: Using EAS project ID from expoConfig.extra.eas');
-            return Constants.expoConfig.extra.eas.projectId;
-          }
-          
-          // Secondary: EAS project ID from eas config
-          if (Constants.easConfig?.projectId) {
-            console.log('PushNotificationService: Using EAS project ID from easConfig');
-            return Constants.easConfig.projectId;
-          }
-          
-          // Tertiary: Project ID from expo config extra
-          if (Constants.expoConfig?.extra?.projectId) {
-            console.log('PushNotificationService: Using project ID from expoConfig.extra');
-            return Constants.expoConfig.extra.projectId;
-          }
-          
-          // Fallback: Hardcoded (should be replaced with actual project ID)
-          console.warn('PushNotificationService: Using fallback project ID - this may cause push notification failures');
-          return 'b189d504-5441-4ee4-977f-2ad58d77659d';
-        };
+        // Check if we're running in Expo Go (which has push notification limitations)
+        const isExpoGo = Constants.appOwnership === 'expo';
+        console.log('PushNotificationService: App ownership:', Constants.appOwnership);
+        console.log('PushNotificationService: Is Expo Go:', isExpoGo);
         
-        const projectId = getProjectId();
-        console.log('PushNotificationService: Resolved projectId:', projectId);
-        
-        if (!projectId || projectId === 'b189d504-5441-4ee4-977f-2ad58d77659d') {
-          console.error('PushNotificationService: ⚠️ Using fallback project ID - push notifications may not work!');
-          console.error('PushNotificationService: Please verify your EAS project ID in app.json');
+        if (isExpoGo) {
+          console.log('PushNotificationService: ⚠️ Running in Expo Go - push notifications may not work properly');
+          console.log('PushNotificationService: ⚠️ Consider using a development build for full push notification support');
+          // Still try to get token, but it may fail
         }
         
-        console.log('🎫 Generating Expo push token...');
+        // Expo push notifications don't require FCM keys - Expo handles FCM integration automatically
+        console.log('PushNotificationService: Using Expo push service (no FCM keys required)');
+        
+        // Get Expo project ID from app.json
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 
+                         Constants.easConfig?.projectId ?? 
+                         'b189d504-5441-4ee4-977f-2ad58d77659d';
+        
+        console.log('🎫 Generating Expo push token with projectId:', projectId);
+        console.log('PushNotificationService: Using Expo push service with projectId');
+        
+        // Generate Expo push token with projectId (required for managed projects)
         token = (await Notifications.getExpoPushTokenAsync({
-          projectId,
+          projectId: projectId
         })).data;
         console.log('PushNotificationService: Got Expo push token:', token);
-        console.log('PushNotificationService: Project ID used:', projectId);
-        console.log('✅ Push token generated successfully');
       } catch (error) {
         console.error('PushNotificationService: Failed to get Expo push token:', error);
-        console.error('Error details:', {
-          message: error.message,
-          code: error.code,
-          stack: error.stack
-        });
+        console.error('Error details:', error);
+        
+        // Check if this is a configuration error
+        if (error.message && error.message.includes('Firebase API key')) {
+          console.log('PushNotificationService: ❌ Firebase API key error detected');
+          console.log('PushNotificationService: This suggests the google-services.json file may be missing or invalid');
+          console.log('PushNotificationService: Check that google-services.json is in ./firebase/ directory');
+        }
+        
+        if (error.message && error.message.includes('FCM')) {
+          console.log('PushNotificationService: ❌ FCM error detected');
+          console.log('PushNotificationService: This is unexpected - Expo handles FCM integration automatically');
+        }
+        
+        if (error.message && error.message.includes('projectId')) {
+          console.log('PushNotificationService: ❌ ProjectId error detected');
+          console.log('PushNotificationService: Check that projectId is correctly set in app.json extra.eas.projectId');
+        }
+        
+        console.log('PushNotificationService: No push token obtained');
         return null;
       }
     } else {
       console.log('PushNotificationService: Must use physical device for Push Notifications');
-      console.log('❌ Simulator/emulator detected - push notifications not available');
       return null;
     }
 
-    console.log('🎉 Push notification registration completed successfully');
     return token;
   }
 
@@ -306,21 +326,15 @@ class PushNotificationService {
    */
   async savePushTokenToFirestore(userId, token) {
     try {
-      console.log('PushNotificationService: Saving push token to Firestore for user:', userId);
-      console.log('PushNotificationService: Token to save:', token);
-      
       await setDoc(doc(db, 'users', userId), {
         expoPushToken: token,
         pushToken: token, // Also save as pushToken for compatibility
         pushTokenUpdatedAt: new Date().toISOString(),
-        pushNotificationsEnabled: true,
-        lastTokenRefresh: new Date().toISOString(),
       }, { merge: true });
-      
-      console.log('PushNotificationService: ✅ Successfully saved push token to Firestore');
+      console.log('PushNotificationService: Saved push token to Firestore');
       return true;
     } catch (error) {
-      console.error('PushNotificationService: ❌ Failed to save push token:', error);
+      console.error('PushNotificationService: Failed to save push token:', error);
       return false;
     }
   }
@@ -330,13 +344,64 @@ class PushNotificationService {
    */
   async getUserPushToken(userId) {
     try {
+      console.log('PushNotificationService: Getting push token for user:', userId);
       const userDoc = await getDoc(doc(db, 'users', userId));
+      
       if (userDoc.exists()) {
-        return userDoc.data().expoPushToken || userDoc.data().pushToken || null;
+        const userData = userDoc.data();
+        const expoPushToken = userData.expoPushToken;
+        const pushToken = userData.pushToken;
+        const pushNotificationsEnabled = userData.pushNotificationsEnabled;
+        
+        console.log('PushNotificationService: User data found:', {
+          hasExpoPushToken: !!expoPushToken,
+          hasPushToken: !!pushToken,
+          pushNotificationsEnabled: pushNotificationsEnabled,
+          expoPushTokenLength: expoPushToken ? expoPushToken.length : 0,
+          pushTokenLength: pushToken ? pushToken.length : 0
+        });
+        
+        const token = expoPushToken || pushToken || null;
+        if (token) {
+          console.log('PushNotificationService: ✅ Found push token for user:', userId);
+        } else {
+          console.log('PushNotificationService: ❌ No push token in user document for user:', userId);
+        }
+        
+        return token;
+      } else {
+        console.log('PushNotificationService: ❌ User document does not exist for user:', userId);
+        return null;
       }
+    } catch (error) {
+      console.error('PushNotificationService: ❌ Failed to get user push token:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Refresh push token for current user
+   */
+  async refreshTokenForCurrentUser() {
+    if (!this.currentUserId) {
+      console.log('PushNotificationService: No current user ID set for token refresh');
+      return null;
+    }
+    
+    try {
+      console.log('PushNotificationService: Refreshing token for current user:', this.currentUserId);
+      const newToken = await this.registerForPushNotificationsAsync();
+      
+      if (newToken) {
+        console.log('PushNotificationService: New token obtained, saving to Firestore');
+        await this.savePushTokenToFirestore(this.currentUserId, newToken);
+        this.expoPushToken = newToken;
+        return newToken;
+      }
+      
       return null;
     } catch (error) {
-      console.error('PushNotificationService: Failed to get user push token:', error);
+      console.error('PushNotificationService: Failed to refresh token for current user:', error);
       return null;
     }
   }
@@ -346,6 +411,16 @@ class PushNotificationService {
    */
   async sendPushNotification(toUserId, title, body, data = {}) {
     console.log('PushNotificationService: sendPushNotification called:', { toUserId, title, body, data });
+    
+    // Auto-initialize if not already initialized
+    if (!this.isInitialized && !this.isInitializing) {
+      console.log('PushNotificationService: Not initialized, attempting to initialize...');
+      try {
+        await this.initialize();
+      } catch (error) {
+        console.error('PushNotificationService: Auto-initialization failed:', error);
+      }
+    }
     
     // Create a unique key for deduplication
     const notificationKey = `${toUserId}_${title}_${body}_${JSON.stringify(data)}`;
@@ -437,7 +512,23 @@ class PushNotificationService {
       console.log('PushNotificationService: Retrieved push token:', pushToken ? 'Found' : 'Not found');
       
       if (!pushToken) {
-        console.log('PushNotificationService: No push token found for user:', toUserId);
+        console.log('PushNotificationService: ❌ No push token found for user:', toUserId);
+        console.log('PushNotificationService: This means the user either:');
+        console.log('PushNotificationService: 1. Has not granted notification permissions');
+        console.log('PushNotificationService: 2. Has not initialized push notifications');
+        console.log('PushNotificationService: 3. Has an invalid/expired token');
+        console.log('PushNotificationService: 4. Push token was not saved to Firestore');
+        
+        // Check if this is the current user and try to refresh their token
+        if (toUserId === this.currentUserId) {
+          console.log('PushNotificationService: Attempting to refresh token for current user');
+          try {
+            await this.refreshTokenForCurrentUser();
+          } catch (refreshError) {
+            console.error('PushNotificationService: Failed to refresh token:', refreshError);
+          }
+        }
+        
         // Still save to Firestore for in-app notifications
         await this.saveNotificationToFirestore(toUserId, title, body, data);
         resolve(null);
@@ -452,28 +543,19 @@ class PushNotificationService {
         channelId = 'game_updates';
       }
 
-      // Send push notification via Expo's service with timeout
-      const message = {
-        to: pushToken,
-        sound: 'default',
-        title: title,
-        body: body,
-        data: data,
-        priority: 'high',
-        channelId: channelId,
-        // Ensure notifications show even when app is closed
-        _displayInForeground: true,
-        _displayInBackground: true,
-      };
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
-
+      // Use Expo's push service (FREE - no Firebase API key required)
+      console.log('PushNotificationService: Using Expo push service (FREE - no Firebase dependency)');
+      
       try {
-        console.log('PushNotificationService: Sending message to Expo:', JSON.stringify(message, null, 2));
-      console.log('PushNotificationService: Target user ID:', toUserId);
-      console.log('PushNotificationService: Push token length:', pushToken ? pushToken.length : 'null');
-        
+        const message = {
+          to: pushToken,
+          sound: 'default',
+          title: title,
+          body: body,
+          data: data,
+          channelId: channelId,
+        };
+
         const response = await fetch('https://exp.host/--/api/v2/push/send', {
           method: 'POST',
           headers: {
@@ -482,49 +564,24 @@ class PushNotificationService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(message),
-          signal: controller.signal,
         });
 
-        clearTimeout(timeoutId);
-        console.log('PushNotificationService: Expo response status:', response.status);
-        
         const result = await response.json();
-        console.log('PushNotificationService: Expo response:', JSON.stringify(result, null, 2));
         
-        // Monitor the response for errors and success
-        this.monitorPushResult(result, toUserId, data.type || 'general');
-        
-        if (result.data && result.data[0] && result.data[0].status === 'ok') {
-          console.log('PushNotificationService: ✅ Push notification sent successfully');
-          console.log('PushNotificationService: Notification ID:', result.data[0].id);
-          // Do not duplicate successful pushes into Firestore to avoid flooding in-app notifications
-          resolve(result.data[0].id);
+        if (result.data && result.data.status === 'ok') {
+          console.log('PushNotificationService: Push notification sent successfully via Expo');
+          resolve(result.data.id);
         } else {
-          console.error('PushNotificationService: ❌ Failed to send push notification');
-          console.error('PushNotificationService: Response data:', JSON.stringify(result, null, 2));
-          console.error('PushNotificationService: Error details:', result.data?.[0]?.details || 'No details available');
-          
-          // Fallback to Firestore notification
-          console.log('PushNotificationService: Falling back to Firestore notification');
-          this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
-            console.error('PushNotificationService: Failed to save to Firestore:', error);
-          });
-          resolve(null);
+          throw new Error(`Expo push failed: ${JSON.stringify(result)}`);
         }
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        this.logError('Failed to send push notification', fetchError, {
-          toUserId,
-          notificationType: data.type || 'general',
-          token: pushToken,
-          message: JSON.stringify(message, null, 2)
-        });
         
+      } catch (expoError) {
+        console.error('PushNotificationService: ❌ Failed to send push notification');
+        console.error('PushNotificationService: Error details:', expoError.message || 'No details available');
         // Fallback to Firestore notification
-        this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
-          console.error('PushNotificationService: Failed to save to Firestore:', error);
-        });
-        resolve(null);
+        await this.saveNotificationToFirestore(toUserId, title, body, data);
+        console.log('PushNotificationService: Falling back to Firestore notification');
+        resolve('firestore_notification');
       }
 
       this.lastNotificationTime = Date.now();
@@ -538,6 +595,8 @@ class PushNotificationService {
     }
   }
 
+  // Firebase-related methods removed - using Expo push service directly
+
   /**
    * Save notification to Firestore for in-app display
    */
@@ -545,8 +604,9 @@ class PushNotificationService {
     try {
       const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       await setDoc(doc(db, 'notifications', notificationId), {
-      toUserId,
+        toUserId,
         toUid: toUserId, // compatibility with existing queries
+        fromUid: this.currentUserId || 'system', // Required by Firestore rules
         title,
         body,
         data,
@@ -732,44 +792,6 @@ class PushNotificationService {
   }
 
   /**
-   * Set up token refresh listener for Expo push tokens
-   */
-  setupTokenRefreshListener() {
-    try {
-      // Listen for token changes
-      this.tokenRefreshListener = Notifications.addPushTokenListener(async (token) => {
-        console.log('PushNotificationService: Token refreshed:', token.data);
-        this.expoPushToken = token.data;
-        this.lastTokenRefresh = Date.now();
-        
-        // Save new token to Firestore if we have a current user
-        if (this.currentUserId) {
-          await this.savePushTokenToFirestore(this.currentUserId, token.data);
-        }
-      });
-      
-      console.log('PushNotificationService: Token refresh listener set up');
-    } catch (error) {
-      console.error('PushNotificationService: Failed to set up token refresh listener:', error);
-    }
-  }
-
-  /**
-   * Clean up token refresh listener
-   */
-  cleanupTokenRefreshListener() {
-    if (this.tokenRefreshListener) {
-      try {
-        Notifications.removeNotificationSubscription(this.tokenRefreshListener);
-        this.tokenRefreshListener = null;
-        console.log('PushNotificationService: Token refresh listener cleaned up');
-      } catch (error) {
-        console.error('PushNotificationService: Failed to clean up token refresh listener:', error);
-      }
-    }
-  }
-
-  /**
    * Clean up listeners and clear queue
    */
   cleanup() {
@@ -782,64 +804,9 @@ class PushNotificationService {
       this.responseListener = null;
     }
     
-    // Clean up token refresh listener
-    this.cleanupTokenRefreshListener();
-    
     // Clear notification queue
     this.notificationQueue = [];
     this.isProcessingQueue = false;
-  }
-
-  /**
-   * Enhanced error logging with stack traces
-   * @param {string} context - Context where error occurred
-   * @param {Error} error - The error object
-   * @param {Object} additionalInfo - Additional context information
-   */
-  logError(context, error, additionalInfo = {}) {
-    console.error(`PushNotificationService: ${context}`, {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      ...additionalInfo,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  /**
-   * Monitor push notification send results
-   * @param {Object} response - Expo push response
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} notificationType - Type of notification sent
-   */
-  monitorPushResult(response, recipientId, notificationType) {
-    const { data, errors } = response;
-    
-    if (errors && errors.length > 0) {
-      console.error('PushNotificationService: Push notification errors:', {
-        recipientId,
-        notificationType,
-        errors: errors.map(err => ({
-          code: err.code,
-          message: err.message,
-          details: err.details
-        })),
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (data && data.length > 0) {
-      console.log('PushNotificationService: Push notification results:', {
-        recipientId,
-        notificationType,
-        results: data.map(result => ({
-          status: result.status,
-          message: result.message,
-          details: result.details
-        })),
-        timestamp: new Date().toISOString()
-      });
-    }
   }
 
   /**

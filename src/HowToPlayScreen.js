@@ -179,7 +179,7 @@ const HowToPlayScreen = () => {
       if (step < steps.length - 1) {
         setStep(step + 1);
       } else {
-        navigation.navigate('Home');
+        navigation.navigate('MainTabs');
       }
     } catch (error) {
       console.error('HowToPlayScreen: Failed to play chime sound', error);
@@ -189,7 +189,7 @@ const HowToPlayScreen = () => {
   const handleBack = async () => {
     try {
       await playSound('chime');
-      navigation.navigate('Home');
+      navigation.navigate('MainTabs');
     } catch (error) {
       console.error('HowToPlayScreen: Failed to play chime sound', error);
     }
@@ -263,7 +263,7 @@ const HowToPlayScreen = () => {
             <VideoView
               style={styles.video}
               player={player}
-              allowsFullscreen={true}
+              fullscreenOptions={{ allowsFullscreen: true }}
               allowsPictureInPicture={true}
             />
             <TouchableOpacity

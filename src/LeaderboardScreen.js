@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, FlatList, ScrollView, RefreshControl, Ale
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc, onSnapshot } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
 
@@ -34,9 +34,37 @@ const LeaderboardScreen = () => {
     return unsubscribe;
   }, []);
 
+  // Real-time listener for current user's profile updates
+  useEffect(() => {
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const userData = docSnapshot.data();
+        
+        // Update the current user's data in the friends list
+        setUserFriends(prevFriends => {
+          const updatedFriends = prevFriends.map(friend => 
+            friend.uid === user.uid ? { ...friend, ...userData } : friend
+          );
+          
+          // If current user not in friends list, add them
+          if (!prevFriends.some(friend => friend.uid === user.uid)) {
+            updatedFriends.push({ uid: user.uid, ...userData });
+          }
+          
+          return updatedFriends;
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [user]);
+
   // Load leaderboards when friends are loaded
   useEffect(() => {
-    if (user && userFriends.length > 0) {
+    if (user && userFriends.length >= 0) { // Changed from > 0 to >= 0 to include solo players
       loadLeaderboards(user);
     }
   }, [user, userFriends]);
@@ -44,7 +72,7 @@ const LeaderboardScreen = () => {
   // Refresh leaderboard when screen comes into focus or difficulty changes
   useFocusEffect(
     React.useCallback(() => {
-      if (user && userFriends.length > 0) {
+      if (user && userFriends.length >= 0) { // Changed from > 0 to >= 0 to include solo players
         loadLeaderboards(user);
       }
     }, [user, userFriends, activeDifficulty])
@@ -91,6 +119,11 @@ const LeaderboardScreen = () => {
     }
     setActiveDifficulty(difficulty);
     playSound('toggleTab').catch(() => {});
+    
+    // Reload leaderboards when difficulty changes
+    if (user && userFriends.length >= 0) {
+      await loadLeaderboards(user);
+    }
   };
 
 
@@ -110,6 +143,16 @@ const LeaderboardScreen = () => {
       
       
       const friends = [];
+      
+      // Always include current user in friends list for leaderboard
+      const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (currentUserDoc.exists()) {
+        friends.push({
+          uid: currentUser.uid,
+          ...currentUserDoc.data()
+        });
+      }
+      
       for (const friendId of friendIds) {
         try {
           const friendUserDoc = await getDoc(doc(db, 'users', friendId));
@@ -124,17 +167,6 @@ const LeaderboardScreen = () => {
         }
       }
       
-      // Add current user to friends list for ranking (only if not already present)
-      if (!friends.some(friend => friend.uid === currentUser.uid)) {
-        const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (currentUserDoc.exists()) {
-          const currentUserData = currentUserDoc.data();
-          friends.push({
-            uid: currentUser.uid,
-            ...currentUserData
-          });
-        }
-      }
       
       setUserFriends(friends);
     } catch (error) {
@@ -156,6 +188,9 @@ const LeaderboardScreen = () => {
 
   const loadSoloLeaderboard = async (currentUser) => {
     try {
+      console.log('LeaderboardScreen: Loading solo leaderboard for difficulty:', activeDifficulty);
+      console.log('LeaderboardScreen: User friends count:', userFriends.length);
+      
       const leaderboardData = [];
       
       // Get solo averages for all friends (including current user) for the selected difficulty
@@ -178,7 +213,10 @@ const LeaderboardScreen = () => {
           }
           
           // Only include players who have played games in this difficulty
-          if (runningAverage > 0) {
+          console.log(`LeaderboardScreen: Friend ${friend.username || friend.displayName}: avg=${runningAverage}, games=${gamesCount}`);
+          
+          // Include players who have played games (runningAverage > 0) OR show current user even with 0 games
+          if (runningAverage > 0 || friend.uid === currentUser.uid) {
             leaderboardData.push({
               uid: friend.uid,
               username: friend.username || friend.displayName || 'Unknown Player',
@@ -204,6 +242,7 @@ const LeaderboardScreen = () => {
         rank: index + 1
       }));
       
+      console.log('LeaderboardScreen: Final solo leaderboard data:', rankedData);
       setSoloLeaderboard(rankedData);
 
       // Find current user's rank

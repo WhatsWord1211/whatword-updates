@@ -185,11 +185,11 @@ const ProfileScreen = () => {
           createdAt: new Date(),
           lastLogin: new Date(),
           // Solo mode stats by difficulty
-          easyGamesPlayed: 0,
+          easyGamesCount: 0,
           easyAverageScore: 0,
-          regularGamesPlayed: 0,
+          regularGamesCount: 0,
           regularAverageScore: 0,
-          hardGamesPlayed: 0,
+          hardGamesCount: 0,
           hardAverageScore: 0,
           totalScore: 0,
           // PvP mode stats

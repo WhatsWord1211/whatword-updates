@@ -81,7 +81,7 @@ const SetWordScreen = () => {
         Alert.alert('Game Started!', 'Both players can now play at their own pace!', [
           {
             text: 'OK',
-            onPress: () => navigation.navigate('Home')
+            onPress: () => navigation.navigate('MainTabs')
           }
         ]);
         playSound('chime');

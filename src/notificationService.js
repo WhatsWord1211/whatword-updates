@@ -8,16 +8,26 @@ import { db } from './firebase';
 import { playSound } from './soundsUtil';
 import pushNotificationService from './pushNotificationService';
 
-// Configure notification behavior
+// Configure notification behavior for both foreground and background
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    // iOS-specific fields
-    shouldShowBanner: true,
-    shouldShowList: true,
-    // Modern fields only; avoid deprecated shouldShowAlert
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    console.log('NotificationService: Handling notification:', notification);
+    
+    // Always show notification regardless of app state
+    // This is critical for background notifications to work
+    return {
+      // iOS-specific fields
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      // Android-specific fields
+      priority: 'high',
+      // Force notification to show even when app is closed
+      _displayInForeground: true,
+      _displayInBackground: true,
+    };
+  },
 });
 
 // Background message handler for FCM
@@ -1340,6 +1350,16 @@ class NotificationService {
     return pushNotificationService.sendFriendRequestNotification(toUserId, senderName);
   }
 
+  // Send friend request accepted notification
+  async sendFriendRequestAcceptedNotification(toUserId, senderName) {
+    return pushNotificationService.sendFriendRequestAcceptedNotification(toUserId, senderName);
+  }
+
+  // Send friend request declined notification
+  async sendFriendRequestDeclinedNotification(toUserId, senderName) {
+    return pushNotificationService.sendFriendRequestDeclinedNotification(toUserId, senderName);
+  }
+
   // Send challenge notification
   async sendChallengeNotification(toUserId, senderName, challengeId, wordLength) {
     return pushNotificationService.sendGameChallengeNotification(toUserId, senderName, wordLength);
@@ -1393,6 +1413,11 @@ class NotificationService {
         timestamp: new Date().toISOString()
       }
     );
+  }
+
+  // Send app update notification
+  async sendAppUpdateNotification(toUserId, version = null) {
+    return pushNotificationService.sendAppUpdateNotification(toUserId, version);
   }
 
   // Listen to user's notifications

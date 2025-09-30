@@ -292,14 +292,43 @@ const HomeScreen = () => {
 
             const unsubscribeAccepted = onSnapshot(acceptedChallengesQuery, async (snapshot) => {
               try {
-                let newCount = startedGameIdsRef.current.size;
+                // Load previously seen challenges from AsyncStorage
+                const seenChallengesKey = `seenChallenges_${currentUser.uid}`;
+                let seenChallenges = new Set();
+                try {
+                  const stored = await AsyncStorage.getItem(seenChallengesKey);
+                  if (stored) {
+                    seenChallenges = new Set(JSON.parse(stored));
+                  }
+                } catch (error) {
+                  console.warn('HomeScreen: Failed to load seen challenges:', error);
+                }
+                
+                let newCount = 0;
                 const notificationService = getNotificationService();
+                const newSeenChallenges = new Set(seenChallenges);
+                
+                // Only process challenges that were accepted recently (within last 24 hours)
+                const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                
                 snapshot.docs.forEach((docSnap) => {
                   const data = docSnap.data();
                   const challengeId = docSnap.id;
-                  if (!startedGameIdsRef.current.has(challengeId)) {
-                    startedGameIdsRef.current.add(challengeId);
-                    newCount = startedGameIdsRef.current.size;
+                  
+                  // Skip old challenges - check multiple possible timestamp fields
+                  const acceptedAt = data.acceptedAt?.toDate?.() || 
+                                   data.timestamp?.toDate?.() || 
+                                   data.updatedAt?.toDate?.() ||
+                                   new Date(0); // Default to epoch if no timestamp
+                  
+                  if (acceptedAt < oneDayAgo) {
+                    return; // Skip old challenges
+                  }
+                  
+                  // Only show notification if we haven't seen this challenge before
+                  if (!seenChallenges.has(challengeId)) {
+                    newSeenChallenges.add(challengeId);
+                    newCount++;
                     // Fire a local notification so P1 gets an immediate alert in Expo Go
                     notificationService.showLocalNotification({
                       title: 'Game Started',
@@ -311,6 +340,13 @@ const HomeScreen = () => {
                     // Chime removed to prevent multiple sounds during sign-in
                   }
                 });
+                
+                // Save updated seen challenges to AsyncStorage
+                try {
+                  await AsyncStorage.setItem(seenChallengesKey, JSON.stringify(Array.from(newSeenChallenges)));
+                } catch (error) {
+                  console.warn('HomeScreen: Failed to save seen challenges:', error);
+                }
                 // Contribute to Resume badge when a game actually starts (P2 set word)
                 setStartedGameCount(newCount);
                 if (newCount > 0) setBadgeCleared(false);
@@ -340,11 +376,11 @@ const HomeScreen = () => {
           createdAt: new Date(),
           lastLogin: new Date(),
           // Solo mode stats by difficulty
-          easyGamesPlayed: 0,
+          easyGamesCount: 0,
           easyAverageScore: 0,
-          regularGamesPlayed: 0,
+          regularGamesCount: 0,
           regularAverageScore: 0,
-          hardGamesPlayed: 0,
+          hardGamesCount: 0,
           hardAverageScore: 0,
           totalScore: 0,
           // PvP mode stats
@@ -629,8 +665,8 @@ const HomeScreen = () => {
         return;
       }
       
-        // Initialize the push notification service
-        const pushToken = await pushNotificationService.initialize();
+        // Initialize the push notification service with current user ID
+        const pushToken = await pushNotificationService.initialize(userId);
         
         if (pushToken) {
           // Save the push token to the user's Firestore document

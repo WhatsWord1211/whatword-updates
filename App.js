@@ -30,8 +30,10 @@ import './src/adService'; // Initialize AdMob service
 import { initializeConsentAndAds } from './src/consentManager';
 import * as Notifications from 'expo-notifications';
 import { loadSounds } from './src/soundsUtil';
+import { Audio } from 'expo-av';
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
+import { getNotificationService } from './src/notificationService';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -53,7 +55,11 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('App Error Boundary caught an error:', error, errorInfo);
+    console.error('=== APP ERROR BOUNDARY CAUGHT ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error info:', errorInfo);
+    console.error('=== END ERROR BOUNDARY ===');
   }
 
   render() {
@@ -76,7 +82,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Auto-apply OTA updates on startup (no second relaunch needed)
+  // Check for OTA updates on startup, fetch in background; do NOT auto-reload on launch
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -87,8 +93,7 @@ export default function App() {
           console.log('OTA: Update available, fetching...');
           const fetched = await Updates.fetchUpdateAsync();
           if (!cancelled && fetched.isNew) {
-            console.log('OTA: New update fetched, reloading app...');
-            await Updates.reloadAsync();
+            console.log('OTA: New update fetched; will apply on next app restart');
           }
         } else {
           console.log('OTA: No update available');
@@ -103,42 +108,96 @@ export default function App() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        console.log('=== APP INITIALIZATION START ===');
         console.log('App: Starting initialization...');
+
+        // Configure audio to avoid background thread issues
+        try {
+          await Audio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            allowsRecordingIOS: false,
+            shouldDuckAndroid: true,
+            interruptionModeAndroid: 1,
+            interruptionModeIOS: 1,
+          });
+          console.log('App: Audio mode configured');
+        } catch (audioModeErr) {
+          console.warn('App: Failed to set audio mode:', audioModeErr?.message || audioModeErr);
+        }
+        
+        // Wait a moment to ensure Firebase is fully initialized
+        console.log('App: Waiting 100ms for Firebase to be ready...');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        console.log('App: Wait complete, proceeding with initialization...');
+        
+        // Initialize notification service early
+        const notificationService = getNotificationService();
+        await notificationService.initialize().catch((err) => {
+          console.warn('App: Notification service initialization failed:', err);
+        });
+        console.log('App: Notification service initialized');
         
         // Initialize consent flow and ads SDK early
         await initializeConsentAndAds().catch((err) => {
           console.warn('App: Consent and ads initialization failed:', err);
         });
         
-        // Load sounds on app start - wait for completion
-        await loadSounds().catch((err) => {
+        // Load sounds on app start (non-blocking)
+        try {
+          await loadSounds();
+        } catch (err) {
           console.warn('App: Sound loading failed:', err);
-        });
+        }
         console.log('App: Sounds loaded, app ready');
+        
+        // Set up auth state listener after initialization
+        console.log('App: Setting up auth state listener...');
+        console.log('App: Auth object:', auth);
+        console.log('App: onAuthStateChanged function:', typeof onAuthStateChanged);
+        
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+          try {
+            console.log('=== AUTH STATE CHANGED ===');
+            console.log('App: Auth state changed, user:', user ? 'logged in' : 'logged out');
+            console.log('App: User details:', user ? { uid: user.uid, email: user.email } : 'null');
+            if (user) {
+              setUser(user);
+            } else {
+              setUser(null);
+            }
+            setLoading(false);
+            console.log('=== AUTH STATE HANDLED ===');
+          } catch (err) {
+            console.error('=== AUTH STATE ERROR ===');
+            console.error('App: Auth state change error:', err);
+            console.error('Error message:', err.message);
+            console.error('Error stack:', err.stack);
+            setError(err);
+            setLoading(false);
+            console.error('=== END AUTH STATE ERROR ===');
+          }
+        });
+        
+        return unsubscribe;
       } catch (err) {
         console.error('App: Initialization error:', err);
         setError(err);
+        setLoading(false);
+        return null;
       }
     };
 
-    initializeApp();
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (user) {
-          setUser(user);
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      } catch (err) {
-        console.error('App: Auth state change error:', err);
-        setError(err);
-        setLoading(false);
-      }
+    let unsubscribe = null;
+    initializeApp().then((unsub) => {
+      unsubscribe = unsub;
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
 
@@ -191,8 +250,24 @@ export default function App() {
                 <Stack.Screen name="Game" component={GameScreen} />
                 <Stack.Screen name="Profile" component={ProfileScreen} />
                 <Stack.Screen name="SetWord" component={SetWordScreen} />
-                <Stack.Screen name="SetWordGame" component={SetWordGameScreen} />
-                <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
+                <Stack.Screen 
+                  name="SetWordGame" 
+                  component={SetWordGameScreen}
+                  options={{
+                    headerShown: false,
+                    gestureEnabled: false, // Prevent swipe back gesture
+                    presentation: 'modal' // Treat as modal to prevent back navigation
+                  }}
+                />
+                <Stack.Screen 
+                  name="CreateChallenge" 
+                  component={CreateChallengeScreen}
+                  options={{
+                    headerShown: false,
+                    gestureEnabled: false, // Prevent swipe back gesture
+                    presentation: 'modal' // Treat as modal to prevent back navigation
+                  }}
+                />
                 <Stack.Screen name="PvPGame" component={PvPGameScreen} />
                             <Stack.Screen name="ResumeGames" component={ResumeGamesScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />

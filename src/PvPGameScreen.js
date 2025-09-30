@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeContext';
@@ -81,8 +81,22 @@ const PvPGameScreen = () => {
   const handledCompletionRef = useRef(false);
   const showCongratulationsPopupRef = useRef(false);
   const hasRestoredStateRef = useRef(false);
+  const scrollTimeoutRef = useRef(null);
   
   const scrollViewRef = useRef(null);
+  
+  // Consolidated scroll function to prevent conflicts
+  const scrollToBottom = useCallback((delay = 100, animated = true) => {
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (scrollViewRef.current && guesses.length > 0) {
+        scrollViewRef.current.scrollToEnd({ animated });
+      }
+    }, delay);
+  }, [guesses]);
   
   // Adjustable padding variables
   const inputToKeyboardPadding = 20;
@@ -189,15 +203,29 @@ const PvPGameScreen = () => {
         
         if (savedGame) {
           console.log('PvPGameScreen: Restoring PvP game state with alphabet');
-          setGuesses(savedGame.guesses || []);
-          setInputWord(savedGame.inputWord || '');
-          setAlphabet(savedGame.alphabet || Array(26).fill('unknown'));
-          setOpponentGuessCountOnSolve(savedGame.opponentGuessCountOnSolve);
+          
+          // Add a small delay to ensure UI is ready before restoring state
+          setTimeout(() => {
+            setGuesses(savedGame.guesses || []);
+            setInputWord(savedGame.inputWord || '');
+            setAlphabet(savedGame.alphabet || Array(26).fill('unknown'));
+            setOpponentGuessCountOnSolve(savedGame.opponentGuessCountOnSolve);
+            hasRestoredStateRef.current = true;
+          }, 100);
+        } else {
+          // No saved state found - this is a new game, just mark as restored
+          console.log('PvPGameScreen: No saved state found - new game');
           hasRestoredStateRef.current = true;
         }
+      } else {
+        // No saved games at all - this is a new game, just mark as restored
+        console.log('PvPGameScreen: No saved games - new game');
+        hasRestoredStateRef.current = true;
       }
     } catch (error) {
       console.error('PvPGameScreen: Failed to restore PvP game state:', error);
+      // Even on error, mark as restored to prevent infinite retries
+      hasRestoredStateRef.current = true;
     }
   };
 
@@ -210,14 +238,15 @@ const PvPGameScreen = () => {
 
   // Auto-save PvP game state when alphabet or other state changes
   useEffect(() => {
-    if (game && game.status === 'active' && currentUser) {
+    if (game && game.status === 'active' && currentUser && hasRestoredStateRef.current) {
+      // Only save state after we've restored it (to avoid saving initial state immediately)
       savePvPGameState();
     }
   }, [guesses, inputWord, alphabet, game, currentUser]);
 
   // Restore PvP game state when game loads
   useEffect(() => {
-    if (game && game.status === 'active' && currentUser) {
+    if (game && game.status === 'active' && currentUser && !hasRestoredStateRef.current) {
       restorePvPGameState();
     }
   }, [game, currentUser]);
@@ -227,6 +256,10 @@ const PvPGameScreen = () => {
     return () => {
       if (game && game.status === 'active' && currentUser) {
         savePvPGameState();
+      }
+      // Clear any pending scroll timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
       }
     };
   }, [game, currentUser]);
@@ -333,6 +366,35 @@ const PvPGameScreen = () => {
                           : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
                           : null
       });
+
+      // Send "Game Completed" notification to the first player to solve (they need to know the results)
+      // Only send to the first finisher since the second finisher already knows the game is over
+      const firstFinisherId = (gameData.player1?.solved && !gameData.player2?.solved) ? gameData.player1?.uid
+                             : (!gameData.player1?.solved && gameData.player2?.solved) ? gameData.player2?.uid
+                             : (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) < new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
+                             : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
+                             : null;
+
+      if (firstFinisherId) {
+        try {
+          const opponentPlayerData = getOpponentPlayerData(gameData);
+          const opponentName = opponentPlayerData?.username || opponentPlayerData?.displayName || 'your opponent';
+          
+          await getNotificationService().sendPushNotification(
+            firstFinisherId,
+            'WhatWord',
+            `${opponentName} solved your word, view results`,
+            {
+              type: 'game_completed',
+              gameId,
+              opponentName,
+              timestamp: new Date().toISOString()
+            }
+          );
+        } catch (notificationError) {
+          console.error('PvPGameScreen: Failed to send game completed notification:', notificationError);
+        }
+      }
       
       // Update stats only for the current user (avoid permission issues updating other user's profile)
       await updateUserStats(currentUserId, winnerId === currentUserId);
@@ -426,16 +488,54 @@ const PvPGameScreen = () => {
 
   const handleQuitGame = async () => {
     try {
+      console.log('PvPGameScreen: handleQuitGame called');
+      console.log('PvPGameScreen: Auth state:', auth.currentUser);
+      console.log('PvPGameScreen: Game object:', game);
+      console.log('PvPGameScreen: Current user object:', currentUser);
+      
       if (game && currentUser && game.id) {
+        console.log('PvPGameScreen: Attempting to quit game:', game.id);
+        console.log('PvPGameScreen: Game data:', game);
+        console.log('PvPGameScreen: Current user:', currentUser.uid);
+        
+        // Test Firestore connection first
+        console.log('PvPGameScreen: Testing Firestore connection...');
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { db } = await import('./firebase');
+        
+        try {
+          const gameDoc = await getDoc(doc(db, 'games', game.id));
+          console.log('PvPGameScreen: Game document exists:', gameDoc.exists());
+          if (gameDoc.exists()) {
+            console.log('PvPGameScreen: Game document data:', gameDoc.data());
+          }
+        } catch (testError) {
+          console.error('PvPGameScreen: Firestore test failed:', testError);
+        }
+        
         await gameService.forfeitGame(game.id);
+        
+        console.log('PvPGameScreen: Successfully quit game');
         setShowQuitConfirmPopup(false);
         setShowMenuPopup(false);
-        navigation.navigate('Home');
+        navigation.navigate('MainTabs');
         playSound('chime').catch(() => {});
+      } else {
+        console.error('PvPGameScreen: Missing required data for quit game:', {
+          hasGame: !!game,
+          hasCurrentUser: !!currentUser,
+          hasGameId: !!(game && game.id)
+        });
+        Alert.alert('Error', 'Game data is missing. Please try again.');
       }
     } catch (error) {
-      console.error('Failed to quit game:', error);
-      Alert.alert('Error', 'Failed to quit game. Please try again.');
+      console.error('PvPGameScreen: Failed to quit game:', error);
+      console.error('PvPGameScreen: Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      Alert.alert('Error', `Failed to quit game: ${error.message || 'Please try again.'}`);
     }
   };
 
@@ -454,25 +554,23 @@ const PvPGameScreen = () => {
 
   // Auto-scroll to bottom when guesses are updated
   useEffect(() => {
-    if (guesses.length > 0 && scrollViewRef.current) {
-      // Small delay to ensure the new guess is rendered
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+    if (guesses.length > 0) {
+      // Use longer delay for state restoration to prevent flashing
+      const delay = hasRestoredStateRef.current ? 100 : 300;
+      scrollToBottom(delay, true);
     }
-  }, [guesses]);
+  }, [guesses, scrollToBottom]);
 
   // Auto-scroll to bottom when game is first loaded
   useEffect(() => {
     if (game && game.gameHistory && scrollViewRef.current) {
       const myGuesses = game.gameHistory.filter(entry => entry && entry.player === currentUser?.uid);
       if (myGuesses.length > 0) {
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: false });
-        }, 500);
+        // Use longer delay for initial load to ensure content is rendered
+        scrollToBottom(500, false);
       }
     }
-  }, [game, currentUser]);
+  }, [game, currentUser, scrollToBottom]);
 
   useEffect(() => {
     if (!gameId || !currentUser) return;
@@ -528,11 +626,7 @@ const PvPGameScreen = () => {
                 }
 
                 // Auto-scroll to show the latest guess when game is over
-                if (scrollViewRef.current && guesses.length > 0) {
-                  setTimeout(() => {
-                    scrollViewRef.current?.scrollToEnd({ animated: true });
-                  }, 100);
-                }
+                scrollToBottom(100, true);
 
                 // Play appropriate sound once when results are visible
                 if (!resultSoundPlayedRef.current) {
@@ -634,10 +728,8 @@ const PvPGameScreen = () => {
              setGuesses(myGuesses);
              
              // Auto-scroll to show the latest guess when guesses are updated from game data
-             if (myGuesses.length > 0 && scrollViewRef.current) {
-               setTimeout(() => {
-                 scrollViewRef.current?.scrollToEnd({ animated: true });
-               }, 300);
+             if (myGuesses.length > 0) {
+               scrollToBottom(300, true);
              }
            }
           
@@ -931,11 +1023,7 @@ const PvPGameScreen = () => {
         playSound('chime').catch(() => {});
         
         // Auto-scroll to show the latest guess
-        if (scrollViewRef.current) {
-          setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }, 200);
-        }
+        scrollToBottom(200, true);
       } catch (error) {
         console.error('Failed to update game with guess:', error);
         
@@ -976,11 +1064,7 @@ const PvPGameScreen = () => {
                await playSound('congratulations').catch(() => {});
                
                // Auto-scroll to show the latest guess when player solves the word
-               if (scrollViewRef.current && guesses.length > 0) {
-                 setTimeout(() => {
-                   scrollViewRef.current?.scrollToEnd({ animated: true });
-                 }, 100);
-               }
+               scrollToBottom(100, true);
                
                               // Mark current player as solved
                const currentPlayerData = getMyPlayerData();
@@ -1035,11 +1119,7 @@ const PvPGameScreen = () => {
                  setShowMaxGuessesPopup(true);
                  
                  // Auto-scroll to show the latest guess when max attempts reached
-                 if (scrollViewRef.current && guesses.length > 0) {
-                   setTimeout(() => {
-                     scrollViewRef.current?.scrollToEnd({ animated: true });
-                   }, 100);
-                 }
+                 scrollToBottom(100, true);
                }
              }
       
@@ -1123,11 +1203,7 @@ const PvPGameScreen = () => {
     // Check if current player has already solved their opponent's word
     if (myPlayerData?.solved) {
       // Auto-scroll to show the latest guess when player solves the word
-      if (scrollViewRef.current && guesses.length > 0) {
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      }
+      scrollToBottom(100, true);
       
       // Check if opponent has also solved (game is complete)
       const opponentData = getOpponentPlayerData(game);
@@ -1339,7 +1415,7 @@ const PvPGameScreen = () => {
               style={styles.button}
               onPress={() => {
                 setShowMenuPopup(false);
-                navigation.navigate('Home');
+                navigation.navigate('MainTabs');
               }}
             >
               <Text style={styles.buttonText}>Return to Home</Text>
@@ -1396,8 +1472,16 @@ const PvPGameScreen = () => {
             )}
             <TouchableOpacity
               style={styles.winButtonContainer}
-              onPress={() => {
+              onPress={async () => {
                 setShowCongratulationsPopup(false);
+                // iOS-safe: wait for UI to settle before showing ad
+                await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
+                try {
+                  await adService.showInterstitialAd();
+                } catch (error) {
+                  console.log('PvPGameScreen: Failed to show interstitial ad after Congratulations:', error);
+                }
                 const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
                   ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
                   : null);
@@ -1422,7 +1506,7 @@ const PvPGameScreen = () => {
                   playSound('chime').catch(() => {});
                   // First solver: return to home. Second solver: stay and await results via snapshot
                   if (!isSecondSolver) {
-                    navigation.navigate('Home');
+                    navigation.navigate('MainTabs');
                   }
                 }
               }}
@@ -1467,21 +1551,14 @@ const PvPGameScreen = () => {
                     });
                   }
                   
-                  // Show interstitial ad for both platforms
-                  try {
-                    await adService.showInterstitialAd();
-                  } catch (error) {
-                    console.log('PvPGameScreen: Failed to show interstitial ad:', error);
-                  }
-                  
                   // Navigate to home immediately (Android path)
-                  navigation.navigate('Home');
+                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                   
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on acknowledge:', markErr);
                   // Still navigate even if marking fails
-                  navigation.navigate('Home');
+                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 }
               }}
@@ -1513,7 +1590,7 @@ const PvPGameScreen = () => {
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on win:', markErr);
                 } finally {
-                  navigation.navigate('Home');
+                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 }
               }}
@@ -1542,15 +1619,23 @@ const PvPGameScreen = () => {
                       resultsSeenBy: arrayUnion(currentUser.uid)
                     });
                   }
+                  // iOS-safe: wait for UI to settle before showing ad
+                  await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+                  await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
+                  try {
+                    await adService.showInterstitialAd();
+                  } catch (error) {
+                    console.log('PvPGameScreen: Failed to show interstitial ad on Max Guesses:', error);
+                  }
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on max guesses:', markErr);
                 } finally {
-                  navigation.navigate('Home');
+                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 }
               }}
             >
-              <Text style={styles.buttonText}>Return to Home</Text>
+              <Text style={styles.buttonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1577,7 +1662,7 @@ const PvPGameScreen = () => {
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on tie:', markErr);
                 } finally {
-                  navigation.navigate('Home');
+                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 }
               }}

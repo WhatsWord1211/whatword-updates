@@ -32,9 +32,6 @@
       "autoIncrement": false,
       "channel": "production",
       "env": {
-        "FIREBASE_API_KEY": "AIzaSyBQ4ua2PKDvF_RgHYTpB79S5HArrl9lChA",
-        "FIREBASE_API_KEY_IOS": "AIzaSyCmoMenxHItEPXbKcD2EgeUN0epUa-UUAs",
-        "FIREBASE_API_KEY_ANDROID": "AIzaSyC1pxEdLS7La9HOq7AnIlIFMpYCfNbp0cY",
         "FIREBASE_AUTH_DOMAIN": "whatword-a3f4b.firebaseapp.com",
         "FIREBASE_PROJECT_ID": "whatword-a3f4b",
         "FIREBASE_STORAGE_BUCKET": "whatword-a3f4b.firebasestorage.app",

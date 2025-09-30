@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions, BackHandler } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
@@ -82,6 +82,19 @@ const SetWordGameScreen = () => {
     
     checkUnlockStatus();
   }, [showDifficultySelection, isAccepting, challenge]);
+
+  // Prevent back button from going to word submission page - always go to main screen
+  useEffect(() => {
+    const backAction = () => {
+      // Always navigate to main screen instead of going back
+      navigation.navigate('MainTabs');
+      return true; // Prevent default back behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [navigation]);
 
   // Check if hard mode is unlocked for current user
   const checkHardModeUnlocked = async () => {
@@ -296,18 +309,11 @@ const SetWordGameScreen = () => {
         // Send push notification for game challenge
         try {
           const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
-          await getNotificationService().sendPushNotification(
+          await getNotificationService().sendChallengeNotification(
             challenge.to,
-            'Game Challenge',
-            `${challenge.fromUsername} challenged you to a game!`,
-            {
-              type: 'challenge',
-              challengeId: challengeRef.id,
-              senderId: challenge.from,
-              senderName: challenge.fromUsername,
-              wordLength: wordLength,
-              timestamp: new Date().toISOString()
-            }
+            challenge.fromUsername,
+            challengeRef.id,
+            wordLength
           );
         } catch (notificationError) {
           console.error('Failed to send game challenge push notification:', notificationError);
@@ -614,26 +620,12 @@ const SetWordGameScreen = () => {
                } catch (error) {
                  // Ignore sound errors
                }
-               navigation.navigate('Home');
+               navigation.navigate('MainTabs');
              }}
            >
              <Text style={styles.buttonText}>Return to Home</Text>
            </TouchableOpacity>
            
-           <TouchableOpacity
-             style={styles.button}
-             onPress={async () => {
-               setShowMenuPopup(false);
-               try {
-                 playSound('backspace').catch(() => {});
-               } catch (error) {
-                 // Ignore sound errors
-               }
-               navigation.goBack();
-             }}
-           >
-             <Text style={styles.buttonText}>Go Back</Text>
-           </TouchableOpacity>
            
            <TouchableOpacity
              style={styles.button}

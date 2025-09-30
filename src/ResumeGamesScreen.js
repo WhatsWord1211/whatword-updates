@@ -493,28 +493,11 @@ const ResumeGamesScreen = () => {
             style: 'destructive',
             onPress: async () => {
               try {
-                // Get the opponent's UID
-                const opponentUid = game.opponentUid;
+                console.log('ResumeGamesScreen: Starting quit game for:', game.gameId);
+                console.log('ResumeGamesScreen: Game data:', game);
                 
-                // Send notification to opponent that game was quit
-                const notificationData = {
-                  type: 'gameQuit',
-                  from: auth.currentUser?.uid,
-                  to: opponentUid,
-                  gameId: game.gameId,
-                  message: `${auth.currentUser?.displayName || 'Your opponent'} quit the game.`,
-                  timestamp: new Date(),
-                  read: false
-                };
-                
-                await addDoc(collection(db, 'notifications'), notificationData);
-                
-                // Update game status to abandoned
-                await updateDoc(doc(db, 'games', game.gameId), {
-                  status: 'abandoned',
-                  abandonedAt: new Date().toISOString(),
-                  abandonedBy: auth.currentUser?.uid
-                });
+                // Use the gameService.forfeitGame function instead of direct Firestore update
+                await gameService.forfeitGame(game.gameId);
                 
                 // Remove from waiting games list
                 setWaitingForOpponentGames(prevGames => 
@@ -524,15 +507,20 @@ const ResumeGamesScreen = () => {
                 playSound('chime');
                 Alert.alert('Game Quit', 'The game has been abandoned and your opponent has been notified.');
               } catch (error) {
-                console.error('Failed to quit game:', error);
-                Alert.alert('Error', 'Failed to quit game. Please try again.');
+                console.error('ResumeGamesScreen: Failed to quit game:', error);
+                console.error('ResumeGamesScreen: Error details:', {
+                  message: error.message,
+                  code: error.code,
+                  stack: error.stack
+                });
+                Alert.alert('Error', `Failed to quit game: ${error.message || 'Please try again.'}`);
               }
             }
           }
         ]
       );
     } catch (error) {
-      console.error('Failed to handle quit game:', error);
+      console.error('ResumeGamesScreen: Failed to handle quit game:', error);
       Alert.alert('Error', 'Failed to process quit game action. Please try again.');
     }
   };
@@ -848,7 +836,7 @@ const ResumeGamesScreen = () => {
               style={styles.addFriendsButton}
               onPress={() => {
                 playSound('backspace').catch(() => {});
-                navigation.navigate('Home');
+                navigation.navigate('MainTabs');
               }}
             >
               <Text style={styles.addFriendsButtonText}>Go Home</Text>
