@@ -7,6 +7,7 @@ import { addDoc, updateDoc, doc, collection, arrayUnion, getDoc } from 'firebase
 import { playSound } from './soundsUtil';
 import { isValidWord } from './gameLogic';
 import { getNotificationService } from './notificationService';
+import notificationPermissionHelper from './notificationPermissionHelper';
 import styles from './styles';
 
 const SetWordGameScreen = () => {
@@ -173,6 +174,11 @@ const SetWordGameScreen = () => {
     if (!word || word.trim().length < 3) {
       Alert.alert('Invalid Word', 'Please enter a word with at least 3 letters.');
       return;
+    }
+    
+    // Industry standard: Ask for notification permissions when sending first challenge
+    if (!isAccepting && auth.currentUser?.uid) {
+      await notificationPermissionHelper.requestAtContext('challenge', auth.currentUser.uid);
     }
 
     // Validate word length based on difficulty

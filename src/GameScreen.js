@@ -1457,14 +1457,15 @@ const GameScreen = () => {
                 </Text>
                 <TouchableOpacity
                   style={styles.winButtonContainer}
-                  onPress={async () => {
+                  onPress={() => {
                     setShowWinPopup(false);
-                    // iOS-safe: wait for UI to settle before showing ad
-                    await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                    await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
+                    
+                    // Industry standard: Show ad as overlay (fire-and-forget)
                     if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
-                      await showGameCompletionAd();
+                      showGameCompletionAd().catch(() => {});
                     }
+                    
+                    // Navigate immediately - ad will show on top
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
@@ -1476,32 +1477,21 @@ const GameScreen = () => {
                     style={styles.winButtonContainer}
                     onPress={async () => {
                       setShowWinPopup(false);
-                      // iOS-safe: wait for UI to settle before showing ad
-                      await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                      await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
+                      
+                      // Industry standard: Show ad as overlay (fire-and-forget)
                       if (gameMode === 'solo') {
-                        await showGameCompletionAd();
+                        showGameCompletionAd().catch(() => {});
                       }
                       
-                      if (Platform.OS === 'ios') {
-                        setTimeout(() => {
-                          setGuessesWithLog([]);
-                          setInputWord('');
-                          setAlphabet(Array(26).fill('unknown'));
-                          setHintCount(0);
-                          setUsedHintLetters([]);
-                          setGameState('playing');
-                          setIsLoading(true);
-                        }, 100);
-                      } else {
-                        setGuessesWithLog([]);
-                        setInputWord('');
-                        setAlphabet(Array(26).fill('unknown'));
-                        setHintCount(0);
-                        setUsedHintLetters([]);
-                        setGameState('playing');
-                        setIsLoading(true);
-                      }
+                      // Reset game state and select new word
+                      setGuessesWithLog([]);
+                      setInputWord('');
+                      setAlphabet(Array(26).fill('unknown'));
+                      setHintCount(0);
+                      setUsedHintLetters([]);
+                      setGameState('playing');
+                      setIsLoading(true);
+                      
                       try {
                         const word = await selectRandomWord(wordLength || 5);
                         const upperWord = word.toUpperCase();
@@ -1653,12 +1643,13 @@ const GameScreen = () => {
                 </Text>
                 <TouchableOpacity
                   style={styles.wordRevealButtonContainer}
-                  onPress={async () => {
+                  onPress={() => {
                     setShowWordRevealPopup(false);
-                    // iOS-safe: wait for UI to settle before showing ad
-                    await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                    await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
-                    await showGameCompletionAd();
+                    
+                    // Industry standard: Show ad as overlay (fire-and-forget)
+                    showGameCompletionAd().catch(() => {});
+                    
+                    // Navigate immediately - ad will show on top
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
@@ -1743,31 +1734,19 @@ const GameScreen = () => {
                       onPress={async () => {
                         setShowMaxGuessesPopup(false);
                         await saveGameState();
-                        // iOS-safe: wait for UI to settle before showing ad
-                        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                        await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
-                        await showGameCompletionAd();
-                        // Start a new solo game
-                        // iOS-specific: Add small delay before resetting game state
-                        if (Platform.OS === 'ios') {
-                          setTimeout(() => {
-                            setGuessesWithLog([]);
-                            setInputWord('');
-                            setAlphabet(Array(26).fill('unknown'));
-                            setHintCount(0);
-                            setUsedHintLetters([]);
-                            setGameState('playing');
-                            setIsLoading(true);
-                          }, 100);
-                        } else {
-                          setGuessesWithLog([]);
-                          setInputWord('');
-                          setAlphabet(Array(26).fill('unknown'));
-                          setHintCount(0);
-                          setUsedHintLetters([]);
-                          setGameState('playing');
-                          setIsLoading(true);
-                        }
+                        
+                        // Industry standard: Show ad as overlay (fire-and-forget)
+                        showGameCompletionAd().catch(() => {});
+                        
+                        // Reset game state and select new word
+                        setGuessesWithLog([]);
+                        setInputWord('');
+                        setAlphabet(Array(26).fill('unknown'));
+                        setHintCount(0);
+                        setUsedHintLetters([]);
+                        setGameState('playing');
+                        setIsLoading(true);
+                        
                         try {
                           const word = await selectRandomWord(wordLength || 5);
                           const upperWord = word.toUpperCase();
@@ -1786,10 +1765,11 @@ const GameScreen = () => {
                       onPress={async () => {
                         setShowMaxGuessesPopup(false);
                         await saveGameState();
-                        // iOS-safe: wait for UI to settle before showing ad
-                        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                        await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
-                        await showGameCompletionAd();
+                        
+                        // Industry standard: Show ad as overlay (fire-and-forget)
+                        showGameCompletionAd().catch(() => {});
+                        
+                        // Navigate immediately - ad will show on top
                         navigation.navigate('MainTabs');
                         playSound('chime').catch(() => {});
                       }}

@@ -247,7 +247,7 @@ export const manualTokenUpdateExample = async () => {
     const currentUser = authService.getCurrentUser();
     
     // Update token directly through auth service
-    const pushToken = await notificationService.getFCMToken();
+    const pushToken = await notificationService.getExpoPushToken();
     if (pushToken) {
       await authService.updateUserPushToken(currentUser.uid, pushToken);
       return true;

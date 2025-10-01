@@ -607,64 +607,9 @@ const HomeScreen = () => {
       const { status: permissionStatus } = await Notifications.getPermissionsAsync();
       console.log('HomeScreen: Current permission status:', permissionStatus);
       
-      if (permissionStatus !== 'granted' && !hasRequestedPermissions) {
-        console.log('HomeScreen: Requesting notification permissions for existing user...');
+      if (permissionStatus === 'granted') {
+        console.log('HomeScreen: Permissions already granted, initializing...');
         
-        // Mark that we've requested permissions for this user
-        await AsyncStorage.setItem(permissionRequestedKey, 'true');
-        
-        const { status } = await Notifications.requestPermissionsAsync({
-          ios: {
-            allowAlert: true,
-            allowBadge: true,
-            allowSound: true,
-            allowAnnouncements: true,
-            allowCriticalAlerts: false,
-            provideAppNotificationSettings: true,
-            allowProvisional: false,
-          },
-          android: {
-            allowAlert: true,
-            allowBadge: true,
-            allowSound: true,
-            allowVibrate: true,
-            allowLights: true,
-          },
-        });
-        
-        console.log('HomeScreen: Permission request result:', status);
-        
-        if (status !== 'granted') {
-          console.log('HomeScreen: User denied notification permissions');
-          // Show alert to inform user about notification permissions
-          Alert.alert(
-            '🔔 Enable Notifications',
-            'To receive notifications about friend requests, game challenges, and updates, please enable notifications in your device settings.',
-            [
-              { text: 'Not Now', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => {
-                Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
-              }}
-            ]
-          );
-          return;
-        }
-      } else if (permissionStatus !== 'granted' && hasRequestedPermissions) {
-        console.log('HomeScreen: User previously denied permissions, showing settings guidance');
-        // Show alert to inform user about notification permissions
-        Alert.alert(
-          '🔔 Enable Notifications',
-          'To receive notifications about friend requests, game challenges, and updates, please enable notifications in your device settings.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => {
-              Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
-            }}
-          ]
-        );
-        return;
-      }
-      
         // Initialize the push notification service with current user ID
         const pushToken = await pushNotificationService.initialize(userId);
         
@@ -675,26 +620,10 @@ const HomeScreen = () => {
           
           // Set up notification listeners
           pushNotificationService.setupNotificationListeners();
-        
-        // Show success message to user (only on first setup)
-        Alert.alert(
-          '🔔 Notifications Enabled!',
-          'You\'ll now receive notifications for:\n• Friend requests\n• Game challenges\n• Game updates\n• Your turn reminders',
-          [{ text: 'Got it!' }]
-        );
+        }
       } else {
-        console.log('HomeScreen: Failed to get push token - permissions may be denied');
-        // Show alert to inform user about notification permissions
-        Alert.alert(
-          '🔔 Enable Notifications',
-          'To receive notifications about friend requests, game challenges, and updates, please enable notifications in your device settings.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => {
-              Alert.alert('Settings', 'Go to Settings > Apps > WhatWord > Notifications and enable them.');
-            }}
-          ]
-        );
+        console.log('HomeScreen: Permissions not granted yet - will ask at relevant moment');
+        // Industry standard: Don't ask here - will ask contextually when user uses social features
       }
     } catch (error) {
       console.error('HomeScreen: Failed to initialize push notifications:', error);

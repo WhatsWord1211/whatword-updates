@@ -382,7 +382,7 @@ const PvPGameScreen = () => {
           
           await getNotificationService().sendPushNotification(
             firstFinisherId,
-            'WhatWord',
+            'Battle Over',
             `${opponentName} solved your word, view results`,
             {
               type: 'game_completed',
@@ -1472,16 +1472,13 @@ const PvPGameScreen = () => {
             )}
             <TouchableOpacity
               style={styles.winButtonContainer}
-              onPress={async () => {
+              onPress={() => {
                 setShowCongratulationsPopup(false);
-                // iOS-safe: wait for UI to settle before showing ad
-                await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
-                try {
-                  await adService.showInterstitialAd();
-                } catch (error) {
-                  console.log('PvPGameScreen: Failed to show interstitial ad after Congratulations:', error);
-                }
+                
+                // Industry standard: Show ad as overlay (fire-and-forget)
+                adService.showInterstitialAd().catch(() => {});
+                
+                // Process results immediately
                 const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
                   ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
                   : null);
@@ -1619,17 +1616,15 @@ const PvPGameScreen = () => {
                       resultsSeenBy: arrayUnion(currentUser.uid)
                     });
                   }
-                  // iOS-safe: wait for UI to settle before showing ad
-                  await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-                  await new Promise(resolve => setTimeout(resolve, Platform.OS === 'ios' ? 700 : 200));
-                  try {
-                    await adService.showInterstitialAd();
-                  } catch (error) {
-                    console.log('PvPGameScreen: Failed to show interstitial ad on Max Guesses:', error);
-                  }
+                  
+                  // Industry standard: Show ad as overlay (fire-and-forget)
+                  adService.showInterstitialAd().catch(() => {});
+                  
+                  // Navigate immediately - ad will show on top
+                  navigation.navigate('MainTabs');
+                  playSound('chime').catch(() => {});
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on max guesses:', markErr);
-                } finally {
                   navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 }

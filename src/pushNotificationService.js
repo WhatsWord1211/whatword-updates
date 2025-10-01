@@ -326,9 +326,11 @@ class PushNotificationService {
    */
   async savePushTokenToFirestore(userId, token) {
     try {
+      // Only persist clearly-identified Expo push tokens for delivery
+      const isExpoToken = typeof token === 'string' && token.startsWith('ExponentPushToken');
       await setDoc(doc(db, 'users', userId), {
-        expoPushToken: token,
-        pushToken: token, // Also save as pushToken for compatibility
+        expoPushToken: isExpoToken ? token : null,
+        // Do NOT mirror Expo token to generic pushToken to avoid confusion with FCM tokens
         pushTokenUpdatedAt: new Date().toISOString(),
       }, { merge: true });
       console.log('PushNotificationService: Saved push token to Firestore');
@@ -350,7 +352,7 @@ class PushNotificationService {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         const expoPushToken = userData.expoPushToken;
-        const pushToken = userData.pushToken;
+        const pushToken = userData.pushToken; // May be an FCM token from legacy code
         const pushNotificationsEnabled = userData.pushNotificationsEnabled;
         
         console.log('PushNotificationService: User data found:', {
@@ -360,15 +362,20 @@ class PushNotificationService {
           expoPushTokenLength: expoPushToken ? expoPushToken.length : 0,
           pushTokenLength: pushToken ? pushToken.length : 0
         });
-        
-        const token = expoPushToken || pushToken || null;
-        if (token) {
-          console.log('PushNotificationService: ✅ Found push token for user:', userId);
-        } else {
-          console.log('PushNotificationService: ❌ No push token in user document for user:', userId);
+
+        // Only return a valid Expo token for Expo push service
+        if (typeof expoPushToken === 'string' && expoPushToken.startsWith('ExponentPushToken')) {
+          console.log('PushNotificationService: ✅ Using Expo push token for user:', userId);
+          return expoPushToken;
         }
-        
-        return token;
+
+        // If only a generic pushToken exists (likely FCM), do NOT send it to Expo endpoint
+        if (pushToken) {
+          console.warn('PushNotificationService: Found non-Expo pushToken; skipping Expo send and returning null');
+        }
+
+        console.log('PushNotificationService: ❌ No valid Expo token for user:', userId);
+        return null;
       } else {
         console.log('PushNotificationService: ❌ User document does not exist for user:', userId);
         return null;
@@ -511,13 +518,19 @@ class PushNotificationService {
       const pushToken = await this.getUserPushToken(toUserId);
       console.log('PushNotificationService: Retrieved push token:', pushToken ? 'Found' : 'Not found');
       
-      if (!pushToken) {
+      // Validate token for Expo service
+      const isExpoToken = typeof pushToken === 'string' && pushToken.startsWith('ExponentPushToken');
+
+      if (!pushToken || !isExpoToken) {
         console.log('PushNotificationService: ❌ No push token found for user:', toUserId);
         console.log('PushNotificationService: This means the user either:');
         console.log('PushNotificationService: 1. Has not granted notification permissions');
         console.log('PushNotificationService: 2. Has not initialized push notifications');
         console.log('PushNotificationService: 3. Has an invalid/expired token');
         console.log('PushNotificationService: 4. Push token was not saved to Firestore');
+        if (pushToken && !isExpoToken) {
+          console.warn('PushNotificationService: Token present but not Expo token; refusing to send to Expo endpoint');
+        }
         
         // Check if this is the current user and try to refresh their token
         if (toUserId === this.currentUserId) {
@@ -537,9 +550,9 @@ class PushNotificationService {
 
       // Determine appropriate channel based on notification type
       let channelId = 'default';
-      if (data.type === 'friend_request' || data.type === 'friend_request_accepted') {
+      if (data.type === 'friend_request' || data.type === 'friend_request_accepted' || data.type === 'friend_request_declined') {
         channelId = 'friend_requests';
-      } else if (data.type === 'game_challenge' || data.type === 'game_started' || data.type === 'game_completed' || data.type === 'game_move') {
+      } else if (data.type === 'game_challenge' || data.type === 'challenge' || data.type === 'game_started' || data.type === 'game_completed' || data.type === 'game_move') {
         channelId = 'game_updates';
       }
 
@@ -554,6 +567,9 @@ class PushNotificationService {
           body: body,
           data: data,
           channelId: channelId,
+          priority: 'high', // Android delivery priority
+          badge: undefined,
+          ttl: undefined,
         };
 
         const response = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -567,14 +583,23 @@ class PushNotificationService {
         });
 
         const result = await response.json();
-        
-        if (result.data && result.data.status === 'ok') {
-          console.log('PushNotificationService: Push notification sent successfully via Expo');
-          resolve(result.data.id);
+
+        // Log full ticket result for diagnostics
+        console.log('PushNotificationService: Expo ticket result:', JSON.stringify(result));
+
+        if (result?.data?.status === 'ok' && result?.data?.id) {
+          const ticketId = result.data.id;
+          // Fire-and-forget receipt check
+          this._checkExpoReceipt(ticketId).catch(() => {});
+          resolve(ticketId);
+        } else if (Array.isArray(result?.data) && result.data[0]?.status === 'ok') {
+          const ticketId = result.data[0].id;
+          this._checkExpoReceipt(ticketId).catch(() => {});
+          resolve(ticketId);
         } else {
           throw new Error(`Expo push failed: ${JSON.stringify(result)}`);
         }
-        
+
       } catch (expoError) {
         console.error('PushNotificationService: ❌ Failed to send push notification');
         console.error('PushNotificationService: Error details:', expoError.message || 'No details available');
@@ -592,6 +617,28 @@ class PushNotificationService {
         console.error('PushNotificationService: Failed to save to Firestore:', error);
       });
       resolve(null);
+    }
+  }
+
+  /**
+   * Check Expo push receipt for a given ticket id (non-blocking diagnostics)
+   */
+  async _checkExpoReceipt(ticketId) {
+    try {
+      if (!ticketId) return;
+      const response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: [ticketId] })
+      });
+      const result = await response.json();
+      console.log('PushNotificationService: Expo receipt result:', JSON.stringify(result));
+    } catch (err) {
+      console.warn('PushNotificationService: Failed to fetch Expo receipt:', err?.message || err);
     }
   }
 
@@ -649,6 +696,52 @@ class PushNotificationService {
       senderName,
       timestamp: new Date().toISOString(),
       action: 'view_friend_request'
+    });
+  }
+
+  /**
+   * Send friend request accepted notification
+   */
+  async sendFriendRequestAcceptedNotification(toUserId, senderName) {
+    const title = 'WhatWord';
+    const body = `${senderName} accepted your friend request!`;
+    
+    return this.sendPushNotification(toUserId, title, body, {
+      type: 'friend_request_accepted',
+      senderName,
+      timestamp: new Date().toISOString(),
+      action: 'view_friends'
+    });
+  }
+
+  /**
+   * Send friend request declined notification
+   */
+  async sendFriendRequestDeclinedNotification(toUserId, senderName) {
+    const title = 'WhatWord';
+    const body = `${senderName} declined your friend request`;
+    
+    return this.sendPushNotification(toUserId, title, body, {
+      type: 'friend_request_declined',
+      senderName,
+      timestamp: new Date().toISOString(),
+      action: 'view_friends'
+    });
+  }
+
+  /**
+   * Send game challenge notification
+   */
+  async sendGameChallengeNotification(toUserId, challengerName, wordLength) {
+    const title = 'WhatWord';
+    const body = `${challengerName} challenged you to a game!`;
+    
+    return this.sendPushNotification(toUserId, title, body, {
+      type: 'game_challenge',
+      challengerName,
+      wordLength,
+      timestamp: new Date().toISOString(),
+      action: 'view_challenge'
     });
   }
 

@@ -117,10 +117,10 @@ class UserProfileService {
         throw new Error('No user authenticated');
       }
 
-      const pushToken = await getNotificationService().getFCMToken();
+      const pushToken = await getNotificationService().getExpoPushToken();
       if (pushToken) {
         await updateDoc(doc(db, 'users', this.currentUser.uid), {
-          pushToken: pushToken,
+          expoPushToken: pushToken,
           lastTokenUpdate: new Date().toISOString()
         });
         return true;

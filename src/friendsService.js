@@ -522,28 +522,14 @@ class FriendsService {
         lastActivity: new Date().toISOString()
       });
 
-      // Send push notification to sender
+      // Send game started notification (combines challenge acceptance + game ready)
       const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
       const userData = userDoc.data();
       
       await getNotificationService().sendPushNotification(
         challengeData.fromUid,
-        'Challenge Accepted',
-        `${userData.username || 'Someone'} accepted your challenge!`,
-        { 
-          type: 'challenge_accepted', 
-          challengeId, 
-          gameId,
-          senderId: this.currentUser.uid, 
-          senderName: userData.username 
-        }
-      );
-
-      // Send game started push notification
-      await getNotificationService().sendPushNotification(
-        challengeData.fromUid,
         'Game Started',
-        `Your challenge with ${userData.username || 'Someone'} has started!`,
+        `${userData.username || 'Someone'} accepted your challenge! Your battle has begun.`,
         {
           type: 'game_started',
           gameId,
