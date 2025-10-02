@@ -804,7 +804,7 @@ const HomeScreen = () => {
       <View
         style={{ flex: 1, width: '100%', paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
       >
-        <Text style={[styles.header, { marginBottom: 40, color: '#FF0000' }]}>Welcome, {displayName} - OTA TEST</Text>
+        <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
         
         {/* Player Rank Display - Clickable to show rank ladder */}
         <TouchableOpacity
