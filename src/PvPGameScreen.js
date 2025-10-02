@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager, StatusBar } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeContext';
@@ -1263,6 +1263,9 @@ const PvPGameScreen = () => {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
+      {/* Immersive mode - hide status bar during gameplay for more screen space */}
+      <StatusBar hidden={true} />
+      
       <Text
         style={[
           styles.soloheader,

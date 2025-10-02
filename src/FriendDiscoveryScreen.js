@@ -228,7 +228,7 @@ const FriendDiscoveryScreen = () => {
   const theme = getThemeColors(settings.theme || 'dark');
 
   return (
-    <SafeAreaView style={[styles.screenContainer, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: theme.background }]}> 
       {/* Header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity

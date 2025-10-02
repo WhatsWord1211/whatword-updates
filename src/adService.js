@@ -43,7 +43,8 @@ class AdService {
     this.adFrequency = 1; // Show ad after every X games (1 = every game)
     this.gamesPlayed = 0;
     
-    this.initialize();
+    // Don't auto-initialize - wait for consent manager to complete first
+    // this.initialize();
   }
 
   async initialize() {
@@ -52,6 +53,12 @@ class AdService {
       console.log('AdService: Platform:', Platform?.OS || 'unknown');
       console.log('AdService: Constants.appOwnership:', Constants?.appOwnership);
       console.log('AdService: __DEV__:', __DEV__);
+      
+      // iOS-specific: Add delay before AdMob initialization
+      if (Platform.OS === 'ios') {
+        console.log('AdService: iOS detected, adding initialization delay...');
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
       
       // Check if AdMob is available
       if (!mobileAds || !InterstitialAd) {
@@ -207,16 +214,14 @@ class AdService {
         return true; // Return true so game flow continues
       }
 
-      // Check if we should show an ad based on frequency
+      // NOTE: Frequency check removed - ads should always show at designated moments
+      // as per requirements (win/lose/quit/max guesses)
       this.gamesPlayed++;
-      if (this.gamesPlayed % this.adFrequency !== 0) {
-        console.log('AdService: Skipping ad based on frequency (gamesPlayed:', this.gamesPlayed, 'frequency:', this.adFrequency, ')');
-        return true;
-      }
 
       // Ensure ad is loaded before attempting to show
       if (!this.isAdLoaded) {
-        console.log('AdService: Ad not loaded yet, triggering immediate reload');
+        console.log('AdService: Ad not loaded yet, will skip this time');
+        // Trigger reload for next time but don't wait
         this.loadInterstitialAd();
         return true;
       }

@@ -4,18 +4,46 @@ import Constants from 'expo-constants';
 import { Platform, Alert, InteractionManager } from 'react-native';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import settingsService from './settingsService';
 
 // Configure notification behavior for background and foreground
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    console.log('PushNotificationService: Notification received:', notification);
-    return {
-      // Use modern notification handler properties
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    };
+    try {
+      // Ensure settings are loaded
+      const settings = await settingsService.initialize();
+      const data = notification?.request?.content?.data || {};
+
+      // Global toggle
+      if (!settings.pushNotifications) {
+        return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
+      }
+
+      // Type-specific gating
+      const type = data.type;
+      const typeAllowed = (
+        (type === 'friend_request' || type === 'friend_request_accepted' || type === 'friend_request_declined') ? settings.friendRequestNotifications :
+        (type === 'challenge' || type === 'game_challenge' || type === 'game_started' || type === 'game_move' || type === 'game_completed') ? settings.gameChallengeNotifications :
+        (type === 'achievement') ? settings.achievementNotifications :
+        (type === 'reminder') ? settings.reminderNotifications :
+        true
+      );
+
+      if (!typeAllowed) {
+        return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
+      }
+
+      // Quiet hours suppression
+      if (settings.quietHoursEnabled && settingsService.isQuietHours()) {
+        return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
+      }
+
+      // Default behavior
+      return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true };
+    } catch (e) {
+      console.warn('PushNotificationService: handler error, falling back to show:', e?.message || e);
+      return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true };
+    }
   },
 });
 
@@ -47,8 +75,16 @@ class PushNotificationService {
    * Initialize push notifications and get Expo push token
    */
   async initialize(userId = null) {
-    // Prevent multiple simultaneous initializations
+    // If already initialized but a userId is provided, ensure we associate and persist token
     if (this.isInitialized) {
+      if (userId && userId !== this.currentUserId) {
+        this.currentUserId = userId;
+        if (this.expoPushToken) {
+          try {
+            await this.savePushTokenToFirestore(userId, this.expoPushToken);
+          } catch (_) {}
+        }
+      }
       return this.expoPushToken;
     }
     
@@ -429,6 +465,32 @@ class PushNotificationService {
       }
     }
     
+    // Respect sender's local global toggle for local notifications (cannot enforce recipient preferences client-side)
+    try {
+      const settings = await settingsService.initialize();
+      if (!settings.pushNotifications) {
+        console.log('PushNotificationService: Sender has push notifications disabled; skipping send.');
+        return Promise.resolve(null);
+      }
+      if (settings.quietHoursEnabled && settingsService.isQuietHours()) {
+        console.log('PushNotificationService: Quiet hours active; skipping send.');
+        return Promise.resolve(null);
+      }
+      // Type-specific gating (best-effort on sender side)
+      const type = data?.type;
+      const typeAllowed = (
+        (type === 'friend_request' || type === 'friend_request_accepted' || type === 'friend_request_declined') ? settings.friendRequestNotifications :
+        (type === 'challenge' || type === 'game_challenge' || type === 'game_started' || type === 'game_move' || type === 'game_completed') ? settings.gameChallengeNotifications :
+        (type === 'achievement') ? settings.achievementNotifications :
+        (type === 'reminder') ? settings.reminderNotifications :
+        true
+      );
+      if (!typeAllowed) {
+        console.log('PushNotificationService: Sender type gate disabled for', type, '; skipping send.');
+        return Promise.resolve(null);
+      }
+    } catch (_) {}
+
     // Create a unique key for deduplication
     const notificationKey = `${toUserId}_${title}_${body}_${JSON.stringify(data)}`;
     
@@ -572,16 +634,23 @@ class PushNotificationService {
           ttl: undefined,
         };
 
-        const response = await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Accept-encoding': 'gzip, deflate',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(message),
-        });
+        // Industry standard: Add explicit timeout to Expo API fetch
+        const fetchWithTimeout = Promise.race([
+          fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(message),
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Expo API fetch timeout')), 10000)
+          )
+        ]);
 
+        const response = await fetchWithTimeout;
         const result = await response.json();
 
         // Log full ticket result for diagnostics
@@ -597,7 +666,10 @@ class PushNotificationService {
           this._checkExpoReceipt(ticketId).catch(() => {});
           resolve(ticketId);
         } else {
-          throw new Error(`Expo push failed: ${JSON.stringify(result)}`);
+          // Log more specific error context for diagnostics
+          console.error('PushNotificationService: Expo push failed. Status code:', response.status);
+          console.error('PushNotificationService: Response body:', JSON.stringify(result));
+          throw new Error(`Expo push failed`);
         }
 
       } catch (expoError) {
@@ -889,11 +961,11 @@ class PushNotificationService {
    */
   cleanup() {
     if (this.notificationListener) {
-      Notifications.removeNotificationSubscription(this.notificationListener);
+      this.notificationListener.remove();
       this.notificationListener = null;
     }
     if (this.responseListener) {
-      Notifications.removeNotificationSubscription(this.responseListener);
+      this.responseListener.remove();
       this.responseListener = null;
     }
     

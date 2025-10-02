@@ -416,14 +416,14 @@ const ProfileScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}>
         <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading profile...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}>
       <ScrollView style={{ flex: 1, width: '100%' }}>
         {/* Rank Display */}
         <View style={styles.rankDisplayContainer}>

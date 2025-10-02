@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager, StatusBar } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,15 +56,10 @@ const GameScreen = () => {
   const [guessesLoaded, setGuessesLoaded] = useState(false);
   
   // Debug wrapper for setGuesses
-  const setGuessesWithLog = (newGuesses) => {
-    console.log('GameScreen: setGuesses called:', { 
-      oldLength: guesses.length, 
-      newLength: Array.isArray(newGuesses) ? newGuesses.length : 'not array',
-      newGuesses: Array.isArray(newGuesses) ? newGuesses : newGuesses,
-      stackTrace: new Error().stack?.split('\n').slice(1, 4)
-    });
+  // Simple wrapper for setGuesses - stable reference to prevent re-renders
+  const setGuessesWithLog = useCallback((newGuesses) => {
     setGuesses(newGuesses);
-  };
+  }, []);
   const [targetWord, setTargetWord] = useState(savedTargetWord || '');
   const [gameState, setGameState] = useState(savedGameState || (showDifficulty ? 'selectDifficulty' : gameMode === 'pvp' ? 'selectDifficulty' : 'playing'));
 
@@ -111,9 +106,14 @@ const GameScreen = () => {
   // Check hard mode unlock status when component mounts
   useEffect(() => {
     const checkUnlockStatus = async () => {
-      if (gameState === 'selectDifficulty') {
-        const isUnlocked = await checkHardModeUnlocked();
-        setHardModeUnlocked(isUnlocked);
+      try {
+        if (gameState === 'selectDifficulty') {
+          const isUnlocked = await checkHardModeUnlocked();
+          setHardModeUnlocked(isUnlocked);
+        }
+      } catch (error) {
+        console.error('GameScreen: Error checking hard mode unlock status:', error);
+        setHardModeUnlocked(false); // Default to locked on error
       }
     };
     
@@ -213,6 +213,11 @@ const GameScreen = () => {
       // Let adService handle its own timeouts - Grok's suggestion
       await adService.showInterstitialAd();
       
+      // iOS fix: Add delay after ad closes to prevent UI freeze
+      if (Platform.OS === 'ios') {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
       console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
@@ -230,6 +235,11 @@ const GameScreen = () => {
     try {
       // Show interstitial ad for hint
       await adService.showInterstitialAdForHint();
+
+      // iOS fix: Add delay after ad closes to prevent UI freeze
+      if (Platform.OS === 'ios') {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
 
       await playSound('hint').catch(() => {});
 
@@ -542,7 +552,15 @@ const GameScreen = () => {
 
 
     return () => {
-      clearTimeout(timer);
+      // Industry standard: Clean up Firebase listener and timer
+      try {
+        clearTimeout(timer);
+        if (unsubscribeRef && typeof unsubscribeRef === 'function') {
+          unsubscribeRef();
+        }
+      } catch (error) {
+        console.warn('GameScreen: Error during Firebase listener cleanup:', error);
+      }
     };
   }, [gameMode, gameId, isCreator, playerId, gameState, auth.currentUser?.uid]);
 
@@ -1033,60 +1051,67 @@ const GameScreen = () => {
   };
 
   const handleDifficultySelect = async (diff) => {
-    // Check if hard mode is locked
-    if (diff === 'hard') {
-      const isUnlocked = await checkHardModeUnlocked();
-      if (!isUnlocked) {
-        Alert.alert(
-          'Hard Mode Locked 🔒',
-          'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
-          ]
-        );
-        return;
-      }
-    }
-
-    const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
-    await playSound('chime').catch(() => {});
-    setGameState(gameMode === 'pvp' ? 'setWord' : 'playing');
-    setDifficulty(diff);
-    setHintCount(0);
-    setUsedHintLetters([]);
-    if (gameMode === 'solo') {
-      setIsLoading(true);
-      try {
-        const word = await selectRandomWord(length);
-        if (!word) {
-          throw new Error('Failed to select random word');
+    try {
+      // Check if hard mode is locked
+      if (diff === 'hard') {
+        const isUnlocked = await checkHardModeUnlocked();
+        if (!isUnlocked) {
+          Alert.alert(
+            'Hard Mode Locked 🔒',
+            'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
+            ]
+          );
+          return;
         }
-        const upperWord = word.toUpperCase();
-        setTargetWord(upperWord);
-        navigation.setParams({ wordLength: length, showDifficulty: false });
-      } catch (error) {
-        console.error('GameScreen: Failed to select random word', error);
-        // Fallback: use a default word to prevent game from crashing
-        const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
-        setTargetWord(fallbackWord);
-        Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
-      } finally {
-        setIsLoading(false);
       }
-    } else if (gameMode === 'pvp' && gameId) {
-      try {
-        // Update the existing game document with word length
-        await setDoc(doc(db, 'games', gameId), {
-          wordLength: length,
-          lastUpdated: new Date().toISOString(),
-        }, { merge: true });
-        navigation.setParams({ wordLength: length, showDifficulty: false, gameId });
-        // Set game state to 'setWord' to trigger Firebase subscription
-        setGameState('setWord');
-      } catch (error) {
-        console.error('GameScreen: Failed to update PvP game document', error);
+
+      const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
+      await playSound('chime').catch(() => {});
+      setGameState(gameMode === 'pvp' ? 'setWord' : 'playing');
+      setDifficulty(diff);
+      setHintCount(0);
+      setUsedHintLetters([]);
+      
+      if (gameMode === 'solo') {
+        setIsLoading(true);
+        try {
+          const word = await selectRandomWord(length);
+          if (!word) {
+            throw new Error('Failed to select random word');
+          }
+          const upperWord = word.toUpperCase();
+          setTargetWord(upperWord);
+          navigation.setParams({ wordLength: length, showDifficulty: false });
+        } catch (error) {
+          console.error('GameScreen: Failed to select random word', error);
+          // Fallback: use a default word to prevent game from crashing
+          const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
+          setTargetWord(fallbackWord);
+          navigation.setParams({ wordLength: length, showDifficulty: false });
+          Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
+        } finally {
+          setIsLoading(false);
+        }
+      } else if (gameMode === 'pvp' && gameId) {
+        try {
+          // Update the existing game document with word length
+          await setDoc(doc(db, 'games', gameId), {
+            wordLength: length,
+            lastUpdated: new Date().toISOString(),
+          }, { merge: true });
+          navigation.setParams({ wordLength: length, showDifficulty: false, gameId });
+          // Set game state to 'setWord' to trigger Firebase subscription
+          setGameState('setWord');
+        } catch (error) {
+          console.error('GameScreen: Failed to update PvP game document', error);
+        }
       }
+    } catch (error) {
+      console.error('GameScreen: Error in handleDifficultySelect:', error);
+      Alert.alert('Error', 'Failed to select difficulty. Please try again.');
     }
   };
 
@@ -1100,9 +1125,12 @@ const GameScreen = () => {
 
   return (
     <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
-      {isLoading && (
+      {/* Immersive mode - hide status bar during gameplay for more screen space */}
+      <StatusBar hidden={true} />
+      
+      {isLoading && gameState !== 'selectDifficulty' && (
         <View style={styles.loadingOverlay}>
-                      <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading...</Text>
+          <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading...</Text>
         </View>
       )}
       {gameState === 'selectDifficulty' ? (
@@ -1129,15 +1157,28 @@ const GameScreen = () => {
               PvP Game Setup
             </Text>
           )}
+          
           <TouchableOpacity
             style={styles.button}
-            onPress={() => handleDifficultySelect('easy')}
+            onPress={async () => {
+              try {
+                await handleDifficultySelect('easy');
+              } catch (error) {
+                console.error('Failed to select easy difficulty:', error);
+              }
+            }}
           >
             <Text style={styles.buttonText}>Easy (4 Letters)</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.button}
-            onPress={() => handleDifficultySelect('regular')}
+            onPress={async () => {
+              try {
+                await handleDifficultySelect('regular');
+              } catch (error) {
+                console.error('Failed to select regular difficulty:', error);
+              }
+            }}
           >
             <Text style={styles.buttonText}>Regular (5 Letters)</Text>
           </TouchableOpacity>
@@ -1146,9 +1187,13 @@ const GameScreen = () => {
               styles.button, 
               !hardModeUnlocked && styles.lockedButton
             ]}
-            onPress={() => {
+            onPress={async () => {
               if (hardModeUnlocked) {
-                handleDifficultySelect('hard');
+                try {
+                  await handleDifficultySelect('hard');
+                } catch (error) {
+                  console.error('Failed to select hard difficulty:', error);
+                }
               } else {
                 // Show unlock popup for locked hard mode
                 Alert.alert(

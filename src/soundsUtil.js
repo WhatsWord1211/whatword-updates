@@ -39,6 +39,11 @@ const configureAudio = async () => {
   try {
     console.log('soundsUtil: Configuring audio mode...');
     
+    // iOS-specific: Add delay before audio configuration
+    if (Platform.OS === 'ios') {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
     // Industry standard audio configuration
     await Audio.setAudioModeAsync({
       // iOS: Respect silent/ring switch
@@ -51,10 +56,12 @@ const configureAudio = async () => {
       staysActiveInBackground: false,
       
       // iOS: Don't interrupt other audio (music, podcasts)
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+      // Using numeric value for compatibility: 1 = DoNotMix
+      interruptionModeIOS: 1,
       
       // Android: Use STREAM_MUSIC for volume buttons
-      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+      // Using numeric value for compatibility: 1 = DoNotMix
+      interruptionModeAndroid: 1,
       
       // iOS: Duck other audio when playing sounds
       shouldDuckAndroid: true,
@@ -197,6 +204,40 @@ export const setMasterVolume = async (volume) => {
     console.log(`soundsUtil: Master volume set to ${Math.round(clampedVolume * 100)}%`);
   } catch (error) {
     console.error('soundsUtil: Failed to set master volume:', error);
+  }
+};
+
+/**
+ * Cleanup all loaded sounds - Industry standard cleanup method
+ */
+export const cleanupSounds = async () => {
+  try {
+    console.log('soundsUtil: Cleaning up all loaded sounds...');
+    
+    // Unload all loaded sounds
+    const unloadPromises = Object.keys(loadedSounds).map(async (key) => {
+      try {
+        const sound = loadedSounds[key];
+        if (sound && typeof sound.unloadAsync === 'function') {
+          await sound.unloadAsync();
+        }
+      } catch (error) {
+        console.warn(`soundsUtil: Error unloading sound ${key}:`, error);
+      }
+    });
+    
+    await Promise.allSettled(unloadPromises);
+    
+    // Clear the loaded sounds object
+    Object.keys(loadedSounds).forEach(key => delete loadedSounds[key]);
+    
+    // Reset flags
+    soundsLoaded = false;
+    audioConfigured = false;
+    
+    console.log('soundsUtil: Sound cleanup completed');
+  } catch (error) {
+    console.error('soundsUtil: Error during cleanup:', error);
   }
 };
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet, Alert } from 'react-native';
+import { Text, View, StyleSheet, Alert, Platform } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/firebase';
 
@@ -29,11 +29,12 @@ import { ThemeProvider } from './src/ThemeContext';
 import './src/adService'; // Initialize AdMob service
 import { initializeConsentAndAds } from './src/consentManager';
 import * as Notifications from 'expo-notifications';
-import { loadSounds } from './src/soundsUtil';
+import { loadSounds, cleanupSounds } from './src/soundsUtil';
 import { Audio } from 'expo-av';
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
 import { getNotificationService } from './src/notificationService';
+import * as NavigationBar from 'expo-navigation-bar';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -106,68 +107,88 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Ensure Android navigation bar uses dark background with light icons in builds
+    if (Platform.OS === 'android') {
+      (async () => {
+        try {
+          await NavigationBar.setBackgroundColorAsync('#1F2937');
+          await NavigationBar.setButtonStyleAsync('light');
+        } catch (e) {
+          console.warn('NavigationBar config failed:', e?.message || e);
+        }
+      })();
+    }
+
+    // Safety timeout - if loading takes more than 10 seconds, force it to complete
+    const safetyTimeout = setTimeout(() => {
+      console.warn('App: Loading timeout reached - forcing load completion');
+      setLoading(false);
+    }, 10000);
+
     const initializeApp = async () => {
       try {
         console.log('=== APP INITIALIZATION START ===');
         console.log('App: Starting initialization...');
 
-        // Configure audio to avoid background thread issues
+        // Minimal delay for platform stability
+        const initialDelay = Platform.OS === 'ios' ? 200 : 50;
+        console.log(`App: Waiting ${initialDelay}ms for platform stability...`);
+        await new Promise(resolve => setTimeout(resolve, initialDelay));
+        console.log('App: Platform stability wait complete');
+
+        // Configure audio with error handling (non-blocking)
         try {
           await Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
+            // Respect iOS hardware silent/mute switch
+            playsInSilentModeIOS: false,
             staysActiveInBackground: false,
             allowsRecordingIOS: false,
             shouldDuckAndroid: true,
             interruptionModeAndroid: 1,
             interruptionModeIOS: 1,
           });
-          console.log('App: Audio mode configured');
+          console.log('App: Audio mode configured (respects iOS silent mode)');
         } catch (audioModeErr) {
           console.warn('App: Failed to set audio mode:', audioModeErr?.message || audioModeErr);
+          // Don't fail initialization for audio issues
         }
         
-        // Wait a moment to ensure Firebase is fully initialized
-        console.log('App: Waiting 100ms for Firebase to be ready...');
-        await new Promise(resolve => setTimeout(resolve, 100));
-        console.log('App: Wait complete, proceeding with initialization...');
-        
-        // Initialize notification service early
-        const notificationService = getNotificationService();
-        await notificationService.initialize().catch((err) => {
-          console.warn('App: Notification service initialization failed:', err);
-        });
-        console.log('App: Notification service initialized');
-        
-        // Initialize consent flow and ads SDK early
-        await initializeConsentAndAds().catch((err) => {
-          console.warn('App: Consent and ads initialization failed:', err);
-        });
-        
-        // Load sounds on app start (non-blocking)
+        // Initialize ads service BEFORE UI shows (industry standard)
         try {
-          await loadSounds();
+          const consentPromise = initializeConsentAndAds();
+          const consentTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Consent/ads initialization timeout')), 8000)
+          );
+          await Promise.race([consentPromise, consentTimeout]);
+          console.log('App: Ads service initialized before UI');
         } catch (err) {
-          console.warn('App: Sound loading failed:', err);
+          console.warn('App: Ads service initialization failed:', err);
+          // Continue without ads
         }
-        console.log('App: Sounds loaded, app ready');
         
-        // Set up auth state listener after initialization
-        console.log('App: Setting up auth state listener...');
-        console.log('App: Auth object:', auth);
-        console.log('App: onAuthStateChanged function:', typeof onAuthStateChanged);
+        console.log('App: Setting up auth listener for immediate UI...');
         
+        // Set up auth state listener - show UI immediately after auth check
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
           try {
             console.log('=== AUTH STATE CHANGED ===');
             console.log('App: Auth state changed, user:', user ? 'logged in' : 'logged out');
             console.log('App: User details:', user ? { uid: user.uid, email: user.email } : 'null');
+            
+            // Show UI immediately after auth check (like normal iOS/Android apps)
             if (user) {
               setUser(user);
             } else {
               setUser(null);
             }
             setLoading(false);
-            console.log('=== AUTH STATE HANDLED ===');
+            console.log('=== AUTH STATE HANDLED - UI SHOWN ===');
+            
+            // Load services in background after UI is visible
+            setTimeout(() => {
+              initializeBackgroundServices();
+            }, 100);
+            
           } catch (err) {
             console.error('=== AUTH STATE ERROR ===');
             console.error('App: Auth state change error:', err);
@@ -188,14 +209,85 @@ export default function App() {
       }
     };
 
+    // Background service initialization (non-blocking)
+    const initializeBackgroundServices = async () => {
+      try {
+        console.log('App: Starting background service initialization...');
+        
+        // Load sounds with timeout (non-blocking)
+        try {
+          const soundsPromise = loadSounds();
+          const soundsTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Sound loading timeout')), 3000)
+          );
+          await Promise.race([soundsPromise, soundsTimeout]);
+          console.log('App: Background - Sounds loaded');
+        } catch (err) {
+          console.warn('App: Background - Sound loading failed:', err);
+        }
+        
+        // iOS-specific delay between services
+        if (Platform.OS === 'ios') {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        // Initialize notification service (ads already initialized before UI)
+        try {
+          const notificationService = getNotificationService();
+          const notificationPromise = notificationService.initialize();
+          const notificationTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Notification service timeout')), 5000)
+          );
+          await Promise.race([notificationPromise, notificationTimeout]);
+          console.log('App: Background - Notification service initialized');
+        } catch (err) {
+          console.warn('App: Background - Notification service initialization failed:', err);
+        }
+        
+        // iOS-specific delay before sounds
+        if (Platform.OS === 'ios') {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        console.log('App: Background services initialization complete');
+      } catch (err) {
+        console.error('App: Background services initialization error:', err);
+      }
+    };
+
     let unsubscribe = null;
     initializeApp().then((unsub) => {
       unsubscribe = unsub;
+      clearTimeout(safetyTimeout); // Clear timeout on successful init
     });
 
     return () => {
+      // Industry standard: Clean up all app-level resources
+      clearTimeout(safetyTimeout);
       if (unsubscribe) {
         unsubscribe();
+      }
+      
+      // Clean up audio resources
+      try {
+        cleanupSounds().catch(error => {
+          console.warn('App: Error during sounds cleanup:', error);
+        });
+        Audio.unloadAsync().catch(error => {
+          console.warn('App: Error unloading audio:', error);
+        });
+      } catch (error) {
+        console.warn('App: Error during audio cleanup:', error);
+      }
+      
+      // Clean up notification service
+      try {
+        const notificationService = getNotificationService();
+        if (notificationService && typeof notificationService.cleanup === 'function') {
+          notificationService.cleanup();
+        }
+      } catch (error) {
+        console.warn('App: Error during notification service cleanup:', error);
       }
     };
   }, []);

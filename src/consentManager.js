@@ -15,6 +15,10 @@ export async function initializeConsentAndAds() {
     } else {
       try {
         console.log('ConsentManager: Attempting to load AdMob module...');
+        // iOS-specific: Add delay before requiring native modules
+        if (Platform.OS === 'ios') {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
         adModule = require('react-native-google-mobile-ads');
         console.log('ConsentManager: AdMob module loaded successfully');
       } catch (error) {
@@ -65,6 +69,11 @@ export async function initializeConsentAndAds() {
       if (mobileAds) {
         await mobileAds().initialize();
         console.log('ConsentManager: AdMob SDK initialized successfully');
+        
+        // Now initialize the ad service
+        const adService = require('./adService').default;
+        await adService.initialize();
+        console.log('ConsentManager: AdService initialized successfully');
       }
     } catch (initError) {
       console.warn('ConsentManager: Failed to initialize AdMob SDK:', initError);

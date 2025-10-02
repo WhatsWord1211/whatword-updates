@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { Platform } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 import { getThemeColors } from './theme';
 import settingsService from './settingsService';
 
@@ -41,6 +43,22 @@ export const ThemeProvider = ({ children }) => {
 
     return unsubscribe;
   }, []);
+
+  // Keep Android system navigation bar in sync with app theme/background
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    (async () => {
+      try {
+        const backgroundColor = themeColors.background || '#1F2937';
+        const useLightButtons = (currentTheme === 'dark');
+        await NavigationBar.setBackgroundColorAsync(backgroundColor);
+        await NavigationBar.setButtonStyleAsync(useLightButtons ? 'light' : 'dark');
+      } catch (e) {
+        // Non-fatal: just log
+        console.warn('ThemeContext: Failed to set Android navigation bar:', e?.message || e);
+      }
+    })();
+  }, [currentTheme, themeColors]);
 
   const changeTheme = async (themeName) => {
     try {

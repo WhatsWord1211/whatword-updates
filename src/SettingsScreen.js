@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput, StatusBar } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -227,6 +227,9 @@ const SettingsScreen = () => {
 
   return (
     <SafeAreaView style={[styles.screenContainer, { backgroundColor: theme.background }]}>
+      {/* Show status bar on menu screens */}
+      <StatusBar hidden={false} barStyle="light-content" />
+      
       {/* Header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity

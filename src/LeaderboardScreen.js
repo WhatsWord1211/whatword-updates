@@ -493,10 +493,14 @@ const LeaderboardScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
-      <ScrollView style={{ flex: 1, width: '100%' }} refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }>
+    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+      <ScrollView 
+        style={{ flex: 1, width: '100%' }} 
+        showsVerticalScrollIndicator={true}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         
         {/* Tab Navigation */}
         <View style={styles.tabContainer}>
@@ -570,7 +574,7 @@ const LeaderboardScreen = () => {
         {renderCurrentUserPosition()}
 
         {/* Top Players */}
-        <View style={styles.section}>
+        <View style={[styles.section, { marginBottom: 0 }]}>
           <Text style={styles.sectionTitle}>
             {activeTab === 'solo' 
               ? `Top Solo Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
@@ -584,7 +588,6 @@ const LeaderboardScreen = () => {
               keyExtractor={item => item.uid}
               scrollEnabled={false}
               showsVerticalScrollIndicator={false}
-              style={{ maxHeight: 800 }}
             />
           ) : (
             <View style={styles.emptyContainer}>
@@ -595,30 +598,6 @@ const LeaderboardScreen = () => {
                 }
               </Text>
             </View>
-          )}
-        </View>
-
-
-
-        {/* How to Improve */}
-        <View style={styles.tipsContainer}>
-          <Text style={styles.tipsTitle}>💡 How to Improve Your Rank</Text>
-          {activeTab === 'solo' ? (
-            <>
-              <Text style={styles.tipText}>• Solve {activeDifficulty === 'easy' ? '4-letter' : activeDifficulty === 'hard' ? '6-letter' : '5-letter'} words in fewer attempts to lower your average</Text>
-              <Text style={styles.tipText}>• Play consistently to maintain a good running average</Text>
-              <Text style={styles.tipText}>• Use hints strategically to reduce guess count</Text>
-              <Text style={styles.tipText}>• Focus on the last 15 games for ranking</Text>
-              <Text style={styles.tipText}>• Try different difficulties to challenge yourself</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.tipText}>• Win more {activeDifficulty === 'easy' ? '4-letter' : activeDifficulty === 'hard' ? '6-letter' : '5-letter'} PvP games to increase your win percentage</Text>
-              <Text style={styles.tipText}>• Challenge friends to improve your skills</Text>
-              <Text style={styles.tipText}>• Learn from losses to become a better player</Text>
-              <Text style={styles.tipText}>• Play consistently to maintain your ranking</Text>
-              <Text style={styles.tipText}>• Focus on the last 15 games for ranking</Text>
-            </>
           )}
         </View>
       </ScrollView>

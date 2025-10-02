@@ -48,10 +48,15 @@ const ResumeGamesScreen = () => {
       authUnsubscribe = auth.onAuthStateChanged(setupListeners);
 
       return () => {
-        if (authUnsubscribe) authUnsubscribe();
-        if (challengesUnsubscribe) challengesUnsubscribe();
-        if (gamesUnsubscribe) gamesUnsubscribe();
-        if (completedUnsubscribe) completedUnsubscribe();
+        // Industry standard: Clean up all Firebase listeners to prevent memory leaks
+        try {
+          if (authUnsubscribe) authUnsubscribe();
+          if (challengesUnsubscribe) challengesUnsubscribe();
+          if (gamesUnsubscribe) gamesUnsubscribe();
+          if (completedUnsubscribe) completedUnsubscribe();
+        } catch (error) {
+          console.warn('ResumeGamesScreen: Error during cleanup:', error);
+        }
       };
     }, [])
   );
@@ -782,7 +787,7 @@ const ResumeGamesScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
         <View style={styles.headerContainer}>
           <TouchableOpacity
             style={styles.backButton}
@@ -798,7 +803,7 @@ const ResumeGamesScreen = () => {
         <View style={styles.emptyStateContainer}>
           <Text style={styles.emptyStateTitle}>Loading games...</Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -807,7 +812,7 @@ const ResumeGamesScreen = () => {
                    completedUnseenGames.length > 0;
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}

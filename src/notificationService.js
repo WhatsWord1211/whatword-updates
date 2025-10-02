@@ -128,21 +128,34 @@ class NotificationService {
   }
 
   /**
-   * Clean up listeners
+   * Clean up listeners - Industry standard with error handling
    */
   cleanup() {
-    if (this.foregroundListener) {
-      Notifications.removeNotificationSubscription(this.foregroundListener);
-      this.foregroundListener = null;
+    try {
+      // Clean up Expo notification listeners
+      if (this.foregroundListener) {
+        this.foregroundListener.remove();
+        this.foregroundListener = null;
+      }
+      if (this.responseListener) {
+        this.responseListener.remove();
+        this.responseListener = null;
+      }
+      
+      // Clean up Firestore listeners with error handling
+      this.notificationListeners.forEach(unsubscribe => {
+        try {
+          if (unsubscribe && typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+        } catch (error) {
+          console.warn('NotificationService: Error cleaning up Firestore listener:', error);
+        }
+      });
+      this.notificationListeners = [];
+    } catch (error) {
+      console.error('NotificationService: Error during cleanup:', error);
     }
-    if (this.responseListener) {
-      Notifications.removeNotificationSubscription(this.responseListener);
-      this.responseListener = null;
-    }
-    
-    // Clean up Firestore listeners
-    this.notificationListeners.forEach(unsubscribe => unsubscribe());
-    this.notificationListeners = [];
   }
 
   // ============================================================================

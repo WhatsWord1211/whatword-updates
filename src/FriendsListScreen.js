@@ -123,14 +123,14 @@ const FriendsListScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
       <Text style={styles.header}>Your Friends</Text>
       
       {friends.length === 0 ? (
