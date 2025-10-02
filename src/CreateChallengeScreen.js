@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, BackHandler } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, collection, query, where, updateDoc } from 'firebase/firestore';
@@ -9,6 +9,7 @@ import styles from './styles';
 
 const CreateChallengeScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [friends, setFriends] = useState([]);
 
   const [loading, setLoading] = useState(true);
@@ -123,6 +124,19 @@ const CreateChallengeScreen = () => {
 
   return (
     <SafeAreaView style={styles.screenContainer}>
+      {/* Friends FAB - Positioned in top right corner */}
+      <TouchableOpacity
+        style={[styles.fabTopHomeScreen, { top: insets.top + 5 }]}
+        onPress={() => {
+          playSound('chime');
+          // Navigate to MainTabs first, then to Friends tab
+          navigation.navigate('MainTabs', { screen: 'Friends' });
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.fabText}>👥</Text>
+      </TouchableOpacity>
+      
       <ScrollView 
         style={{ flex: 1, width: '100%' }}
         contentContainerStyle={{ 
