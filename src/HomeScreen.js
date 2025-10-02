@@ -48,6 +48,7 @@ const HomeScreen = () => {
   const notificationsUnsubscribeRef = useRef(null);
   const completedResultsUnsubscribeRef = useRef(null);
   const prevUnseenCountRef = useRef(0);
+  const prevNotificationCountRef = useRef(0);
 
   // Load user profile and set up listeners
   const markNotificationAsRead = async (notificationId) => {
@@ -204,10 +205,11 @@ const HomeScreen = () => {
               const newNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
               setNotifications(newNotifications);
               
-              // Reset badge cleared state if new notifications come in
-              if (newNotifications.length > 0) {
+              // Industry standard: Use ref to avoid badge flicker from concurrent updates
+              if (newNotifications.length > prevNotificationCountRef.current) {
                 setBadgeCleared(false);
               }
+              prevNotificationCountRef.current = newNotifications.length;
             }, (error) => {
               console.error('HomeScreen: Notifications query error:', error);
             });
@@ -224,54 +226,78 @@ const HomeScreen = () => {
             const userDocRef = doc(db, 'users', currentUser.uid);
             
             const completedGamesQuery = onSnapshot(userDocRef, async (userDoc) => {
-              if (userDoc.exists()) {
-                const userData = userDoc.data();
-                const activeGameIds = userData.activeGames || [];
-                const completedGameIds = userData.completedGames || [];
+              try {
+                // Industry standard: Check if component is still mounted before async operations
+                // Note: mounted is not available in this scope, so we'll handle errors gracefully instead
                 
-                // Combine both active and completed game IDs to check
-                const allGameIds = [...activeGameIds, ...completedGameIds];
-                
-                if (allGameIds.length > 0) {
-                  // Fetch game documents for these specific games
-                  const gamePromises = allGameIds.map(gameId => getDoc(doc(db, 'games', gameId)));
-                  const gameDocs = await Promise.all(gamePromises);
+                if (userDoc.exists()) {
+                  const userData = userDoc.data();
+                  const activeGameIds = userData.activeGames || [];
+                  const completedGameIds = userData.completedGames || [];
                   
-                  const completedGames = [];
-                  gameDocs.forEach((gameDoc) => {
-                    if (gameDoc.exists()) {
-                      const gameData = gameDoc.data();
-                      if (gameData.type === 'pvp' && gameData.status === 'completed') {
-                        completedGames.push({ id: gameDoc.id, ...gameData });
-                      }
-                    }
-                  });
+                  // Combine both active and completed game IDs to check
+                  const allGameIds = [...activeGameIds, ...completedGameIds];
                   
-                  // Process completed games for unseen results
-                  let unseen = 0;
-                  completedGames.forEach((gameData) => {
-                    const playersArray = gameData.playerIds || gameData.players || [];
-                    const seen = Array.isArray(gameData.resultsSeenBy) ? gameData.resultsSeenBy : [];
-                    const firstFinisherId = gameData.firstFinisherId || null;
+                  if (allGameIds.length > 0) {
+                    // Fetch game documents for these specific games with error handling
+                    const gamePromises = allGameIds.map(gameId => 
+                      getDoc(doc(db, 'games', gameId)).catch(error => {
+                        console.warn(`HomeScreen: Failed to fetch game ${gameId}:`, error);
+                        return null; // Return null for failed fetches
+                      })
+                    );
                     
-                    if (firstFinisherId) {
-                      if (firstFinisherId === currentUser.uid && !seen.includes(currentUser.uid)) unseen += 1;
-                    } else {
-                      const isPlayer1 = playersArray[0] === currentUser.uid;
-                      const meSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
-                      const oppSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
-                      if (meSolved && !seen.includes(currentUser.uid)) {
-                        unseen += 1;
-                      }
+                    // Industry standard: Wrap Promise.all in try-catch to prevent unhandled rejections
+                    let gameDocs;
+                    try {
+                      gameDocs = await Promise.all(gamePromises);
+                    } catch (error) {
+                      console.error('HomeScreen: Failed to fetch game documents:', error);
+                      return; // Exit early if Promise.all fails
                     }
-                  });
-                  
-                  setUnseenResultsCount(unseen);
-                  if (unseen > 0) setBadgeCleared(false);
-                  prevUnseenCountRef.current = unseen;
-                } else {
-                  setUnseenResultsCount(0);
+                    
+                    // Async operation completed
+                    
+                    const completedGames = [];
+                    gameDocs.forEach((gameDoc) => {
+                      if (gameDoc && gameDoc.exists()) {
+                        const gameData = gameDoc.data();
+                        if (gameData.type === 'pvp' && gameData.status === 'completed') {
+                          completedGames.push({ id: gameDoc.id, ...gameData });
+                        }
+                      }
+                    });
+                    
+                    // Process completed games for unseen results
+                    let unseen = 0;
+                    completedGames.forEach((gameData) => {
+                      const playersArray = gameData.playerIds || gameData.players || [];
+                      const seen = Array.isArray(gameData.resultsSeenBy) ? gameData.resultsSeenBy : [];
+                      const firstFinisherId = gameData.firstFinisherId || null;
+                      
+                      if (firstFinisherId) {
+                        if (firstFinisherId === currentUser.uid && !seen.includes(currentUser.uid)) unseen += 1;
+                      } else {
+                        const isPlayer1 = playersArray[0] === currentUser.uid;
+                        const meSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
+                        const oppSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
+                        if (meSolved && !seen.includes(currentUser.uid)) {
+                          unseen += 1;
+                        }
+                      }
+                    });
+                    
+                    // Update state
+                    setUnseenResultsCount(unseen);
+                    if (unseen > 0) setBadgeCleared(false);
+                    prevUnseenCountRef.current = unseen;
+                  } else {
+                    setUnseenResultsCount(0);
+                  }
                 }
+              } catch (error) {
+                console.error('HomeScreen: Error in completed games query callback:', error);
+                // Don't crash the app, just log the error
               }
             }, (error) => {
               console.error('HomeScreen: User document query error for completed games:', error);
@@ -472,26 +498,49 @@ const HomeScreen = () => {
 
     return () => {
       mounted = false;
-        // if (invitesUnsubscribeRef.current) {
-        //   invitesUnsubscribeRef.current();
-        // }
+      
+      // Industry standard: Clean up all listeners to prevent memory leaks
+      try {
+        // Clean up challenges listeners
         if (challengesUnsubscribeRef.current) {
           const prev = challengesUnsubscribeRef.current;
           if (Array.isArray(prev)) {
-            prev.forEach(fn => fn && fn());
+            prev.forEach(fn => {
+              try {
+                if (fn && typeof fn === 'function') fn();
+              } catch (error) {
+                console.warn('HomeScreen: Error cleaning up challenges listener:', error);
+              }
+            });
           } else if (typeof prev === 'function') {
-            prev();
+            try {
+              prev();
+            } catch (error) {
+              console.warn('HomeScreen: Error cleaning up challenges listener:', error);
+            }
           }
         }
 
+        // Clean up notifications listener
         if (notificationsUnsubscribeRef.current) {
-          notificationsUnsubscribeRef.current();
+          try {
+            notificationsUnsubscribeRef.current();
+          } catch (error) {
+            console.warn('HomeScreen: Error cleaning up notifications listener:', error);
+          }
         }
 
+        // Clean up completed results listener
         if (completedResultsUnsubscribeRef.current) {
-          completedResultsUnsubscribeRef.current();
+          try {
+            completedResultsUnsubscribeRef.current();
+          } catch (error) {
+            console.warn('HomeScreen: Error cleaning up completed results listener:', error);
+          }
         }
-
+      } catch (error) {
+        console.error('HomeScreen: Error during cleanup:', error);
+      }
     };
   }, []);
 
@@ -726,9 +775,12 @@ const HomeScreen = () => {
 
   return (
     <>
+      {/* Show status bar on menu screens */}
+      <StatusBar hidden={false} barStyle="light-content" />
+      
       {/* FAB - Positioned outside SafeAreaView to avoid any container constraints */}
       <TouchableOpacity
-        style={styles.fabTopHomeScreen}
+        style={[styles.fabTopHomeScreen, { top: insets.top + 5 }]}
         onPress={() => {
           setShowMenuModal(true);
         }}
@@ -737,8 +789,8 @@ const HomeScreen = () => {
         <Text style={styles.fabText}>☰</Text>
       </TouchableOpacity>
       
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top + 55 }]}>
         {/* Fixed Header Image - Outside ScrollView */}
         <View style={{ alignItems: 'center', width: '100%' }}>
           <Image
@@ -752,7 +804,7 @@ const HomeScreen = () => {
       <View
         style={{ flex: 1, width: '100%', paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
       >
-        <Text style={[styles.header, { marginBottom: 40, color: '#FF0000' }]}>Welcome, {displayName}</Text>
+        <Text style={[styles.header, { marginBottom: 40, color: '#FF0000' }]}>Welcome, {displayName} - OTA TEST</Text>
         
         {/* Player Rank Display - Clickable to show rank ladder */}
         <TouchableOpacity
@@ -897,43 +949,7 @@ const HomeScreen = () => {
             >
               <Text style={styles.buttonText}>Settings</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: '#8B5CF6' }]}
-              onPress={async () => {
-                try {
-                  console.log('HomeScreen: Testing push notification...');
-                  const success = await pushNotificationService.testPushNotification(userId);
-                  if (success) {
-                    Alert.alert('Test Sent', 'Push notification sent! Check your notification bar and console logs.');
-                  } else {
-                    Alert.alert('Test Failed', 'Could not send test notification. Check console for details.');
-                  }
-                  setShowMenuModal(false);
-                } catch (error) {
-                  console.error('Test notification error:', error);
-                  Alert.alert('Error', 'Failed to send test notification');
-                  setShowMenuModal(false);
-                }
-              }}
-            >
-              <Text style={styles.buttonText}>Test Push Notification</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: '#FF6B35' }]}
-              onPress={async () => {
-                try {
-                  await appUpdateService.forceCheckForUpdates();
-                  Alert.alert('Update Check', 'Update check completed. Check console for details.');
-                  setShowMenuModal(false);
-                } catch (error) {
-                  console.error('Update check error:', error);
-                  Alert.alert('Error', 'Failed to check for updates');
-                  setShowMenuModal(false);
-                }
-              }}
-            >
-              <Text style={styles.buttonText}>Test Update Check</Text>
-            </TouchableOpacity>
+            
             <TouchableOpacity
               style={styles.button}
               onPress={() => setShowMenuModal(false)}
