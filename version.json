@@ -1,7 +1,7 @@
 {
   "latestBuildNumber": 32,
   "versionCode": 32,
-  "versionName": "1.1.4",
+  "versionName": "1.1.5",
   "releaseDate": "2025-01-29",
   "updateMessage": "Major bug fixes and improvements - Fixed quit game functionality for waiting opponents, resolved navigation back button issues, improved Firestore rules, enhanced error handling and logging, fixed sound system with expo-av, resolved notification spam issues"
 }
