@@ -714,10 +714,9 @@ class FriendsService {
   }
 }
 
-// ⚠️ SYSTEM MISMATCH WARNING ⚠️
+// ✅ CONSISTENT SYSTEM ⚠️
 // This service uses the NEW subcollection system (users/{userId}/friends/{friendId})
-// Other files (AddFriendsScreen.js, CustomTabNavigator.js) use the OLD friendRequests collection system
-// This mismatch is causing friend requests to not appear properly
-console.warn('🚨 [FriendsService] Using NEW subcollection system - this may cause issues with other screens');
+// All files now use the same NEW subcollection system for consistency
+console.log('✅ [FriendsService] Using NEW subcollection system - consistent with all screens');
 
 export default new FriendsService();

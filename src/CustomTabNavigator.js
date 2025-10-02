@@ -7,11 +7,10 @@ import { db, auth } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { playSound } from './soundsUtil';
 
-// ⚠️ SYSTEM MISMATCH WARNING ⚠️
-// This file uses the OLD friendRequests collection system
-// Other files (FriendRequestsScreen.js, friendsService.js) use the NEW subcollection system
-// This mismatch is causing friend requests to not appear properly
-console.warn('🚨 [CustomTabNavigator] Using OLD friendRequests collection system - this may cause issues with other screens');
+// ✅ UPDATED TO USE NEW SUBCONNECTION SYSTEM ⚠️
+// This file now uses the NEW subcollection system (users/{userId}/friends/{friendId})
+// Consistent with FriendRequestsScreen.js and friendsService.js
+console.log('✅ [CustomTabNavigator] Using NEW subcollection system - consistent with other screens');
 
 import HomeScreen from './HomeScreen';
 import FriendsManagementScreen from './FriendsManagementScreen';
@@ -114,14 +113,15 @@ const CustomTabNavigator = () => {
     console.log('🔍 [CustomTabNavigator] Setting up friend request listener');
     console.log('🔍 [CustomTabNavigator] Current user ID:', auth.currentUser?.uid);
     
+    // Use NEW subcollection system - query user's friends subcollection for pending requests
+    const friendsRef = collection(db, 'users', auth.currentUser.uid, 'friends');
     const requestsQuery = query(
-      collection(db, 'friendRequests'),
-      where('toUid', '==', auth.currentUser.uid),
+      friendsRef,
       where('status', '==', 'pending')
     );
 
-    console.log('🔍 [CustomTabNavigator] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
-    console.log('🔍 [CustomTabNavigator] Query: where("toUid", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
+    console.log('🔍 [CustomTabNavigator] Querying NEW subcollection system for user:', auth.currentUser?.uid);
+    console.log('🔍 [CustomTabNavigator] Query: users/', auth.currentUser.uid, '/friends where status == pending');
 
     const requestsUnsubscribe = onSnapshot(requestsQuery, (snapshot) => {
       console.log('🔍 [CustomTabNavigator] Friend request listener triggered');
@@ -385,6 +385,7 @@ const CustomTabNavigator = () => {
   return (
     <Tab.Navigator
       screenOptions={{
+        headerShown: false, // Hide the header bar at the top
         tabBarStyle: {
           backgroundColor: "#1F2937",
           borderTopColor: "#374151",
@@ -392,13 +393,6 @@ const CustomTabNavigator = () => {
         },
         tabBarActiveTintColor: "#F59E0B",
         tabBarInactiveTintColor: "#9CA3AF",
-        headerStyle: {
-          backgroundColor: "#1F2937",
-        },
-        headerTintColor: "#E5E7EB",
-        headerTitleStyle: {
-          fontWeight: "600",
-        },
       }}
     >
       <Tab.Screen 

@@ -10,11 +10,10 @@ import { getNotificationService } from './notificationService';
 import friendsService from './friendsService';
 import notificationPermissionHelper from './notificationPermissionHelper';
 
-// ⚠️ SYSTEM MISMATCH WARNING ⚠️
-// This file uses the OLD friendRequests collection system
-// Other files (FriendRequestsScreen.js, friendsService.js) use the NEW subcollection system
-// This mismatch is causing friend requests to not appear properly
-console.warn('🚨 [AddFriendsScreen] Using OLD friendRequests collection system - this may cause issues with other screens');
+// ✅ UPDATED TO USE NEW SUBCONNECTION SYSTEM ⚠️
+// This file now uses the NEW subcollection system (users/{userId}/friends/{friendId})
+// Consistent with FriendRequestsScreen.js and friendsService.js
+console.log('✅ [AddFriendsScreen] Using NEW subcollection system - consistent with other screens');
 
 const AddFriendsScreen = () => {
   console.log('🔍 [AddFriendsScreen] Component rendering');
@@ -129,20 +128,17 @@ const AddFriendsScreen = () => {
       
       // Check if a request already exists
       console.log('🔍 [AddFriendsScreen] Checking for existing friend request...');
-      const existingRequestQuery = query(
-        collection(db, 'friendRequests'),
-        where('fromUid', '==', auth.currentUser.uid),
-        where('toUid', '==', user.uid),
-        where('status', '==', 'pending')
-      );
+      // Check NEW subcollection system - look for existing request in recipient's friends subcollection
+      const existingRequestDoc = await getDoc(doc(db, 'users', user.uid, 'friends', auth.currentUser.uid));
+      console.log('🔍 [AddFriendsScreen] Existing request check result:', existingRequestDoc.exists());
       
-      const existingRequestSnapshot = await getDocs(existingRequestQuery);
-      console.log('🔍 [AddFriendsScreen] Existing request query results:', existingRequestSnapshot.docs.length, 'documents found');
-      
-      if (!existingRequestSnapshot.empty) {
-        console.log('🔍 [AddFriendsScreen] Duplicate request detected - preventing send');
-        Alert.alert('Request Already Sent', `You have already sent a friend request to ${user.username || user.displayName}.`);
-        return;
+      if (existingRequestDoc.exists()) {
+        const existingData = existingRequestDoc.data();
+        if (existingData.status === 'pending') {
+          console.log('🔍 [AddFriendsScreen] Duplicate request detected - preventing send');
+          Alert.alert('Request Already Sent', `You have already sent a friend request to ${user.username || user.displayName}.`);
+          return;
+        }
       }
       
       console.log('🔍 [AddFriendsScreen] No existing request found - proceeding with new request');
@@ -157,10 +153,16 @@ const AddFriendsScreen = () => {
       };
 
       console.log('🔍 [AddFriendsScreen] Request data to be saved:', requestData);
-      console.log('🔍 [AddFriendsScreen] Using OLD friendRequests collection system');
+      console.log('🔍 [AddFriendsScreen] Using NEW subcollection system: users/', user.uid, '/friends/', auth.currentUser.uid);
 
-      const docRef = await addDoc(collection(db, 'friendRequests'), requestData);
-      console.log('🔍 [AddFriendsScreen] Friend request document created with ID:', docRef.id);
+      // Use NEW subcollection system - create friend document in recipient's friends subcollection
+      await setDoc(doc(db, 'users', user.uid, 'friends', auth.currentUser.uid), {
+        ...requestData,
+        createdAt: new Date().toISOString(),
+        senderUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
+        senderId: auth.currentUser.uid
+      });
+      console.log('🔍 [AddFriendsScreen] Friend request document created successfully');
       
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
       playSound('chime');
@@ -278,7 +280,7 @@ const AddFriendsScreen = () => {
   );
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
       <Text style={styles.header}>Friends & Challenges</Text>
       
       {/* Tab Navigation */}

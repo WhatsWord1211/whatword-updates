@@ -7,11 +7,10 @@ import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayU
 import { playSound } from './soundsUtil';
 import styles from './styles';
 
-// ⚠️ SYSTEM MISMATCH WARNING ⚠️
+// ✅ CONSISTENT SYSTEM ⚠️
 // This file uses the NEW subcollection system (users/{userId}/friends/{friendId})
-// Other files (AddFriendsScreen.js, CustomTabNavigator.js) use the OLD friendRequests collection system
-// This mismatch is causing friend requests to not appear properly
-console.warn('🚨 [FriendRequestsScreen] Using NEW subcollection system - this may cause issues with other screens');
+// All files now use the same NEW subcollection system for consistency
+console.log('✅ [FriendRequestsScreen] Using NEW subcollection system - consistent with all screens');
 
 const FriendRequestsScreen = () => {
   const navigation = useNavigation();
@@ -160,14 +159,14 @@ const FriendRequestsScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
       <Text style={styles.header}>Friend Requests</Text>
       
       {pendingRequests.length === 0 ? (

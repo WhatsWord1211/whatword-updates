@@ -332,20 +332,17 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       
       // Check if a request already exists
       console.log('🔍 [FriendsManagementScreen] Checking for existing friend request...');
-      const existingRequestQuery = query(
-        collection(db, 'friendRequests'),
-        where('fromUid', '==', auth.currentUser.uid),
-        where('toUid', '==', user.uid),
-        where('status', '==', 'pending')
-      );
+      // Check NEW subcollection system - look for existing request in recipient's friends subcollection
+      const existingRequestDoc = await getDoc(doc(db, 'users', user.uid, 'friends', auth.currentUser.uid));
+      console.log('🔍 [FriendsManagementScreen] Existing request check result:', existingRequestDoc.exists());
       
-      const existingRequestSnapshot = await getDocs(existingRequestQuery);
-      console.log('🔍 [FriendsManagementScreen] Existing request query results:', existingRequestSnapshot.docs.length, 'documents found');
-      
-      if (!existingRequestSnapshot.empty) {
-        console.log('🔍 [FriendsManagementScreen] Duplicate request detected - preventing send');
-        Alert.alert('Request Already Sent', `You have already sent a friend request to ${user.username || user.displayName}.`);
-        return;
+      if (existingRequestDoc.exists()) {
+        const existingData = existingRequestDoc.data();
+        if (existingData.status === 'pending') {
+          console.log('🔍 [FriendsManagementScreen] Duplicate request detected - preventing send');
+          Alert.alert('Request Already Sent', `You have already sent a friend request to ${user.username || user.displayName}.`);
+          return;
+        }
       }
       
       console.log('🔍 [FriendsManagementScreen] No existing request found - proceeding with new request');
@@ -360,10 +357,16 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       };
 
       console.log('🔍 [FriendsManagementScreen] Request data to be saved:', requestData);
-      console.log('🔍 [FriendsManagementScreen] Using OLD friendRequests collection system');
+      console.log('🔍 [FriendsManagementScreen] Using NEW subcollection system: users/', user.uid, '/friends/', auth.currentUser.uid);
 
-      const docRef = await addDoc(collection(db, 'friendRequests'), requestData);
-      console.log('🔍 [FriendsManagementScreen] Friend request document created with ID:', docRef.id);
+      // Use NEW subcollection system - create friend document in recipient's friends subcollection
+      await setDoc(doc(db, 'users', user.uid, 'friends', auth.currentUser.uid), {
+        ...requestData,
+        createdAt: new Date().toISOString(),
+        senderUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
+        senderId: auth.currentUser.uid
+      });
+      console.log('🔍 [FriendsManagementScreen] Friend request document created successfully');
       
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
       playSound('chime');
@@ -605,12 +608,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
   };
 
   return (
-    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
-      <View style={[styles.friendsHeader, { backgroundColor: colors.background }]}>
-        <Text style={styles.headerTitle}>
-          Friends Management
-        </Text>
-      </View>
+    <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}> 
 
       {/* Tab Navigation */}
       <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
@@ -796,7 +794,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       )}
 
       {/* Content */}
-      <View style={styles.content}>
+      <View style={{ flex: 1, width: '100%', paddingHorizontal: 16, paddingTop: 0, alignItems: 'stretch', justifyContent: 'flex-start' }}>
         {activeTab === 'friends' && (
           <View style={styles.tabContent}>
             {loadingFriends ? (
@@ -815,6 +813,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 keyExtractor={(item) => item.id}
                 renderItem={renderFriend}
                 style={styles.list}
+                contentContainerStyle={{ paddingBottom: 100 }}
               />
             )}
           </View>
