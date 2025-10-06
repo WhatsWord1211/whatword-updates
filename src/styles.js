@@ -1525,6 +1525,14 @@ export default StyleSheet.create({
     fontWeight: '600',
   },
   // Resume screen styles
+  resumeBackButton: {
+    padding: 10,
+  },
+  resumeBackButtonText: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -1687,6 +1695,14 @@ export default StyleSheet.create({
     marginLeft: 10,
   },
   // Settings Section Styles
+  settingsBackButton: {
+    padding: 10,
+  },
+  settingsBackButtonText: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   settingsSection: {
     width: '100%',
     backgroundColor: '#374151',
@@ -3766,7 +3782,88 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Bold',
   },
 
-  // Compact Challenge Box Styles for ResumeGamesScreen
+  // Standardized Game Container Style (based on solo game design)
+  standardGameItem: {
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#374151',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    transform: [{ scale: 1 }],
+    // Add a subtle gradient effect using border
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+
+  // Standardized Game Content Styles
+  standardGameContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  standardGameInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  standardGameTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 4,
+  },
+  standardGameSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+  },
+
+  // Outgoing Challenge Container (gold border on right)
+  outgoingChallengeItem: {
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#374151',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    transform: [{ scale: 1 }],
+    // Gold border on the right side
+    borderRightWidth: 4,
+    borderRightColor: '#F59E0B',
+  },
+
+  // Incoming Challenge Specific Styles
+  incomingChallengeContent: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 120,
+  },
+  incomingChallengeInfo: {
+    width: '100%',
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  incomingChallengeDate: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
+  // Compact Challenge Box Styles for ResumeGamesScreen (legacy)
   compactChallengeItem: {
     flexDirection: 'row',
     backgroundColor: '#374151',
@@ -3778,6 +3875,9 @@ export default StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#4B5563',
+    // Add gold left border effect like soloGameItem
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
   },
   compactChallengeInfo: {
     flex: 1,
@@ -3786,7 +3886,13 @@ export default StyleSheet.create({
   compactChallengeTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#E5E7EB',
+    color: '#F59E0B',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 2,
+  },
+  compactChallengeUsername: {
+    fontSize: 16,
+    fontWeight: '600',
     fontFamily: 'Roboto-Bold',
     marginBottom: 2,
   },
@@ -3883,23 +3989,27 @@ export default StyleSheet.create({
 
   // Enhanced styles for awaiting acceptance boxes
   awaitingAcceptanceItem: {
-    flexDirection: 'column',
+    flexDirection: 'row',
     backgroundColor: '#1F2937',
     padding: 14,
     borderRadius: 12,
     marginBottom: 10,
     width: '100%',
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 2,
-    borderColor: '#F59E0B',
-    shadowColor: '#F59E0B',
+    borderColor: '#374151',
+    shadowColor: '#000000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 3,
+    // Add gold right border effect for "Waiting for username" containers
+    borderRightWidth: 4,
+    borderRightColor: '#F59E0B',
   },
   awaitingAcceptanceTextContainer: {
     width: '100%',
@@ -3909,19 +4019,29 @@ export default StyleSheet.create({
   awaitingAcceptanceInfo: {
     flex: 1,
     marginRight: 12,
+    alignItems: 'flex-start',
   },
   awaitingAcceptanceTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: '#F59E0B',
     fontFamily: 'Roboto-Bold',
-    marginBottom: 4,
+    marginBottom: 2,
+    textAlign: 'left',
+  },
+  awaitingAcceptanceUsername: {
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 2,
+    textAlign: 'left',
   },
   awaitingAcceptanceSubtext: {
     fontSize: 14,
     color: '#D1D5DB',
     fontFamily: 'Roboto-Regular',
     marginBottom: 2,
+    textAlign: 'left',
   },
   awaitingAcceptanceDate: {
     fontSize: 12,
@@ -3989,5 +4109,198 @@ export default StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Roboto-Regular',
     fontWeight: '500',
+  },
+
+  // Share Button Styles
+  shareSection: {
+    marginTop: 20,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  shareButton: {
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  shareButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+    textAlign: 'center',
+  },
+  // CreateChallengeScreen specific back button styles
+  createChallengeBackButton: {
+    padding: 10,
+  },
+  createChallengeBackButtonText: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Username-only purple style for inline Text
+  usernamePurple: {
+    color: '#8B5CF6',
+  },
+  
+  // Unified date style for all containers
+  unifiedDate: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+  },
+  
+  // Red quit button for waiting for containers
+  redQuitButton: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  redQuitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+    textAlign: 'center',
+  },
+
+  // Notification Permission Popup Styles
+  notificationPermissionPopup: {
+    backgroundColor: '#374151',
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  notificationPermissionTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#F59E0B',
+    textAlign: 'center',
+    marginBottom: 16,
+    fontFamily: 'Roboto-Bold',
+  },
+  notificationPermissionMessage: {
+    fontSize: 16,
+    color: '#E5E7EB',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+    fontFamily: 'Roboto-Regular',
+  },
+  notificationPermissionBenefits: {
+    backgroundColor: '#1F2937',
+    padding: 20,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#4B5563',
+  },
+  notificationPermissionBenefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  notificationPermissionBenefitDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F59E0B',
+    marginRight: 12,
+  },
+  notificationPermissionBenefitText: {
+    fontSize: 14,
+    color: '#D1D5DB',
+    fontFamily: 'Roboto-Regular',
+    flex: 1,
+  },
+  notificationPermissionActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
+  },
+  notificationPermissionButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  notificationPermissionButtonSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#6B7280',
+  },
+  notificationPermissionButtonPrimary: {
+    backgroundColor: '#F59E0B',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  notificationPermissionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Roboto-Bold',
+    textAlign: 'center',
+  },
+  notificationPermissionButtonTextSecondary: {
+    color: '#9CA3AF',
+  },
+  notificationPermissionButtonTextPrimary: {
+    color: '#1F2937',
+  },
+  challengeButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 12,
+  },
+  declineButton: {
+    backgroundColor: '#DC2626',
+    flex: 1,
+    marginRight: 8,
+    borderTopColor: '#EF4444',
+    borderLeftColor: '#EF4444',
+    borderBottomColor: '#B91C1C',
+    borderRightColor: '#B91C1C',
+  },
+  acceptButton: {
+    backgroundColor: '#059669',
+    flex: 1,
+    marginLeft: 8,
+    borderTopColor: '#10B981',
+    borderLeftColor: '#10B981',
+    borderBottomColor: '#047857',
+    borderRightColor: '#047857',
+  },
+  backButton: {
+    backgroundColor: '#6B7280',
+    borderTopColor: '#9CA3AF',
+    borderLeftColor: '#9CA3AF',
+    borderBottomColor: '#4B5563',
+    borderRightColor: '#4B5563',
   },
 });

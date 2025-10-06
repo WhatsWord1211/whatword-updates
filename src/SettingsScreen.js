@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput, StatusBar, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -229,23 +229,24 @@ const SettingsScreen = () => {
     <SafeAreaView style={[styles.screenContainer, { backgroundColor: theme.background }]}>
       {/* Show status bar on menu screens */}
       <StatusBar hidden={false} barStyle="light-content" />
-      
+  
       {/* Header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.settingsBackButton}
           onPress={() => {
             playSound('backspace').catch(() => {});
             navigation.goBack();
           }}
         >
-          <Text style={[styles.backButtonText, { color: theme.textPrimary }]}>← Back</Text>
+          <Text style={[styles.settingsBackButtonText, { color: theme.textPrimary }]}>← Back</Text>
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Settings</Text>
         <View style={{ width: 60 }} />
       </View>
 
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Theme Settings */}
         <View style={[styles.settingsSection, { backgroundColor: theme.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Appearance</Text>
@@ -584,7 +585,8 @@ const SettingsScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </TouchableWithoutFeedback>
 
       {/* Time Picker Modal */}
       <Modal visible={showTimePicker} transparent animationType="fade">

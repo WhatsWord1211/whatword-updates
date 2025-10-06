@@ -58,20 +58,20 @@ class NotificationPermissionHelper {
     return new Promise((resolve) => {
       const contexts = {
         friend_request: {
-          title: '🔔 Stay Connected with Friends',
-          message: 'Get notified when:\n\n• Friends accept your requests\n• You receive new friend requests\n• Friends challenge you to games\n\nYou can always change this in Settings.',
+          title: 'Stay Connected with Friends',
+          message: 'Never miss important updates from your friends!\n\n• Friends accept your requests\n• You receive new friend requests\n• Friends challenge you to games\n\nYou can always change this in Settings.',
         },
         challenge: {
-          title: '🎮 Never Miss a Game',
-          message: 'Get notified when:\n\n• Friends accept your challenges\n• It\'s your turn to play\n• Games are completed\n\nYou can always change this in Settings.',
+          title: 'Never Miss a Game',
+          message: 'Stay in the action with real-time game updates!\n\n• Friends accept your challenges\n• It\'s your turn to play\n• Games are completed\n\nYou can always change this in Settings.',
         },
         game_complete: {
-          title: '🏆 Stay in the Loop',
-          message: 'Get notified when:\n\n• Your opponents complete their turns\n• Games are finished\n• Friends want to play again\n\nYou can always change this in Settings.',
+          title: 'Stay in the Loop',
+          message: 'Keep up with all your game activity!\n\n• Your opponents complete their turns\n• Games are finished\n• Friends want to play again\n\nYou can always change this in Settings.',
         },
         default: {
-          title: '🔔 Enable Notifications',
-          message: 'Stay updated with:\n\n• Friend requests & acceptances\n• Game challenges & completions\n• Your turn reminders\n\nYou can always change this in Settings.',
+          title: 'Enable Notifications',
+          message: 'Stay updated with all your WhatWord activity!\n\n• Friend requests & acceptances\n• Game challenges & completions\n• Your turn reminders\n\nYou can always change this in Settings.',
         },
       };
 
@@ -87,7 +87,7 @@ class NotificationPermissionHelper {
             onPress: () => resolve(false),
           },
           {
-            text: 'Enable Notifications',
+            text: 'Enable',
             onPress: () => resolve(true),
           },
         ],
@@ -256,8 +256,8 @@ class NotificationPermissionHelper {
     });
 
     Alert.alert(
-      'Enable Notifications',
-      `Notifications are currently disabled.\n\n${settingsInstructions}`,
+      'Notifications Disabled',
+      `To receive game updates and friend notifications:\n\n${settingsInstructions}\n\nYou can re-enable them anytime in your device settings.`,
       [{ text: 'OK' }]
     );
   }

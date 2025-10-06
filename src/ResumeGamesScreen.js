@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, FlatList, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
@@ -19,6 +19,8 @@ const ResumeGamesScreen = () => {
   const [waitingForOpponentGames, setWaitingForOpponentGames] = useState([]);
   const [completedUnseenGames, setCompletedUnseenGames] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showChallengeResponsePopup, setShowChallengeResponsePopup] = useState(false);
+  const [challengeData, setChallengeData] = useState(null);
   
   // This screen now shows:
   // 1. Pending challenges (waiting for acceptance)
@@ -97,6 +99,13 @@ const ResumeGamesScreen = () => {
           await AsyncStorage.setItem('savedGames', JSON.stringify(updatedGames));
           console.log('ResumeGamesScreen: Migrated legacy solo games with playerId');
         }
+        
+        // Sort solo games chronologically with oldest first
+        migratedGames.sort((a, b) => {
+          const dateA = new Date(a.timestamp || 0);
+          const dateB = new Date(b.timestamp || 0);
+          return dateA - dateB; // Oldest first (ascending order)
+        });
         
         setSoloGames(migratedGames);
       } else {
@@ -232,7 +241,28 @@ const ResumeGamesScreen = () => {
               gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance'
             };
           });
-          return merged;
+          
+          // Group challenges by type and sort each group chronologically
+          const challengeFrom = merged.filter(c => c.gameType === 'pending_challenge');
+          const waitingFor = merged.filter(c => c.gameType === 'awaiting_acceptance');
+          
+          // Sort each subgroup chronologically with oldest first
+          challengeFrom.sort((a, b) => {
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+            return dateA - dateB;
+          });
+          
+          waitingFor.sort((a, b) => {
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+            return dateA - dateB;
+          });
+          
+          // Combine with "Challenge from" first, then "Waiting for"
+          const sorted = [...challengeFrom, ...waitingFor];
+          
+          return sorted;
         });
         
         // Then fetch usernames asynchronously
@@ -278,7 +308,28 @@ const ResumeGamesScreen = () => {
               gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance'
             };
           });
-          return merged;
+          
+          // Group challenges by type and sort each group chronologically
+          const challengeFrom = merged.filter(c => c.gameType === 'pending_challenge');
+          const waitingFor = merged.filter(c => c.gameType === 'awaiting_acceptance');
+          
+          // Sort each subgroup chronologically with oldest first
+          challengeFrom.sort((a, b) => {
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+            return dateA - dateB;
+          });
+          
+          waitingFor.sort((a, b) => {
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+            return dateA - dateB;
+          });
+          
+          // Combine with "Challenge from" first, then "Waiting for"
+          const sorted = [...challengeFrom, ...waitingFor];
+          
+          return sorted;
         });
       });
 
@@ -329,6 +380,7 @@ const ResumeGamesScreen = () => {
               opponentUid,
               wordLength: gameData.wordLength || 4,
               lastActivity: gameData.lastActivity || gameData.createdAt,
+              createdAt: gameData.createdAt, // Ensure createdAt is available for sorting
               gameMode: 'pvp',
               gameStatus: gameData.status,
               currentPlayerSolved: !!currentPlayerSolved,
@@ -363,8 +415,23 @@ const ResumeGamesScreen = () => {
             }
           });
 
-          // Sort completed games newest first
-          completedPendingResults.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+          // Sort completed games chronologically with oldest first
+          completedPendingResults.sort((a, b) => {
+            // Use createdAt for chronological ordering (when game was started)
+            // Fallback to lastActivity if createdAt is not available
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || a.lastActivity?.toDate?.() || a.lastActivity || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || b.lastActivity?.toDate?.() || b.lastActivity || new Date(0);
+            return dateA - dateB; // Oldest first (ascending order)
+          });
+
+          // Sort active games chronologically with oldest first
+          activeGames.sort((a, b) => {
+            // Use createdAt for chronological ordering (when game was started)
+            // Fallback to lastActivity if createdAt is not available
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || a.lastActivity?.toDate?.() || a.lastActivity || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || b.lastActivity?.toDate?.() || b.lastActivity || new Date(0);
+            return dateA - dateB; // Oldest first (ascending order)
+          });
 
           setPvpGames(activeGames);
           setWaitingForOpponentGames(waitingGames);
@@ -430,8 +497,8 @@ const ResumeGamesScreen = () => {
       
       switch (game.gameType) {
         case 'pending_challenge':
-          // Navigate to challenge response screen
-          navigation.navigate('PendingChallenges');
+          // Handle specific challenge response directly
+          handleChallengeResponse(game);
           break;
           
         case 'awaiting_acceptance':
@@ -468,9 +535,13 @@ const ResumeGamesScreen = () => {
           break;
         
         case 'completed_pending_results':
-          // Navigate to PvPGame to show consistent results popup and sound, then archive on OK
+          // Navigate to PvPGameScreen to show the game over popup
+          console.log('ResumeGamesScreen: handleGameAction called for completed_pending_results');
           if (game.gameId) {
-            navigation.navigate('PvPGame', { gameId: game.gameId });
+            navigation.navigate('PvPGame', { 
+              gameId: game.gameId, 
+              showResults: true 
+            });
           } else {
             Alert.alert('Error', 'Game ID not found. Please try again.');
           }
@@ -483,6 +554,45 @@ const ResumeGamesScreen = () => {
     } catch (error) {
       console.error('Failed to handle game action:', error);
       Alert.alert('Error', 'Failed to process game action. Please try again.');
+    }
+  };
+
+  const handleChallengeResponse = (challenge) => {
+    setChallengeData(challenge);
+    setShowChallengeResponsePopup(true);
+  };
+
+  const acceptChallenge = async (challenge) => {
+    try {
+      playSound('chime');
+      setShowChallengeResponsePopup(false);
+      setChallengeData(null);
+      // Navigate to SetWordGameScreen to set the mystery word
+      navigation.navigate('SetWordGame', {
+        challenge: challenge,
+        isAccepting: true
+      });
+    } catch (error) {
+      console.error('Failed to accept challenge:', error);
+      Alert.alert('Error', 'Failed to accept challenge. Please try again.');
+    }
+  };
+
+  const declineChallenge = async (challenge) => {
+    try {
+      playSound('backspace');
+      setShowChallengeResponsePopup(false);
+      setChallengeData(null);
+      // Update challenge status to declined
+      await updateDoc(doc(db, 'challenges', challenge.id), {
+        status: 'declined',
+        declinedAt: new Date()
+      });
+      
+      Alert.alert('Challenge Declined', 'You have declined the challenge.');
+    } catch (error) {
+      console.error('Failed to decline challenge:', error);
+      Alert.alert('Error', 'Failed to decline challenge. Please try again.');
     }
   };
 
@@ -603,75 +713,31 @@ const ResumeGamesScreen = () => {
     }
   };
 
-  const showGameResults = (game) => {
-    Alert.alert(
-      'Game Complete!',
-      `Both players have solved their words! Would you like to see the results?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'See Results', 
-          onPress: async () => {
-            // No ad needed - this is just viewing results
-            
-            // Navigate to results screen or show results modal
-            // For now, we'll show a simple alert with basic info
-            Alert.alert(
-              'Game Results',
-              `Game against ${game.opponent} completed!\n\nWord Length: ${game.wordLength} letters\n\nCheck the leaderboard for detailed results!`,
-              [
-                { text: 'OK' },
-                { 
-                  text: 'View Leaderboard', 
-                  onPress: () => navigation.navigate('Leaderboard')
-                }
-              ]
-            );
-          }
-        }
-      ]
-    );
-  };
 
   const renderGameItem = ({ item }) => {
     const isAwaitingAcceptance = item.gameType === 'awaiting_acceptance';
     
     if (isAwaitingAcceptance) {
-      // Special layout for awaiting acceptance boxes
+      // Special layout for awaiting acceptance boxes - left text, date below, red quit button right
       return (
         <View style={styles.awaitingAcceptanceItem}>
-          {/* Text at the top */}
-          <View style={styles.awaitingAcceptanceTextContainer}>
+          <View style={styles.awaitingAcceptanceInfo}>
             <Text style={styles.awaitingAcceptanceTitle}>
-              Waiting for {item.toUsername || 'Unknown'}
+              Waiting for
             </Text>
-            {item.message || item.gameStatus && (
-              <Text style={styles.awaitingAcceptanceSubtext}>
-                {item.message || item.gameStatus}
-              </Text>
-            )}
+            <Text style={styles.awaitingAcceptanceUsername}>
+              <Text style={styles.usernamePurple}>{item.toUsername || 'Unknown'}</Text>
+            </Text>
+            <Text style={styles.unifiedDate}>
+              Sent: {new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}
+            </Text>
           </View>
-          
-          {/* Buttons in the middle */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.challengeButton, styles.checkButton]}
-              onPress={() => handleGameAction(item)}
-            >
-              <Text style={styles.challengeButtonText}>View</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.challengeButton, styles.quitButton]}
-              onPress={() => handleCancelChallenge(item)}
-            >
-              <Text style={styles.challengeButtonText}>Quit</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {/* Date at the bottom */}
-          <Text style={styles.awaitingAcceptanceDate}>
-            Sent: {new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}
-          </Text>
+          <TouchableOpacity
+            style={styles.redQuitButton}
+            onPress={() => handleCancelChallenge(item)}
+          >
+            <Text style={styles.redQuitButtonText}>Quit</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -684,11 +750,14 @@ const ResumeGamesScreen = () => {
       >
         <View style={styles.compactChallengeInfo}>
           <Text style={styles.compactChallengeTitle}>
-            {item.gameType === 'pending_challenge' 
-              ? `Challenge from ${item.fromUsername || 'Unknown'}` 
-              : `vs ${item.opponent}`}
+            {item.gameType === 'pending_challenge' ? 'Challenge from' : 'vs'}
           </Text>
-          <Text style={styles.compactChallengeDate}>
+          <Text style={styles.compactChallengeUsername}>
+            <Text style={styles.usernamePurple}>
+              {item.gameType === 'pending_challenge' ? (item.fromUsername || 'Unknown') : item.opponent}
+            </Text>
+          </Text>
+          <Text style={styles.unifiedDate}>
             {item.gameType === 'pending_challenge' 
               ? `Sent: ${new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}`
               : `Last: ${new Date(item.lastActivity?.toDate?.() || item.lastActivity || Date.now()).toLocaleDateString()}`}
@@ -768,13 +837,10 @@ const ResumeGamesScreen = () => {
         <View style={styles.soloGameContent}>
           <View style={styles.soloGameInfo}>
             <Text style={styles.soloGameTitle}>
-              🎯 Solo Game - {getDifficultyText(item.wordLength)}
+              {getDifficultyText(item.wordLength)}
             </Text>
-            <Text style={styles.soloGameSubtitle}>
-              {getGameStateText(item.gameState)} • {item.guesses?.length || 0} guesses made
-            </Text>
-            <Text style={styles.soloGameTime}>
-              📅 Started: {new Date(item.timestamp).toLocaleDateString()}
+            <Text style={styles.unifiedDate}>
+              Started: {new Date(item.timestamp).toLocaleDateString()}
             </Text>
           </View>
           <View style={styles.soloGameAction}>
@@ -787,16 +853,16 @@ const ResumeGamesScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
         <View style={styles.headerContainer}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.resumeBackButton}
             onPress={() => {
               playSound('backspace').catch(() => {});
               navigation.goBack();
             }}
           >
-            <Text style={styles.backButtonText}>← Back</Text>
+            <Text style={styles.resumeBackButtonText}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Resume Games</Text>
         </View>
@@ -812,16 +878,16 @@ const ResumeGamesScreen = () => {
                    completedUnseenGames.length > 0;
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
       <View style={styles.headerContainer}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.resumeBackButton}
           onPress={() => {
             playSound('backspace').catch(() => {});
             navigation.goBack();
           }}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Text style={styles.resumeBackButtonText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Resume Games</Text>
       </View>
@@ -852,7 +918,7 @@ const ResumeGamesScreen = () => {
                           {pendingChallenges.length > 0 && (
                 <View style={styles.sectionContainer}>
                   <Text style={styles.sectionTitle}>Challenges ({pendingChallenges.length})</Text>
-                  <Text style={styles.sectionSubtitle}>Pending challenges and awaiting responses</Text>
+                  <Text style={styles.sectionSubtitle}>Pending battles and awaiting responses</Text>
                 <FlatList
                   data={pendingChallenges}
                   renderItem={renderGameItem}
@@ -865,8 +931,8 @@ const ResumeGamesScreen = () => {
             
             {pvpGames.length > 0 && (
               <View style={styles.sectionContainer}>
-                <Text style={styles.sectionTitle}>Active Games ({pvpGames.length})</Text>
-                <Text style={styles.sectionSubtitle}>Games in progress</Text>
+                <Text style={styles.sectionTitle}>Active Battles ({pvpGames.length})</Text>
+                <Text style={styles.sectionSubtitle}>Battles in progress</Text>
                 <FlatList
                   data={pvpGames}
                   renderItem={renderGameItem}
@@ -891,24 +957,10 @@ const ResumeGamesScreen = () => {
               </View>
             )}
 
-            {soloGames.length > 0 && (
-              <View style={styles.sectionContainer}>
-                <Text style={styles.sectionTitle}>Solo Games ({soloGames.length})</Text>
-                <Text style={styles.sectionSubtitle}>Continue your solo word games</Text>
-                <FlatList
-                  data={soloGames}
-                  renderItem={renderSoloGameItem}
-                  keyExtractor={(item) => item.gameId}
-                  scrollEnabled={false}
-                  showsVerticalScrollIndicator={false}
-                />
-              </View>
-            )}
-
             {completedUnseenGames.length > 0 && (
               <View style={styles.sectionContainer}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                  <Text style={[styles.sectionTitle, { flex: 1, marginRight: 12 }]} numberOfLines={1} ellipsizeMode="tail">Completed - View Results ({completedUnseenGames.length})</Text>
+                  <Text style={[styles.sectionTitle, { flex: 1, marginRight: 12 }]} numberOfLines={1} ellipsizeMode="tail">View Results ({completedUnseenGames.length})</Text>
                   <TouchableOpacity onPress={handleClearAllCompleted} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                     <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 14 }}>Clear All</Text>
                   </TouchableOpacity>
@@ -923,9 +975,62 @@ const ResumeGamesScreen = () => {
                 />
               </View>
             )}
+
+            {soloGames.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Solo Games ({soloGames.length})</Text>
+                <Text style={styles.sectionSubtitle}>Continue your solo word games</Text>
+                <FlatList
+                  data={soloGames}
+                  renderItem={renderSoloGameItem}
+                  keyExtractor={(item) => item.gameId}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            )}
           </>
         )}
       </ScrollView>
+      
+      
+      {/* Challenge Response Popup Modal */}
+      <Modal visible={showChallengeResponsePopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow]}>
+            <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>
+              Challenge from {challengeData?.fromUsername || 'Unknown'}
+            </Text>
+            <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>
+              {challengeData?.fromUsername || 'Someone'} has challenged you to a battle! Would you like to accept or decline?
+            </Text>
+            <View style={styles.challengeButtonContainer}>
+              <TouchableOpacity
+                style={[styles.winButtonContainer, styles.declineButton]}
+                onPress={() => declineChallenge(challengeData)}
+              >
+                <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.winButtonContainer, styles.acceptButton]}
+                onPress={() => acceptChallenge(challengeData)}
+              >
+                <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Accept</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[styles.winButtonContainer, styles.backButton]}
+              onPress={() => {
+                setShowChallengeResponsePopup(false);
+                setChallengeData(null);
+                playSound('backspace').catch(() => {});
+              }}
+            >
+              <Text style={[styles.buttonText, { color: '#E5E7EB' }]}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

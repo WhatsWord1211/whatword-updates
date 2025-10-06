@@ -1,0 +1,20 @@
+[33md4a3d27[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m HEAD@{0}: reset: moving to d4a3d273a6cb21847d00094ab6c564477206a34c
+[33m2d2c9e8[m HEAD@{1}: commit: Fix AdMob to work in Expo Go - remove incorrect Expo Go exclusion
+[33m95a02cb[m HEAD@{2}: commit: Add enhanced debugging for ad service to diagnose why ads aren't playing in production builds
+[33m6c1a87b[m HEAD@{3}: commit: Restore complete 1:29 PM state - standardized ResumeGamesScreen styling with gold borders, updated section titles, and cleaned solo games
+[33md4a3d27[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m HEAD@{4}: reset: moving to d4a3d27
+[33m1e63cd8[m[33m ([m[1;31morigin/master[m[33m)[m HEAD@{5}: reset: moving to 1e63cd8
+[33mc13e7d1[m HEAD@{6}: reset: moving to HEAD~1
+[33me4e4c86[m HEAD@{7}: commit: Configure expo-notifications for production mode
+[33mc13e7d1[m HEAD@{8}: commit: Add enhanced debugging for ad service in production builds
+[33mb92d257[m HEAD@{9}: commit: Configure native push notifications for production builds
+[33m1783f13[m HEAD@{10}: commit: Fix iOS Resume Games screen SafeAreaView issue
+[33md4a3d27[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m HEAD@{11}: commit: Fix version mismatch - update app version to 1.1.5
+[33m3ca8d9d[m HEAD@{12}: commit: Reset HomeScreen welcome text to normal styling
+[33m7d46050[m HEAD@{13}: commit: Add friends FAB to CreateChallengeScreen
+[33m1e63cd8[m[33m ([m[1;31morigin/master[m[33m)[m HEAD@{14}: commit: Very Close to going live
+[33mb4963cb[m HEAD@{15}: commit: Fix Firestore permission issues - update security rules
+[33md5d9bd7[m HEAD@{16}: commit: Fix friend system inconsistency - standardize on NEW subcollection system
+[33m531ed93[m HEAD@{17}: commit: Update version codes to 33 and runtime version to 1.1.5 for iOS and Android
+[33ma6ca76f[m HEAD@{18}: commit: Update expo packages to expected versions for better compatibility
+[33m38dc685[m HEAD@{19}: commit: Update runtime version to 1.1.3 and change welcome text to red for OTA testing

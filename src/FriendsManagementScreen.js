@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal, ScrollView, Keyboard, TouchableWithoutFeedback, Share } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
@@ -17,7 +17,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
   const { colors } = useTheme();
   
   // State for different tabs
-  const [activeTab, setActiveTab] = useState('friends'); // 'friends', 'requests', 'add'
+  const [activeTab, setActiveTab] = useState('add'); // 'add', 'requests', 'friends'
   
   // Friends list
   const [friends, setFriends] = useState([]);
@@ -48,6 +48,25 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       friendsService.setCurrentUser(auth.currentUser);
     }
   }, []);
+
+  // Share app link function
+  const shareAppLink = async () => {
+    try {
+      const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
+      const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      
+      await Share.share({
+        message: `${shareMessage}\n\n${shareUrl}`,
+        url: shareUrl,
+        title: 'WhatWord - Word Game'
+      });
+      
+      playSound('chime');
+    } catch (error) {
+      console.error('Failed to share app link:', error);
+      Alert.alert('Error', 'Failed to share app link. Please try again.');
+    }
+  };
 
   const loadRequestsTabBadgeState = async () => {
     try {
@@ -609,32 +628,30 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
 
   return (
     <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}> 
-
-      {/* Tab Navigation */}
-      <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={{ flex: 1 }}>
+          {/* Tab Navigation */}
+          <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'friends' && styles.activeTab,
-            { backgroundColor: activeTab === 'friends' ? colors.primary : colors.surface }
+            activeTab === 'add' && styles.activeTab,
+            { backgroundColor: activeTab === 'add' ? colors.primary : colors.surface }
           ]}
           onPress={() => {
-            setActiveTab('friends');
-            // Clear search results when switching away from Add Friends tab
-            setSearchResults([]);
-            setSearchQuery('');
+            setActiveTab('add');
             playSound('toggleTab').catch(() => {});
           }}
         >
           <Text 
             style={[
               styles.tabText,
-              { color: activeTab === 'friends' ? '#FFFFFF' : '#FFFFFF' }
+              { color: activeTab === 'add' ? '#FFFFFF' : '#FFFFFF' }
             ]}
             numberOfLines={1}
             adjustsFontSizeToFit={true}
           >
-            Friends
+            Add Friends
           </Text>
         </TouchableOpacity>
         
@@ -701,23 +718,26 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === 'add' && styles.activeTab,
-            { backgroundColor: activeTab === 'add' ? colors.primary : colors.surface }
+            activeTab === 'friends' && styles.activeTab,
+            { backgroundColor: activeTab === 'friends' ? colors.primary : colors.surface }
           ]}
           onPress={() => {
-            setActiveTab('add');
+            setActiveTab('friends');
+            // Clear search results when switching away from Add Friends tab
+            setSearchResults([]);
+            setSearchQuery('');
             playSound('toggleTab').catch(() => {});
           }}
         >
           <Text 
             style={[
               styles.tabText,
-              { color: activeTab === 'add' ? '#FFFFFF' : '#FFFFFF' }
+              { color: activeTab === 'friends' ? '#FFFFFF' : '#FFFFFF' }
             ]}
             numberOfLines={1}
             adjustsFontSizeToFit={true}
           >
-            Add Friends
+            Friends
           </Text>
         </TouchableOpacity>
       </View>
@@ -789,6 +809,18 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 </Text>
               </TouchableOpacity>
             )}
+          </View>
+          
+          {/* Share App Link Section */}
+          <View style={styles.shareSection}>
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={shareAppLink}
+            >
+              <Text style={styles.shareButtonText}>
+                Share App with Friends
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -1029,7 +1061,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
             )}
           </View>
         )}
+        </View>
       </View>
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 };

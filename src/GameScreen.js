@@ -1455,8 +1455,7 @@ const GameScreen = () => {
                     setShowCongratsPopup(false);
                     
                     if (gameMode === 'pvp' && isFirstPlayerToSolve) {
-                      // Show ad for first player to solve in PvP mode, then navigate to home
-                      await showGameCompletionAd();
+                      // PvP first player ad handled in PvPGameScreen congratulations popup
                       navigation.navigate('MainTabs');
                     } else if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
                       // Second player to solve - show results popup after congrats
@@ -1500,13 +1499,17 @@ const GameScreen = () => {
                     ? `You solved the word in ${guesses.length} guesses!`
                     : `You won! You solved ${opponentUsername || 'your opponent'}'s word in ${guesses.length} guesses, while they solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses!`}
                 </Text>
+                {/* 
+                  Solo Congratulations Popup (Results) - Shows after solving word in solo mode
+                  - Always fire-and-forget ad → Proceed with chosen action (Main Menu/Play Again)
+                */}
                 <TouchableOpacity
                   style={styles.winButtonContainer}
                   onPress={() => {
                     setShowWinPopup(false);
                     
-                    // Industry standard: Show ad as overlay (fire-and-forget)
-                    if (gameMode === 'solo' || (gameMode === 'pvp' && !isFirstPlayerToSolve)) {
+                    // Show ad only for solo mode - PvP ad already played after congratulations
+                    if (gameMode === 'solo') {
                       showGameCompletionAd().catch(() => {});
                     }
                     
@@ -1566,11 +1569,11 @@ const GameScreen = () => {
                 </Text>
                 <TouchableOpacity
                   style={styles.loseButtonContainer}
-                  onPress={async () => {
+                  onPress={() => {
                     setShowLosePopup(false);
-                    // Show ad only for second player to solve in PvP mode
-                    if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
-                      await showGameCompletionAd();
+                    // Show ad only for solo mode - PvP ad already played after congratulations
+                    if (gameMode === 'solo') {
+                      showGameCompletionAd().catch(() => {});
                     }
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
@@ -1594,11 +1597,11 @@ const GameScreen = () => {
                 </Text>
                 <TouchableOpacity
                   style={styles.opponentGuessesButtonContainer}
-                  onPress={async () => {
+                  onPress={() => {
                     setShowTiePopup(false);
-                    // Show ad only for second player to solve in PvP mode
-                    if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
-                      await showGameCompletionAd();
+                    // Show ad only for solo mode - PvP ad already played after congratulations
+                    if (gameMode === 'solo') {
+                      showGameCompletionAd().catch(() => {});
                     }
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});

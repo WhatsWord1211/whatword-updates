@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, BackHandler } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, BackHandler, Share } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
@@ -16,6 +16,24 @@ const CreateChallengeScreen = () => {
   const [user, setUser] = useState(null);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
 
+  // Share app link function
+  const shareAppLink = async () => {
+    try {
+      const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
+      const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      
+      await Share.share({
+        message: `${shareMessage}\n\n${shareUrl}`,
+        url: shareUrl,
+        title: 'WhatWord - Word Game'
+      });
+      
+      playSound('chime');
+    } catch (error) {
+      console.error('Failed to share app link:', error);
+      Alert.alert('Error', 'Failed to share app link. Please try again.');
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -116,14 +134,14 @@ const CreateChallengeScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
       {/* Friends FAB - Positioned in top right corner */}
       <TouchableOpacity
         style={[styles.fabTopHomeScreen, { top: insets.top + 5 }]}
@@ -153,18 +171,26 @@ const CreateChallengeScreen = () => {
       >
         {/* Back Button */}
         <TouchableOpacity
-          style={[styles.backButton, { alignSelf: 'flex-start', marginLeft: 0 }]}
+          style={[styles.createChallengeBackButton, { alignSelf: 'flex-start', marginLeft: 0 }]}
           onPress={() => {
             playSound('chime');
             navigation.navigate('MainTabs');
           }}
         >
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Text style={styles.createChallengeBackButtonText}>← Back</Text>
         </TouchableOpacity>
         
         <Text style={styles.header}>Start A Game</Text>
         
-
+        {/* Share App Link Section - Right under header */}
+        <View style={styles.shareSection}>
+          <TouchableOpacity
+            style={styles.shareButton}
+            onPress={shareAppLink}
+          >
+            <Text style={styles.shareButtonText}>Share App with Friends</Text>
+          </TouchableOpacity>
+        </View>
         
         {friends.length === 0 ? (
           <View style={styles.emptyContainer}>

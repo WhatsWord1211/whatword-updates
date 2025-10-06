@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Modal, Alert, ScrollView, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Modal, Alert, ScrollView, Switch, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
@@ -424,7 +424,8 @@ const ProfileScreen = () => {
 
   return (
     <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}>
-      <ScrollView style={{ flex: 1, width: '100%' }}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView style={{ flex: 1, width: '100%' }}>
         {/* Rank Display */}
         <View style={styles.rankDisplayContainer}>
           <View style={styles.rankBadge}>
@@ -579,6 +580,7 @@ const ProfileScreen = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      </TouchableWithoutFeedback>
 
       {/* Rank-Up Popup Modal */}
       <Modal visible={showRankUpPopup} transparent animationType="fade">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, FlatList, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, FlatList, Alert, ActivityIndicator, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, query, where, getDocs, orderBy, limit, startAfter, addDoc } from 'firebase/firestore';
@@ -229,7 +229,9 @@ const FriendDiscoveryScreen = () => {
 
   return (
     <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: theme.background }]}> 
-      {/* Header */}
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={{ flex: 1 }}>
+          {/* Header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
@@ -387,6 +389,8 @@ const FriendDiscoveryScreen = () => {
           </View>
         </View>
       </ScrollView>
+        </View>
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 };

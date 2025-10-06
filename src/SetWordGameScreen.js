@@ -21,6 +21,8 @@ const SetWordGameScreen = () => {
   const [difficulty, setDifficulty] = useState(null);
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
+  const [showGameStartedPopup, setShowGameStartedPopup] = useState(false);
+  const [createdGameId, setCreatedGameId] = useState(null);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const [opponentHardModeUnlocked, setOpponentHardModeUnlocked] = useState(true); // Default to true to avoid flicker
 
@@ -284,12 +286,8 @@ const SetWordGameScreen = () => {
           console.error('🔍 Failed to send game start push notification:', notificationError);
         }
 
-        Alert.alert('Game Started!', 'Both players can now play at their own pace!', [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('PvPGame', { gameId: gameRef.id })
-          }
-        ]);
+        setCreatedGameId(gameRef.id);
+        setShowGameStartedPopup(true);
         playSound('chime');
       } else {
         // Player 1 is creating the challenge
@@ -638,6 +636,30 @@ const SetWordGameScreen = () => {
              onPress={() => setShowMenuPopup(false)}
            >
              <Text style={styles.buttonText}>Cancel</Text>
+           </TouchableOpacity>
+         </View>
+       </View>
+     </Modal>
+     
+     {/* Game Started Popup Modal */}
+     <Modal visible={showGameStartedPopup} transparent animationType="fade">
+       <View style={styles.modalOverlay}>
+         <View style={[styles.winPopup, styles.modalShadow]}>
+           <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>
+             Game Started!
+           </Text>
+           <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>
+             Both players can now play at their own pace!
+           </Text>
+           <TouchableOpacity
+             style={styles.winButtonContainer}
+             onPress={() => {
+               setShowGameStartedPopup(false);
+               playSound('chime').catch(() => {});
+               navigation.navigate('PvPGame', { gameId: createdGameId });
+             }}
+           >
+             <Text style={styles.buttonText}>OK</Text>
            </TouchableOpacity>
          </View>
        </View>

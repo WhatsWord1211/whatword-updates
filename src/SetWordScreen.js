@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from './firebase';
@@ -18,6 +18,7 @@ const SetWordScreen = () => {
   const [loading, setLoading] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
+  const [showGameStartedPopup, setShowGameStartedPopup] = useState(false);
 
   // If accepting a challenge, use the challenge's difficulty and skip selection
   useEffect(() => {
@@ -78,12 +79,7 @@ const SetWordScreen = () => {
           acceptedAt: new Date()
         });
 
-        Alert.alert('Game Started!', 'Both players can now play at their own pace!', [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('MainTabs')
-          }
-        ]);
+        setShowGameStartedPopup(true);
         playSound('chime');
       } else {
         // Player 1 is creating the challenge
@@ -197,16 +193,6 @@ const SetWordScreen = () => {
               }
             </Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder={`Enter ${difficulty} word...`}
-              placeholderTextColor="#9CA3AF"
-              value={word}
-              onChangeText={setWord}
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={difficulty === 'easy' ? 4 : difficulty === 'regular' ? 5 : 6}
-            />
 
 
           </>
@@ -231,6 +217,30 @@ const SetWordScreen = () => {
           <Text style={styles.textButtonText}>Cancel</Text>
         </TouchableOpacity>
       </View>
+      
+      {/* Game Started Popup Modal */}
+      <Modal visible={showGameStartedPopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow]}>
+            <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>
+              Game Started!
+            </Text>
+            <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>
+              Both players can now play at their own pace!
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => {
+                setShowGameStartedPopup(false);
+                playSound('chime').catch(() => {});
+                navigation.navigate('MainTabs');
+              }}
+            >
+              <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

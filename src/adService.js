@@ -27,11 +27,11 @@ if (isExpoGo) {
   }
 }
 
-// Interstitial Ad Unit IDs - TEST ONLY (both platforms)
+// Interstitial Ad Unit IDs - Production (both platforms)
 const AD_UNIT_IDS = {
   INTERSTITIAL: Platform.OS === 'ios'
-    ? 'ca-app-pub-3940256099942544/4411468910' // iOS test interstitial
-    : 'ca-app-pub-3940256099942544/1033173712' // Android test interstitial
+    ? 'ca-app-pub-8036041739101786/9274366810' // iOS production interstitial
+    : 'ca-app-pub-8036041739101786/1836533025' // Android production interstitial
 };
 
 class AdService {

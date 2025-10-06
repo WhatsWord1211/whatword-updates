@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager, StatusBar } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeContext';
 import { db, auth } from './firebase';
@@ -52,7 +52,8 @@ import ThreeDGreenDot from './ThreeDGreenDot';
 const PvPGameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { gameId } = route.params || {};
+  const { gameId, showResults } = route.params || {};
+  console.log('PvPGameScreen: Received params - gameId:', gameId, 'showResults:', showResults);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   
@@ -61,9 +62,6 @@ const PvPGameScreen = () => {
   const [guesses, setGuesses] = useState([]);
   const [alphabet, setAlphabet] = useState(Array(26).fill('unknown'));
   const [showInvalidPopup, setShowInvalidPopup] = useState(false);
-  const [showWinPopup, setShowWinPopup] = useState(false);
-  const [showLosePopup, setShowLosePopup] = useState(false);
-  const [showTiePopup, setShowTiePopup] = useState(false);
   const [showCongratulationsPopup, setShowCongratulationsPopup] = useState(false);
   const [isSecondSolver, setIsSecondSolver] = useState(false);
   const [showGameOverPopup, setShowGameOverPopup] = useState(false);
@@ -263,6 +261,21 @@ const PvPGameScreen = () => {
       }
     };
   }, [game, currentUser]);
+
+  // Clean up modal states when screen loses focus (navigates away)
+  useFocusEffect(
+    React.useCallback(() => {
+      // Cleanup function when screen loses focus
+      return () => {
+        // Reset all modal states when navigating away
+        setShowGameOverPopup(false);
+        setShowCongratulationsPopup(false);
+        setShowMenuPopup(false);
+        setShowMaxGuessesPopup(false);
+        setShowQuitConfirmPopup(false);
+      };
+    }, [])
+  );
 
   // Keep refs in sync with state to avoid stale closures inside snapshot listener
   useEffect(() => {
@@ -578,8 +591,50 @@ const PvPGameScreen = () => {
     // Listen to game updates
     const gameRef = doc(db, 'games', gameId);
     const unsubscribe = onSnapshot(gameRef, async (docSnap) => {
+      console.log('PvPGameScreen: onSnapshot callback triggered, docSnap.exists():', docSnap.exists());
+      console.log('PvPGameScreen: showResults parameter at start of onSnapshot:', showResults);
       if (docSnap.exists()) {
         const gameData = { id: docSnap.id, ...docSnap.data() };
+        console.log('PvPGameScreen: Game data loaded:', gameData);
+        
+        // If this is a "View Results" scenario, show the game over popup
+        // Only show for first solver (second solver already saw results immediately after congratulations)
+        console.log('PvPGameScreen: Checking View Results logic - showResults:', showResults, 'status:', gameData.status, 'winnerId:', gameData.winnerId, 'tie:', gameData.tie);
+        if (showResults && gameData.status === 'completed' && (gameData.winnerId !== undefined || gameData.tie)) {
+          // Check if current user was the first solver (not the second solver)
+          // This is independent of Player 1/2 roles - it's about who solved their opponent's word first
+          const isCurrentUserPlayer1 = gameData.player1?.uid === currentUser.uid;
+          const currentUserWasFirstSolver = isCurrentUserPlayer1 ? 
+            (gameData.firstFinisherId === gameData.player1?.uid) : 
+            (gameData.firstFinisherId === gameData.player2?.uid);
+          
+          console.log('PvPGameScreen: Solver check - currentUser:', currentUser?.uid, 'isCurrentUserPlayer1:', isCurrentUserPlayer1, 'firstFinisherId:', gameData.firstFinisherId, 'currentUserWasFirstSolver:', currentUserWasFirstSolver);
+          
+          // Only show results popup for first solver (second solver already saw it immediately)
+          if (currentUserWasFirstSolver) {
+            const resultPayload = {
+              winnerId: gameData.winnerId,
+              tie: gameData.tie,
+              currentUserId: currentUser.uid
+            };
+            console.log('PvPGameScreen: Showing results popup for first solver');
+            setGameOverData(resultPayload);
+            setShowGameOverPopup(true);
+            
+            // Play appropriate sound
+            if (gameData.tie) {
+              playSound('tie').catch(() => {});
+            } else if (gameData.winnerId === currentUser.uid) {
+              playSound('victory').catch(() => {});
+            } else {
+              playSound('lose').catch(() => {});
+            }
+          } else {
+            console.log('PvPGameScreen: Second solver already saw results, navigating back to ResumeGames');
+            // Second solver already saw results immediately after congratulations, just navigate back to ResumeGames
+            navigation.navigate('ResumeGames');
+          }
+        }
         // Ensure UI leaves loading state immediately regardless of status
         setGame(prev => prev && prev.id === gameData.id && prev.status === gameData.status ? prev : gameData);
         
@@ -596,58 +651,6 @@ const PvPGameScreen = () => {
         
         // Game update received - keeping minimal logging for debugging
         
-        // Validate game state - don't navigate away if we're showing game over popup
-        if ((gameData.status === 'completed' || gameData.status === 'abandoned') && !showGameOverPopup) {
-          // Only navigate away if we're not in the process of showing the game over popup
-          if (gameData.status === 'completed') {
-            // Game was completed by the other player, show game over popup
-            const currentPlayerData = getMyPlayerData(gameData);
-            const opponentPlayerData = getOpponentPlayerData(gameData);
-            
-            if (currentPlayerData && opponentPlayerData && gameData.winnerId !== undefined) {
-              // Determine result for this player
-              const isWinner = gameData.winnerId === currentUser.uid;
-              const isTie = gameData.tie;
-
-              const resultPayload = {
-                winnerId: gameData.winnerId,
-                tie: isTie,
-                currentUserId: currentUser.uid
-              };
-
-              // If the congratulations popup is up (use ref to avoid race with setState), delay showing results until it's dismissed
-              if (showCongratulationsPopupRef.current) {
-                setPendingResultData(resultPayload);
-              } else {
-                // Guard against duplicate handling
-                if (!showGameOverPopupRef.current) {
-                  setGameOverData(resultPayload);
-                  setShowGameOverPopup(true);
-                }
-
-                // Auto-scroll to show the latest guess when game is over
-                scrollToBottom(100, true);
-
-                // Play appropriate sound once when results are visible
-                if (!resultSoundPlayedRef.current) {
-                  if (isTie) {
-                    playSound('tie').catch(() => {});
-                  } else if (isWinner) {
-                    playSound('victory').catch(() => {});
-                  } else {
-                    playSound('lose').catch(() => {});
-                  }
-                  setResultSoundPlayed(true);
-                  resultSoundPlayedRef.current = true;
-                }
-              }
-            }
-          } else {
-            Alert.alert('Game Ended', 'This game has been abandoned. Please return to the Friends screen.');
-            navigation.navigate('Friends');
-          }
-          return;
-        }
         
         // Check if game is ready with new structure (player1/player2) or old structure (playerWord/opponentWord)
         const isGameReady = (gameData.player1?.word && gameData.player2?.word && gameData.player1?.uid && gameData.player2?.uid) || 
@@ -668,7 +671,10 @@ const PvPGameScreen = () => {
         
         // Only set game if it has valid structure
         if (gameData && ((gameData.player1 && gameData.player2 && gameData.player1.uid && gameData.player2.uid) || (gameData.playerWord && gameData.opponentWord && gameData.creatorId))) {
+          console.log('PvPGameScreen: Game data has valid structure, setting game');
           setGame(gameData);
+          
+          
           
           // Check if game should be automatically completed (both players finished but status still 'active')
           if (gameData.status === 'active') {
@@ -735,6 +741,23 @@ const PvPGameScreen = () => {
           
 
         }
+      } else {
+        // Document doesn't exist - handle this case
+        console.log('PvPGameScreen: Game document not found for gameId:', gameId);
+        setIsLoading(false);
+        
+        Alert.alert('Game Not Found', 'This game no longer exists. It may have been completed or deleted.');
+        navigation.navigate('MainTabs');
+      }
+    }, (error) => {
+      console.error('PvPGameScreen: onSnapshot error:', error);
+      
+      if (error.message.includes('permission') || error.message.includes('access')) {
+        Alert.alert('Game Error', 'You no longer have access to this game. It may have been completed or abandoned.');
+        navigation.navigate('Friends');
+      } else {
+        Alert.alert('Error', 'Failed to load game data. Please try again.');
+        navigation.navigate('MainTabs');
       }
     });
 
@@ -1467,57 +1490,75 @@ const PvPGameScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
-            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>You solved the word in {guesses.length} guesses!</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>You solved {opponentUsername}'s word in {guesses.length} guesses!</Text>
             {isSecondSolver ? (
-              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>You completed your part of the game!</Text>
+              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>You completed your part of the battle!</Text>
             ) : (
-              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>You've completed your part of the game! Your opponent is still playing.</Text>
+              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>You've completed your part of the battle! Your opponent is still playing.</Text>
             )}
+            {/* 
+              PvP Congratulations Popup - Shows for BOTH solvers after solving word
+              - First solver (isSecondSolver = false): Blocking ad → Navigate to home
+              - Second solver (isSecondSolver = true): Blocking ad → Results popup
+            */}
             <TouchableOpacity
               style={styles.winButtonContainer}
-              onPress={() => {
+              onPress={async () => {
                 setShowCongratulationsPopup(false);
                 
-                // Industry standard: Show ad as overlay (fire-and-forget)
-                adService.showInterstitialAd().catch(() => {});
-                
-                // Process results immediately
-                const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
-                  ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
-                  : null);
-                if (resolvedResult) {
-                  if (!showGameOverPopupRef.current) {
-                    setGameOverData(resolvedResult);
-                    setShowGameOverPopup(true);
-                  }
-                  if (!resultSoundPlayedRef.current) {
-                    if (resolvedResult.tie) {
-                      playSound('tie').catch(() => {});
-                    } else if (resolvedResult.winnerId === currentUser?.uid) {
-                      playSound('victory').catch(() => {});
-                    } else {
-                      playSound('lose').catch(() => {});
+                if (isSecondSolver) {
+                  // Second solver - blocking ad before results popup
+                  await adService.showInterstitialAd();
+                  
+                  // Process results after ad completes
+                  const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
+                    ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
+                    : null);
+                  if (resolvedResult) {
+                    if (!showGameOverPopupRef.current) {
+                      setGameOverData(resolvedResult);
+                      setShowGameOverPopup(true);
+                      
+                      // Mark results as seen immediately for second solver
+                      // This prevents them from seeing "View Results" in ResumeGamesScreen
+                      if (game?.id && currentUser?.uid) {
+                        updateDoc(doc(db, 'games', game.id), {
+                          resultsSeenBy: arrayUnion(currentUser.uid)
+                        }).catch(err => console.error('Failed to mark results seen for second solver:', err));
+                      }
                     }
-                    setResultSoundPlayed(true);
-                    resultSoundPlayedRef.current = true;
+                    if (!resultSoundPlayedRef.current) {
+                      if (resolvedResult.tie) {
+                        playSound('tie').catch(() => {});
+                      } else if (resolvedResult.winnerId === currentUser?.uid) {
+                        playSound('victory').catch(() => {});
+                      } else {
+                        playSound('lose').catch(() => {});
+                      }
+                      setResultSoundPlayed(true);
+                      resultSoundPlayedRef.current = true;
+                    }
+                    setPendingResultData(null);
+                  } else {
+                    playSound('chime').catch(() => {});
                   }
-                  setPendingResultData(null);
                 } else {
+                  // First solver - blocking ad before navigating to home
+                  await adService.showInterstitialAd();
                   playSound('chime').catch(() => {});
-                  // First solver: return to home. Second solver: stay and await results via snapshot
-                  if (!isSecondSolver) {
-                    navigation.navigate('MainTabs');
-                  }
+                  navigation.navigate('MainTabs');
                 }
               }}
             >
-              <Text style={styles.buttonText}>OK</Text>
+              <Text style={styles.buttonText}>
+                {isSecondSolver ? 'OK' : 'Main Menu'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Game Over Popup - Final Result */}
+      {/* Game Over Popup - Final Result (Win/Lose/Tie) */}
       <Modal visible={showGameOverPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
@@ -1532,11 +1573,11 @@ const PvPGameScreen = () => {
                 const opponentAttempts = isPlayer1 ? (game?.player2?.attempts || 0) : (game?.player1?.attempts || 0);
                 
                 if (gameOverData?.tie) {
-                  return `It's a tie! Both players solved their words in ${myAttempts} attempts!`;
+                  return `It's a Tie! You both solved each other's words in ${myAttempts} attempts`;
                 } else if (gameOverData?.winnerId === currentUser?.uid) {
-                  return `Congratulations! You solved ${opponentUsername}'s word in ${myAttempts} attempts, while they solved your word in ${opponentAttempts} attempts!`;
+                  return `You Won! You solved ${opponentUsername}'s word in ${myAttempts} attempts and they solved yours in ${opponentAttempts}`;
                 } else {
-                  return `${opponentUsername} solved your word in ${opponentAttempts} attempts, while you solved their word in ${myAttempts} attempts. Better luck next time!`;
+                  return `You Lost! You solved ${opponentUsername}'s word in ${myAttempts} attempts, but they solved yours in ${opponentAttempts}`;
                 }
               })()}
             </Text>
@@ -1544,53 +1585,36 @@ const PvPGameScreen = () => {
               style={styles.winButtonContainer}
               onPress={async () => {
                 try {
+                  // Close popup first
                   setShowGameOverPopup(false);
-                  if (game?.id && currentUser?.uid) {
+                  
+                  // Only mark results as seen if coming from ResumeGamesScreen (first solver)
+                  // Second solver is already marked when popup is shown
+                  if (showResults && game?.id && currentUser?.uid) {
                     await updateDoc(doc(db, 'games', game.id), {
                       resultsSeenBy: arrayUnion(currentUser.uid)
                     });
                   }
                   
-                  // Navigate to home immediately (Android path)
-                  navigation.navigate('MainTabs');
+                  // Navigate based on how we got here
+                  if (showResults) {
+                    // Came from ResumeGamesScreen - go back to Resume Games
+                    navigation.navigate('ResumeGames');
+                  } else {
+                    // Came from normal game completion - go to MainTabs
+                    navigation.navigate('MainTabs');
+                  }
                   playSound('chime').catch(() => {});
                   
                 } catch (markErr) {
-                  console.error('PvPGameScreen: Failed to mark results seen on acknowledge:', markErr);
-                  // Still navigate even if marking fails
-                  navigation.navigate('MainTabs');
-                  playSound('chime').catch(() => {});
-                }
-              }}
-            >
-              <Text style={styles.buttonText}>Main Menu</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Old Win Popup - Keeping for compatibility but not used in new flow */}
-      <Modal visible={showWinPopup} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
-            <Text style={[styles.winMessage, { color: colors.textSecondary }]}> 
-              You solved the word in {guesses.length} guesses!
-            </Text>
-            <TouchableOpacity
-              style={styles.winButtonContainer}
-              onPress={async () => {
-                try {
-                  setShowWinPopup(false);
-                  if (game?.id && currentUser?.uid) {
-                    await updateDoc(doc(db, 'games', game.id), {
-                      resultsSeenBy: arrayUnion(currentUser.uid)
-                    });
+                  console.error('PvPGameScreen: Failed to handle results popup acknowledge:', markErr);
+                  // Still close popup and navigate even if marking fails
+                  setShowGameOverPopup(false);
+                  if (showResults) {
+                    navigation.navigate('ResumeGames');
+                  } else {
+                    navigation.navigate('MainTabs');
                   }
-                } catch (markErr) {
-                  console.error('PvPGameScreen: Failed to mark results seen on win:', markErr);
-                } finally {
-                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 }
               }}
@@ -1600,6 +1624,7 @@ const PvPGameScreen = () => {
           </View>
         </View>
       </Modal>
+
       
       {/* Max Guesses Popup */}
       <Modal visible={showMaxGuessesPopup} transparent animationType="fade">
@@ -1639,37 +1664,6 @@ const PvPGameScreen = () => {
         </View>
       </Modal>
 
-      {/* Tie Popup */}
-      <Modal visible={showTiePopup} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.tiePopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.tieTitle, { color: colors.textPrimary }]}>It's a Tie!</Text>
-            <Text style={[styles.tieMessage, { color: colors.textSecondary }]}> 
-              Both players reached the maximum of {getMaxGuesses()} attempts without solving. The game ends in a tie!
-            </Text>
-            <TouchableOpacity
-              style={styles.tieButtonContainer}
-              onPress={async () => {
-                try {
-                  setShowTiePopup(false);
-                  if (game?.id && currentUser?.uid) {
-                    await updateDoc(doc(db, 'games', game.id), {
-                      resultsSeenBy: arrayUnion(currentUser.uid)
-                    });
-                  }
-                } catch (markErr) {
-                  console.error('PvPGameScreen: Failed to mark results seen on tie:', markErr);
-                } finally {
-                  navigation.navigate('MainTabs');
-                  playSound('chime').catch(() => {});
-                }
-              }}
-            >
-              <Text style={styles.buttonText}>Main Menu</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* Quit Confirmation Modal */}
       <Modal visible={showQuitConfirmPopup} transparent animationType="fade">

@@ -1,22 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, Share, Linking, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { collection, query, where, orderBy, limit, getDocs, addDoc, onSnapshot, updateDoc, doc, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, addDoc, onSnapshot, updateDoc, doc, arrayUnion, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
 import { getNotificationService } from './notificationService';
 import friendsService from './friendsService';
 import notificationPermissionHelper from './notificationPermissionHelper';
+import logger from './logger';
 
 // ✅ UPDATED TO USE NEW SUBCONNECTION SYSTEM ⚠️
 // This file now uses the NEW subcollection system (users/{userId}/friends/{friendId})
 // Consistent with FriendRequestsScreen.js and friendsService.js
-console.log('✅ [AddFriendsScreen] Using NEW subcollection system - consistent with other screens');
+logger.debug('✅ [AddFriendsScreen] Using NEW subcollection system - consistent with other screens');
 
 const AddFriendsScreen = () => {
-  console.log('🔍 [AddFriendsScreen] Component rendering');
+  logger.debug('🔍 [AddFriendsScreen] Component rendering');
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('add'); // 'add' or 'requests'
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,11 +25,30 @@ const AddFriendsScreen = () => {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Share app link function
+  const shareAppLink = async () => {
+    try {
+      const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
+      const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      
+      await Share.share({
+        message: `${shareMessage}\n\n${shareUrl}`,
+        url: shareUrl,
+        title: 'WhatWord - Word Game'
+      });
+      
+      playSound('chime');
+    } catch (error) {
+      console.error('Failed to share app link:', error);
+      Alert.alert('Error', 'Failed to share app link. Please try again.');
+    }
+  };
+
   // Listen for pending friend requests
   useEffect(() => {
     if (activeTab === 'requests') {
-      console.log('🔍 [AddFriendsScreen] Setting up friend request listener');
-      console.log('🔍 [AddFriendsScreen] Current user ID:', auth.currentUser?.uid);
+      logger.debug('🔍 [AddFriendsScreen] Setting up friend request listener');
+      logger.debug('🔍 [AddFriendsScreen] Current user ID:', auth.currentUser?.uid);
       
       const requestsQuery = query(
         collection(db, 'friendRequests'),
@@ -36,37 +56,37 @@ const AddFriendsScreen = () => {
         where('status', '==', 'pending')
       );
 
-      console.log('🔍 [AddFriendsScreen] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
-      console.log('🔍 [AddFriendsScreen] Query: where("toUid", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
+      logger.debug('🔍 [AddFriendsScreen] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
+      logger.debug('🔍 [AddFriendsScreen] Query: where("toUid", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
 
       const unsubscribe = onSnapshot(requestsQuery, (snapshot) => {
-        console.log('🔍 [AddFriendsScreen] Friend request listener triggered');
-        console.log('🔍 [AddFriendsScreen] Snapshot size:', snapshot.docs.length);
-        console.log('🔍 [AddFriendsScreen] Snapshot docs:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        logger.debug('🔍 [AddFriendsScreen] Friend request listener triggered');
+        logger.debug('🔍 [AddFriendsScreen] Snapshot size:', snapshot.docs.length);
+        logger.debug('🔍 [AddFriendsScreen] Snapshot docs:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         
         const requests = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        console.log('🔍 [AddFriendsScreen] Processed requests:', requests);
+        logger.debug('🔍 [AddFriendsScreen] Processed requests:', requests);
         setPendingRequests(requests);
       }, (error) => {
-        console.error('❌ [AddFriendsScreen] Friend request listener error:', error);
+        logger.error('❌ [AddFriendsScreen] Friend request listener error:', error);
       });
 
       return () => {
-        console.log('🔍 [AddFriendsScreen] Cleaning up friend request listener');
+        logger.debug('🔍 [AddFriendsScreen] Cleaning up friend request listener');
         unsubscribe();
       };
     }
   }, [activeTab]);
 
   const searchUsers = async () => {
-    console.log('🔍 [AddFriendsScreen] searchUsers function called!');
-    console.log('🔍 [AddFriendsScreen] searchQuery:', searchQuery);
+    logger.debug('🔍 [AddFriendsScreen] searchUsers function called!');
+    logger.debug('🔍 [AddFriendsScreen] searchQuery:', searchQuery);
     
     if (!searchQuery.trim()) {
-      console.log('🔍 [AddFriendsScreen] Empty search query, showing alert');
+      logger.debug('🔍 [AddFriendsScreen] Empty search query, showing alert');
       Alert.alert('Error', 'Please enter a username to search for.');
       return;
     }
@@ -74,14 +94,14 @@ const AddFriendsScreen = () => {
     setLoading(true);
     try {
       const trimmedQuery = searchQuery.trim();
-      console.log('🔍 [AddFriendsScreen] Searching for username:', trimmedQuery);
+      logger.debug('🔍 [AddFriendsScreen] Searching for username:', trimmedQuery);
       
       // Use the friendsService searchUsers function which has better error handling
       const users = await friendsService.searchUsers(trimmedQuery);
       
-      console.log('🔍 [AddFriendsScreen] Search results from friendsService:', users.length);
+      logger.debug('🔍 [AddFriendsScreen] Search results from friendsService:', users.length);
       users.forEach(user => {
-        console.log('🔍 [AddFriendsScreen] Found user:', user.username, 'ID:', user.id);
+        logger.debug('🔍 [AddFriendsScreen] Found user:', user.username, 'ID:', user.id);
       });
 
       // Convert to the format expected by this component
@@ -93,11 +113,11 @@ const AddFriendsScreen = () => {
         friendshipStatus: user.friendshipStatus
       }));
 
-      console.log('🔍 [AddFriendsScreen] Formatted users:', formattedUsers.length);
+      logger.debug('🔍 [AddFriendsScreen] Formatted users:', formattedUsers.length);
       setSearchResults(formattedUsers);
     } catch (error) {
-      console.error('🔍 [AddFriendsScreen] Search failed:', error);
-      console.error('🔍 [AddFriendsScreen] Error details:', error.message, error.code);
+      logger.error('🔍 [AddFriendsScreen] Search failed:', error);
+      logger.error('🔍 [AddFriendsScreen] Error details:', error.message, error.code);
       Alert.alert('Search Failed', `Please try again. Error: ${error.message}`);
     } finally {
       setLoading(false);
@@ -115,33 +135,33 @@ const AddFriendsScreen = () => {
       // Proceed with friend request regardless of permission result
       proceedWithFriendRequest(user);
     } catch (error) {
-      console.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
+      logger.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
       Alert.alert('Error', 'Failed to send friend request. Please try again.');
     }
   };
 
   const proceedWithFriendRequest = async (user) => {
     try {
-      console.log('🔍 [AddFriendsScreen] Starting friend request process');
-      console.log('🔍 [AddFriendsScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
-      console.log('🔍 [AddFriendsScreen] Target user:', user.uid, user.username || user.displayName);
+      logger.debug('🔍 [AddFriendsScreen] Starting friend request process');
+      logger.debug('🔍 [AddFriendsScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
+      logger.debug('🔍 [AddFriendsScreen] Target user:', user.uid, user.username || user.displayName);
       
       // Check if a request already exists
-      console.log('🔍 [AddFriendsScreen] Checking for existing friend request...');
+      logger.debug('🔍 [AddFriendsScreen] Checking for existing friend request...');
       // Check NEW subcollection system - look for existing request in recipient's friends subcollection
       const existingRequestDoc = await getDoc(doc(db, 'users', user.uid, 'friends', auth.currentUser.uid));
-      console.log('🔍 [AddFriendsScreen] Existing request check result:', existingRequestDoc.exists());
+      logger.debug('🔍 [AddFriendsScreen] Existing request check result:', existingRequestDoc.exists());
       
       if (existingRequestDoc.exists()) {
         const existingData = existingRequestDoc.data();
         if (existingData.status === 'pending') {
-          console.log('🔍 [AddFriendsScreen] Duplicate request detected - preventing send');
+          logger.debug('🔍 [AddFriendsScreen] Duplicate request detected - preventing send');
           Alert.alert('Request Already Sent', `You have already sent a friend request to ${user.username || user.displayName}.`);
           return;
         }
       }
       
-      console.log('🔍 [AddFriendsScreen] No existing request found - proceeding with new request');
+      logger.debug('🔍 [AddFriendsScreen] No existing request found - proceeding with new request');
       
       const requestData = {
         fromUid: auth.currentUser.uid,
@@ -152,8 +172,8 @@ const AddFriendsScreen = () => {
         timestamp: new Date()
       };
 
-      console.log('🔍 [AddFriendsScreen] Request data to be saved:', requestData);
-      console.log('🔍 [AddFriendsScreen] Using NEW subcollection system: users/', user.uid, '/friends/', auth.currentUser.uid);
+      logger.debug('🔍 [AddFriendsScreen] Request data to be saved:', requestData);
+      logger.debug('🔍 [AddFriendsScreen] Using NEW subcollection system: users/', user.uid, '/friends/', auth.currentUser.uid);
 
       // Use NEW subcollection system - create friend document in recipient's friends subcollection
       await setDoc(doc(db, 'users', user.uid, 'friends', auth.currentUser.uid), {
@@ -162,7 +182,7 @@ const AddFriendsScreen = () => {
         senderUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
         senderId: auth.currentUser.uid
       });
-      console.log('🔍 [AddFriendsScreen] Friend request document created successfully');
+      logger.debug('🔍 [AddFriendsScreen] Friend request document created successfully');
       
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
       playSound('chime');
@@ -171,24 +191,24 @@ const AddFriendsScreen = () => {
       setSearchResults([]);
       setSearchQuery('');
     } catch (error) {
-      console.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
+      logger.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
       Alert.alert('Error', 'Failed to send friend request. Please try again.');
     }
   };
 
   const acceptFriendRequest = async (request) => {
     try {
-      console.log('🔍 [AddFriendsScreen] Accepting friend request from:', request.fromUid);
+      logger.debug('🔍 [AddFriendsScreen] Accepting friend request from:', request.fromUid);
       
       // Update request status
       await updateDoc(doc(db, 'friendRequests', request.id), {
         status: 'accepted',
         acceptedAt: new Date()
       });
-      console.log('🔍 [AddFriendsScreen] Updated request status to accepted');
+      logger.debug('🔍 [AddFriendsScreen] Updated request status to accepted');
 
       // Clear any redundant friend requests between these two users
-      console.log('🔍 [AddFriendsScreen] Clearing redundant friend requests...');
+      logger.debug('🔍 [AddFriendsScreen] Clearing redundant friend requests...');
       const redundantRequestsQuery = query(
         collection(db, 'friendRequests'),
         where('fromUid', '==', auth.currentUser.uid),
@@ -197,29 +217,29 @@ const AddFriendsScreen = () => {
       );
       
       const redundantSnapshot = await getDocs(redundantRequestsQuery);
-      console.log('🔍 [AddFriendsScreen] Found', redundantSnapshot.docs.length, 'redundant requests to clear');
+      logger.debug('🔍 [AddFriendsScreen] Found', redundantSnapshot.docs.length, 'redundant requests to clear');
       
       // Delete all redundant requests
       const deletePromises = redundantSnapshot.docs.map(doc => deleteDoc(doc.ref));
       await Promise.all(deletePromises);
-      console.log('🔍 [AddFriendsScreen] Cleared', redundantSnapshot.docs.length, 'redundant requests');
+      logger.debug('🔍 [AddFriendsScreen] Cleared', redundantSnapshot.docs.length, 'redundant requests');
 
       // Update current user's friends list
       await updateDoc(doc(db, 'users', auth.currentUser.uid), {
         friends: arrayUnion(request.fromUid)
       });
-      console.log('🔍 [AddFriendsScreen] Updated current user friends list');
+      logger.debug('🔍 [AddFriendsScreen] Updated current user friends list');
 
       // Also update the other user's friends list for mutual friendship
       await updateDoc(doc(db, 'users', request.fromUid), {
         friends: arrayUnion(auth.currentUser.uid)
       });
-      console.log('🔍 [AddFriendsScreen] Updated other user friends list');
+      logger.debug('🔍 [AddFriendsScreen] Updated other user friends list');
 
       Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
       playSound('chime');
     } catch (error) {
-      console.error('❌ [AddFriendsScreen] Failed to accept friend request:', error);
+      logger.error('❌ [AddFriendsScreen] Failed to accept friend request:', error);
       Alert.alert('Error', 'Failed to accept friend request. Please try again.');
     }
   };
@@ -230,7 +250,7 @@ const AddFriendsScreen = () => {
       Alert.alert('Declined', 'Friend request declined.');
       playSound('chime');
     } catch (error) {
-      console.error('Failed to decline friend request:', error);
+      logger.error('Failed to decline friend request:', error);
       Alert.alert('Error', 'Failed to decline friend request. Please try again.');
     }
   };
@@ -281,6 +301,7 @@ const AddFriendsScreen = () => {
 
   return (
     <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <Text style={styles.header}>Friends & Challenges</Text>
       
       {/* Tab Navigation */}
@@ -311,7 +332,16 @@ const AddFriendsScreen = () => {
 
       {activeTab === 'add' ? (
         <>
-          {console.log('🔍 [AddFriendsScreen] Rendering search section, activeTab:', activeTab)}
+          {logger.debug('🔍 [AddFriendsScreen] Rendering search section, activeTab:', activeTab)}
+          {/* Share App Link Section */}
+          <View style={styles.shareSection}>
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={shareAppLink}
+            >
+              <Text style={styles.shareButtonText}>Share App with Friends</Text>
+            </TouchableOpacity>
+          </View>
           {/* Search Section */}
           <View style={styles.searchSection}>
             <View style={styles.searchContainer}>
@@ -327,9 +357,9 @@ const AddFriendsScreen = () => {
               <TouchableOpacity
                 style={[styles.searchButton, loading && styles.disabledButton]}
                 onPress={() => {
-                  console.log('🔍 [AddFriendsScreen] Search button pressed!');
-                  console.log('🔍 [AddFriendsScreen] Loading state:', loading);
-                  console.log('🔍 [AddFriendsScreen] Search query:', searchQuery);
+                  logger.debug('🔍 [AddFriendsScreen] Search button pressed!');
+                  logger.debug('🔍 [AddFriendsScreen] Loading state:', loading);
+                  logger.debug('🔍 [AddFriendsScreen] Search query:', searchQuery);
                   searchUsers();
                 }}
                 disabled={loading}
@@ -395,6 +425,7 @@ const AddFriendsScreen = () => {
       >
         <Text style={styles.textButtonText}>Back to Home</Text>
       </TouchableOpacity>
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 };
