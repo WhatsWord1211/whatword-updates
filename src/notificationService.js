@@ -17,20 +17,8 @@ import pushNotificationService from './pushNotificationService';
  * - notificationService (this file): Provides high-level API and Firestore integration
  */
 
-// Configure notification behavior for foreground and background
-Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    console.log('NotificationService: Notification received:', notification);
-    
-    return {
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      priority: 'high',
-    };
-  },
-});
+// Note: Notification handler is configured in pushNotificationService.js
+// This prevents conflicts between multiple handlers
 
 class NotificationService {
   constructor() {
@@ -118,7 +106,6 @@ class NotificationService {
         
       case 'game_started':
       case 'game_completed':
-      case 'game_move':
         console.log('NotificationService: Game notification tapped');
         break;
         

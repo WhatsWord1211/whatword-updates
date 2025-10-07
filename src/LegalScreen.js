@@ -192,7 +192,10 @@ const LegalScreen = ({ route }) => {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            playSound('backspace');
+            navigation.goBack();
+          }}
         >
           <Text style={[styles.backButtonText, { color: colors.textPrimary }]}>← Back</Text>
         </TouchableOpacity>

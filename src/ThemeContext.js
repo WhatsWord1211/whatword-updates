@@ -51,8 +51,18 @@ export const ThemeProvider = ({ children }) => {
       try {
         const backgroundColor = themeColors.background || '#1F2937';
         const useLightButtons = (currentTheme === 'dark');
+        
+        // Set navigation bar background to match app background
         await NavigationBar.setBackgroundColorAsync(backgroundColor);
+        
+        // Set button style based on theme for proper contrast
+        // Light theme = dark buttons, Dark theme = light buttons
         await NavigationBar.setButtonStyleAsync(useLightButtons ? 'light' : 'dark');
+        
+        // Additional configuration for better integration
+        await NavigationBar.setVisibilityAsync('visible');
+        
+        console.log(`ThemeContext: Navigation bar updated for ${currentTheme} theme - background: ${backgroundColor}, buttons: ${useLightButtons ? 'light' : 'dark'}`);
       } catch (e) {
         // Non-fatal: just log
         console.warn('ThemeContext: Failed to set Android navigation bar:', e?.message || e);
@@ -72,10 +82,29 @@ export const ThemeProvider = ({ children }) => {
     }
   };
 
+  // Function to manually update navigation bar (useful for app startup)
+  const updateNavigationBar = async () => {
+    if (Platform.OS !== 'android') return;
+    
+    try {
+      const backgroundColor = themeColors.background || '#1F2937';
+      const useLightButtons = (currentTheme === 'dark');
+      
+      await NavigationBar.setBackgroundColorAsync(backgroundColor);
+      await NavigationBar.setButtonStyleAsync(useLightButtons ? 'light' : 'dark');
+      await NavigationBar.setVisibilityAsync('visible');
+      
+      console.log(`ThemeContext: Navigation bar manually updated for ${currentTheme} theme`);
+    } catch (error) {
+      console.warn('ThemeContext: Failed to manually update navigation bar:', error);
+    }
+  };
+
   const value = {
     theme: currentTheme,
     colors: themeColors,
     changeTheme,
+    updateNavigationBar,
     isDark: currentTheme === 'dark',
     isLight: currentTheme === 'light',
   };

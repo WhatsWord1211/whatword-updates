@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions, BackHandler } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
 import { addDoc, updateDoc, doc, collection, arrayUnion, getDoc } from 'firebase/firestore';
@@ -8,6 +8,7 @@ import { playSound } from './soundsUtil';
 import { isValidWord } from './gameLogic';
 import { getNotificationService } from './notificationService';
 import notificationPermissionHelper from './notificationPermissionHelper';
+import { useTheme } from './ThemeContext';
 import styles from './styles';
 
 const SetWordGameScreen = () => {
@@ -15,6 +16,7 @@ const SetWordGameScreen = () => {
   const route = useRoute();
   const { challenge, isAccepting } = route.params;
   const insets = useSafeAreaInsets();
+  const { updateNavigationBar } = useTheme();
   
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,6 +24,7 @@ const SetWordGameScreen = () => {
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showGameStartedPopup, setShowGameStartedPopup] = useState(false);
+  const [showChallengeSentPopup, setShowChallengeSentPopup] = useState(false);
   const [createdGameId, setCreatedGameId] = useState(null);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const [opponentHardModeUnlocked, setOpponentHardModeUnlocked] = useState(true); // Default to true to avoid flicker
@@ -57,6 +60,22 @@ const SetWordGameScreen = () => {
     ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
     ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
   ];
+
+  // Ensure navigation bar stays the correct color when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      if (updateNavigationBar) {
+        updateNavigationBar();
+      }
+    }, [updateNavigationBar])
+  );
+
+  // Force navigation bar color when modals open/close
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showChallengeSentPopup, showGameStartedPopup, showMenuPopup, updateNavigationBar]);
 
   // If accepting a challenge, use the challenge's difficulty and skip selection
   useEffect(() => {
@@ -326,20 +345,7 @@ const SetWordGameScreen = () => {
         playSound('chime');
         
         // Show success message
-        Alert.alert('Challenge Sent!', `Challenge sent to ${challenge.toUsername}!`, [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate back to challenge screen
-              navigation.navigate('CreateChallenge');
-            }
-          }
-        ]);
-        
-        // Also navigate back after a short delay as a fallback
-        setTimeout(() => {
-          navigation.navigate('CreateChallenge');
-        }, 500);
+        setShowChallengeSentPopup(true);
       }
      } catch (error) {
        console.error('Failed to submit word:', error);
@@ -657,6 +663,27 @@ const SetWordGameScreen = () => {
                setShowGameStartedPopup(false);
                playSound('chime').catch(() => {});
                navigation.navigate('PvPGame', { gameId: createdGameId });
+             }}
+           >
+             <Text style={styles.buttonText}>OK</Text>
+           </TouchableOpacity>
+         </View>
+       </View>
+     </Modal>
+     
+     {/* Challenge Sent Popup Modal */}
+     <Modal visible={showChallengeSentPopup} transparent animationType="fade">
+       <View style={styles.modalOverlay}>
+         <View style={[styles.winPopup, styles.modalShadow]}>
+           <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>
+             Challenge sent to {challenge.toUsername}
+           </Text>
+           <TouchableOpacity
+             style={styles.winButtonContainer}
+             onPress={() => {
+               setShowChallengeSentPopup(false);
+               playSound('chime').catch(() => {});
+               navigation.navigate('CreateChallenge');
              }}
            >
              <Text style={styles.buttonText}>OK</Text>

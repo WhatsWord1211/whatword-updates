@@ -197,7 +197,7 @@ service cloud.firestore {
          // Allow system notifications (from push notification service)
          request.resource.data.fromUid == 'system' ||
          // Allow game-related notifications from participants
-         (request.resource.data.type in ['game_challenge', 'game_started', 'game_completed', 'game_move'] &&
+         (request.resource.data.type in ['game_challenge', 'game_started', 'game_completed'] &&
           request.resource.data.participants is list &&
           request.auth.uid in request.resource.data.participants) ||
          // Allow notifications where the current user is involved (sender or recipient)

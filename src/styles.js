@@ -159,8 +159,10 @@ export default StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
     textAlign: 'center',
-    flexShrink: 1,
+    flexShrink: 0,
     flexWrap: 'nowrap',
+    numberOfLines: 1,
+    ellipsizeMode: 'clip',
   },
 
   difficultyButton: {
@@ -515,8 +517,10 @@ export default StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Roboto-Regular',
     textAlign: 'center',
-    flexShrink: 1,
+    flexShrink: 0,
     flexWrap: 'nowrap',
+    numberOfLines: 1,
+    ellipsizeMode: 'clip',
   },
   feedbackGuide: {
     flexDirection: 'row',
@@ -2148,6 +2152,7 @@ export default StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
+    color: '#FFFFFF',
   },
   
   leaderboardInfo: {
@@ -2717,16 +2722,12 @@ export default StyleSheet.create({
     fontFamily: 'Roboto-Bold',
   },
   backButton: {
-    backgroundColor: '#6B7280',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    padding: 10,
   },
   backButtonText: {
-    color: '#E5E7EB',
-    fontSize: 14,
+    color: '#F59E0B',
+    fontSize: 16,
     fontWeight: '600',
-    fontFamily: 'Roboto-Bold',
   },
   section: {
     marginBottom: 20,
@@ -2819,6 +2820,7 @@ export default StyleSheet.create({
     paddingHorizontal: 24, // Increased horizontal padding
     borderRadius: 8, // Increased border radius
     marginLeft: 0, // Remove left margin since we're centering
+    minWidth: 70, // Ensure minimum width for text
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -2842,6 +2844,10 @@ export default StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Roboto-Bold',
     textAlign: 'center',
+    flexShrink: 0,
+    flexWrap: 'nowrap',
+    numberOfLines: 1,
+    ellipsizeMode: 'clip',
   },
   lastFriendItem: {
     marginBottom: 0, // Remove bottom margin for last item
@@ -4277,11 +4283,12 @@ export default StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     marginBottom: 12,
+    gap: 8,
   },
   declineButton: {
     backgroundColor: '#DC2626',
     flex: 1,
-    marginRight: 8,
+    minWidth: 80,
     borderTopColor: '#EF4444',
     borderLeftColor: '#EF4444',
     borderBottomColor: '#B91C1C',
@@ -4290,17 +4297,18 @@ export default StyleSheet.create({
   acceptButton: {
     backgroundColor: '#059669',
     flex: 1,
-    marginLeft: 8,
+    minWidth: 80,
     borderTopColor: '#10B981',
     borderLeftColor: '#10B981',
     borderBottomColor: '#047857',
     borderRightColor: '#047857',
   },
   backButton: {
-    backgroundColor: '#6B7280',
-    borderTopColor: '#9CA3AF',
-    borderLeftColor: '#9CA3AF',
-    borderBottomColor: '#4B5563',
-    borderRightColor: '#4B5563',
+    padding: 10,
+  },
+  backButtonText: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

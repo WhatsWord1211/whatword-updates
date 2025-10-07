@@ -1,10 +1,10 @@
 import { Audio } from 'expo-av';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import settingsService from './settingsService';
 
 const soundFiles = {
   feedbackDot: require('../assets/sounds/feedbackDot.mp3'),
-  feedbackCircle: require('../assets/sounds/feedbackCircle.mp3'),
+  rank: require('../assets/sounds/rank.mp3'),
   backspace: require('../assets/sounds/backspace.mp3'),
   guess: require('../assets/sounds/guess.mp3'),
   invalidWord: require('../assets/sounds/invalid-word-guess.mp3'),
@@ -28,6 +28,8 @@ const soundFiles = {
 const loadedSounds = {};
 let soundsLoaded = false;
 let audioConfigured = false;
+let appStateSubscription = null;
+let soundValidationInterval = null;
 
 /**
  * Configure audio mode for iOS and Android
@@ -104,6 +106,11 @@ export const loadSounds = async () => {
 
     await Promise.allSettled(soundPromises);
     soundsLoaded = true;
+    
+    // Set up AppState monitoring and sound validation
+    setupAppStateMonitoring();
+    startSoundValidation();
+    
     console.log('soundsUtil: Sound loading completed');
   } catch (error) {
     console.error('soundsUtil: Failed to load sounds', error);
@@ -116,6 +123,37 @@ export const loadSounds = async () => {
  * Check if sounds are ready
  */
 export const areSoundsReady = () => soundsLoaded;
+
+/**
+ * Reload a specific sound that has become invalid
+ */
+const reloadSound = async (key) => {
+  try {
+    const soundFile = soundFiles[key];
+    if (!soundFile) {
+      console.warn(`soundsUtil: Sound file not found for key ${key}`);
+      return;
+    }
+
+    // Unload the old sound if it exists
+    const oldSound = loadedSounds[key];
+    if (oldSound && typeof oldSound.unloadAsync === 'function') {
+      try {
+        await oldSound.unloadAsync();
+      } catch (error) {
+        console.warn(`soundsUtil: Error unloading old sound ${key}:`, error.message);
+      }
+    }
+
+    // Load the new sound
+    const { sound } = await Audio.Sound.createAsync(soundFile);
+    loadedSounds[key] = sound;
+    console.log(`soundsUtil: Successfully reloaded sound ${key}`);
+  } catch (error) {
+    console.error(`soundsUtil: Failed to reload sound ${key}:`, error.message);
+    throw error;
+  }
+};
 
 /**
  * Get effective volume based on user settings
@@ -158,6 +196,7 @@ export const playSound = async (key, options = {}) => {
       await configureAudio();
     }
 
+
     const sound = loadedSounds[key];
     if (!sound) {
       console.warn(`soundsUtil: Sound ${key} not loaded, skipping play`);
@@ -175,17 +214,38 @@ export const playSound = async (key, options = {}) => {
 
     // Check if sound is still valid before playing
     try {
+      // Validate sound object is still functional
+      if (!sound || typeof sound.setVolumeAsync !== 'function' || typeof sound.replayAsync !== 'function') {
+        console.warn(`soundsUtil: Sound ${key} object is invalid, reloading...`);
+        await reloadSound(key);
+        // Retry with the newly loaded sound
+        const reloadedSound = loadedSounds[key];
+        if (reloadedSound) {
+          await reloadedSound.setVolumeAsync(effectiveVolume);
+          await reloadedSound.replayAsync();
+          console.log(`soundsUtil: Successfully played sound ${key} after reload at volume ${Math.round(effectiveVolume * 100)}%`);
+        }
+        return;
+      }
+
       // Set volume
       await sound.setVolumeAsync(effectiveVolume);
       
       // Play from beginning
       await sound.replayAsync();
       
-      console.log(`soundsUtil: Playing sound ${key} at volume ${Math.round(effectiveVolume * 100)}%`);
+      console.log(`soundsUtil: Successfully played sound ${key} at volume ${Math.round(effectiveVolume * 100)}%`);
     } catch (playError) {
       console.warn(`soundsUtil: Failed to play sound ${key}:`, playError.message);
-      // Remove invalid sound from cache
-      delete loadedSounds[key];
+      // Try to reload the sound if it fails
+      try {
+        console.log(`soundsUtil: Attempting to reload sound ${key}...`);
+        await reloadSound(key);
+      } catch (reloadError) {
+        console.error(`soundsUtil: Failed to reload sound ${key}:`, reloadError.message);
+        // Remove invalid sound from cache as last resort
+        delete loadedSounds[key];
+      }
     }
   } catch (error) {
     console.warn(`soundsUtil: Failed to play sound ${key}:`, error.message);
@@ -213,6 +273,9 @@ export const setMasterVolume = async (volume) => {
 export const cleanupSounds = async () => {
   try {
     console.log('soundsUtil: Cleaning up all loaded sounds...');
+    
+    // Clean up monitoring first
+    cleanupMonitoring();
     
     // Unload all loaded sounds
     const unloadPromises = Object.keys(loadedSounds).map(async (key) => {
@@ -305,6 +368,9 @@ export const unloadSounds = async () => {
   try {
     console.log('soundsUtil: Unloading sounds...');
     
+    // Clean up monitoring first
+    cleanupMonitoring();
+    
     for (const sound of Object.values(loadedSounds)) {
       await sound.unloadAsync();
     }
@@ -326,4 +392,97 @@ export const unloadSounds = async () => {
 export const reconfigureAudio = async () => {
   audioConfigured = false;
   await configureAudio();
+};
+
+/**
+ * Set up AppState monitoring to handle background/foreground transitions
+ */
+const setupAppStateMonitoring = () => {
+  if (appStateSubscription) return;
+  
+  appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+    console.log(`soundsUtil: AppState changed to ${nextAppState}`);
+    
+    if (nextAppState === 'active') {
+      // App came to foreground - reconfigure audio and validate sounds
+      try {
+        console.log('soundsUtil: App became active, reconfiguring audio...');
+        audioConfigured = false;
+        await configureAudio();
+        
+        // Validate all sounds are still working
+        await validateAllSounds();
+      } catch (error) {
+        console.error('soundsUtil: Error handling app foreground:', error);
+      }
+    } else if (nextAppState === 'background') {
+      console.log('soundsUtil: App went to background');
+      // Optional: Pause any currently playing sounds
+    }
+  });
+};
+
+/**
+ * Start periodic sound validation to catch corrupted sounds
+ */
+const startSoundValidation = () => {
+  if (soundValidationInterval) return;
+  
+  // Validate sounds every 5 minutes
+  soundValidationInterval = setInterval(async () => {
+    try {
+      await validateAllSounds();
+    } catch (error) {
+      console.error('soundsUtil: Error during periodic sound validation:', error);
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+};
+
+/**
+ * Validate all loaded sounds are still functional
+ */
+const validateAllSounds = async () => {
+  if (!soundsLoaded || Object.keys(loadedSounds).length === 0) return;
+  
+  console.log('soundsUtil: Validating all sounds...');
+  let corruptedCount = 0;
+  
+  for (const [key, sound] of Object.entries(loadedSounds)) {
+    try {
+      // Try to access sound properties to validate it's still functional
+      if (!sound || typeof sound.setVolumeAsync !== 'function' || typeof sound.replayAsync !== 'function') {
+        console.warn(`soundsUtil: Sound ${key} is corrupted, reloading...`);
+        await reloadSound(key);
+        corruptedCount++;
+      }
+    } catch (error) {
+      console.warn(`soundsUtil: Sound ${key} validation failed, reloading...`, error.message);
+      try {
+        await reloadSound(key);
+        corruptedCount++;
+      } catch (reloadError) {
+        console.error(`soundsUtil: Failed to reload corrupted sound ${key}:`, reloadError.message);
+        delete loadedSounds[key];
+      }
+    }
+  }
+  
+  if (corruptedCount > 0) {
+    console.log(`soundsUtil: Reloaded ${corruptedCount} corrupted sounds`);
+  }
+};
+
+/**
+ * Clean up monitoring and validation
+ */
+const cleanupMonitoring = () => {
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
+  
+  if (soundValidationInterval) {
+    clearInterval(soundValidationInterval);
+    soundValidationInterval = null;
+  }
 };

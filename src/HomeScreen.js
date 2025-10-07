@@ -700,15 +700,6 @@ const HomeScreen = () => {
     }
   };
 
-  const handleRefreshProfile = async () => {
-    try {
-      if (user) {
-        await loadUserProfile(user);
-      }
-    } catch (error) {
-      console.error('HomeScreen: Failed to refresh profile:', error);
-    }
-  };
 
   // Function to get player rank
   const getPlayerRank = () => {
@@ -809,7 +800,10 @@ const HomeScreen = () => {
         {/* Player Rank Display - Clickable to show rank ladder */}
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => setShowRankModal(true)}
+          onPress={() => {
+            playSound('rank');
+            setShowRankModal(true);
+          }}
           style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}
         >
           <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Rank:</Text>
@@ -933,12 +927,6 @@ const HomeScreen = () => {
               onPress={handleSignOut}
             >
               <Text style={styles.buttonText}>Sign Out</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={handleRefreshProfile}
-            >
-              <Text style={styles.buttonText}>Refresh Profile</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.button}

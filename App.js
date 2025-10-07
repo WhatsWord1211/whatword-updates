@@ -34,7 +34,6 @@ import { Audio } from 'expo-av';
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
 import { getNotificationService } from './src/notificationService';
-import * as NavigationBar from 'expo-navigation-bar';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -107,17 +106,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Ensure Android navigation bar uses dark background with light icons in builds
-    if (Platform.OS === 'android') {
-      (async () => {
-        try {
-          await NavigationBar.setBackgroundColorAsync('#1F2937');
-          await NavigationBar.setButtonStyleAsync('light');
-        } catch (e) {
-          console.warn('NavigationBar config failed:', e?.message || e);
-        }
-      })();
-    }
+    // Navigation bar configuration is handled by ThemeContext
+    // This ensures it properly adapts to light/dark mode changes
+    // and matches the app's background color automatically
 
     // Safety timeout - if loading takes more than 10 seconds, force it to complete
     const safetyTimeout = setTimeout(() => {
@@ -184,10 +175,10 @@ export default function App() {
             setLoading(false);
             console.log('=== AUTH STATE HANDLED - UI SHOWN ===');
             
-            // Load services in background after UI is visible
-            setTimeout(() => {
-              initializeBackgroundServices();
-            }, 100);
+        // Load services in background after UI is visible
+        setTimeout(() => {
+          initializeBackgroundServices();
+        }, 100);
             
           } catch (err) {
             console.error('=== AUTH STATE ERROR ===');

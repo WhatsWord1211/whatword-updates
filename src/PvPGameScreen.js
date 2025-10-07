@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, Dimensions, Alert, Platform, InteractionManager, StatusBar, BackHandler } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeContext';
@@ -80,6 +80,7 @@ const PvPGameScreen = () => {
   const showCongratulationsPopupRef = useRef(false);
   const hasRestoredStateRef = useRef(false);
   const scrollTimeoutRef = useRef(null);
+  const resultsShownForSessionRef = useRef(false);
   
   const scrollViewRef = useRef(null);
   
@@ -277,6 +278,30 @@ const PvPGameScreen = () => {
     }, [])
   );
 
+  // Handle hardware back button - prevent going back to completed games
+  useEffect(() => {
+    const backAction = () => {
+      // If viewing results from a completed game, go back to where we came from
+      if (showResults && game && game.status === 'completed') {
+        navigation.goBack();
+        return true; // Prevent default back behavior
+      }
+      
+      // If game is active, allow normal back behavior
+      if (game && game.status === 'active') {
+        return false; // Allow default back behavior
+      }
+      
+      // For other cases (no game, loading, etc.), navigate to MainTabs
+      navigation.navigate('MainTabs');
+      return true; // Prevent default back behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [navigation, showResults, game]);
+
   // Keep refs in sync with state to avoid stale closures inside snapshot listener
   useEffect(() => {
     showGameOverPopupRef.current = showGameOverPopup;
@@ -293,6 +318,7 @@ const PvPGameScreen = () => {
     resultSoundPlayedRef.current = false;
     setResultSoundPlayed(false);
     hasRestoredStateRef.current = false; // Reset restore flag for new game
+    resultsShownForSessionRef.current = false; // Reset results shown flag for new game
   }, [gameId]);
 
   // Helper functions to get player data
@@ -600,7 +626,7 @@ const PvPGameScreen = () => {
         // If this is a "View Results" scenario, show the game over popup
         // Only show for first solver (second solver already saw results immediately after congratulations)
         console.log('PvPGameScreen: Checking View Results logic - showResults:', showResults, 'status:', gameData.status, 'winnerId:', gameData.winnerId, 'tie:', gameData.tie);
-        if (showResults && gameData.status === 'completed' && (gameData.winnerId !== undefined || gameData.tie)) {
+        if (showResults && gameData.status === 'completed' && (gameData.winnerId !== undefined || gameData.tie) && !showGameOverPopupRef.current && !resultsShownForSessionRef.current) {
           // Check if current user was the first solver (not the second solver)
           // This is independent of Player 1/2 roles - it's about who solved their opponent's word first
           const isCurrentUserPlayer1 = gameData.player1?.uid === currentUser.uid;
@@ -620,6 +646,7 @@ const PvPGameScreen = () => {
             console.log('PvPGameScreen: Showing results popup for first solver');
             setGameOverData(resultPayload);
             setShowGameOverPopup(true);
+            resultsShownForSessionRef.current = true; // Mark that we've shown results for this session
             
             // Play appropriate sound
             if (gameData.tie) {
@@ -630,9 +657,9 @@ const PvPGameScreen = () => {
               playSound('lose').catch(() => {});
             }
           } else {
-            console.log('PvPGameScreen: Second solver already saw results, navigating back to ResumeGames');
-            // Second solver already saw results immediately after congratulations, just navigate back to ResumeGames
-            navigation.navigate('ResumeGames');
+            console.log('PvPGameScreen: Second solver already saw results, navigating back to where we came from');
+            // Second solver already saw results immediately after congratulations, just navigate back to where we came from
+            navigation.goBack();
           }
         }
         // Ensure UI leaves loading state immediately regardless of status
@@ -1263,7 +1290,10 @@ const PvPGameScreen = () => {
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              playSound('backspace');
+              navigation.goBack();
+            }}
           >
             <Text style={styles.buttonText}>Go Back</Text>
           </TouchableOpacity>
@@ -1444,7 +1474,7 @@ const PvPGameScreen = () => {
                 navigation.navigate('MainTabs');
               }}
             >
-              <Text style={styles.buttonText}>Return to Home</Text>
+              <Text style={styles.buttonText}>Save & Exit</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -1454,7 +1484,7 @@ const PvPGameScreen = () => {
                 setShowQuitConfirmPopup(true);
               }}
             >
-              <Text style={styles.buttonText}>Quit Game</Text>
+              <Text style={styles.buttonText}>Quit Without Saving</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -1598,8 +1628,8 @@ const PvPGameScreen = () => {
                   
                   // Navigate based on how we got here
                   if (showResults) {
-                    // Came from ResumeGamesScreen - go back to Resume Games
-                    navigation.navigate('ResumeGames');
+                    // Came from ResumeGamesScreen - go back to where we came from
+                    navigation.goBack();
                   } else {
                     // Came from normal game completion - go to MainTabs
                     navigation.navigate('MainTabs');
@@ -1611,7 +1641,7 @@ const PvPGameScreen = () => {
                   // Still close popup and navigate even if marking fails
                   setShowGameOverPopup(false);
                   if (showResults) {
-                    navigation.navigate('ResumeGames');
+                    navigation.goBack();
                   } else {
                     navigation.navigate('MainTabs');
                   }

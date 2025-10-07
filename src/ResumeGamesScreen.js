@@ -764,21 +764,13 @@ const ResumeGamesScreen = () => {
           </Text>
         </View>
         {item.gameType === 'waiting_for_opponent' ? (
-          // For waiting games, show both Check and Quit buttons
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.challengeButton, styles.checkButton]}
-              onPress={() => handleGameAction(item)}
-            >
-              <Text style={styles.challengeButtonText}>Check</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.challengeButton, styles.quitButton]}
-              onPress={() => handleQuitGame(item)}
-            >
-              <Text style={styles.challengeButtonText}>Quit</Text>
-            </TouchableOpacity>
-          </View>
+          // For waiting games, show only Quit button
+          <TouchableOpacity
+            style={[styles.challengeButton, styles.quitButton]}
+            onPress={() => handleQuitGame(item)}
+          >
+            <Text style={styles.challengeButtonText}>Quit</Text>
+          </TouchableOpacity>
         ) : (
           // For other game types, show single button
           <TouchableOpacity

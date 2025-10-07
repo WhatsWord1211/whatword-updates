@@ -164,10 +164,12 @@ export const sendChallengeExample = async (friendUserId, wordLength = 5) => {
 };
 
 // Accept a game challenge
-export const acceptChallengeExample = async (challengeId) => {
+// Note: Challenge acceptance is handled through SetWordGameScreen navigation, not directly through friendsService
+export const acceptChallengeExample = async (challenge) => {
   try {
-    const gameId = await friendsService.acceptChallenge(challengeId);
-    return gameId;
+    // In the actual app, navigate to SetWordGameScreen with the challenge object
+    // navigation.navigate('SetWordGame', { challenge, isAccepting: true });
+    console.log('Challenge acceptance handled through SetWordGameScreen');
   } catch (error) {
     console.error('Failed to accept challenge:', error);
     throw error;

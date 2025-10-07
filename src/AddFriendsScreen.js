@@ -187,9 +187,10 @@ const AddFriendsScreen = () => {
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
       playSound('chime');
       
-      // Clear search results
+      // Clear search results and dismiss keyboard
       setSearchResults([]);
       setSearchQuery('');
+      Keyboard.dismiss();
     } catch (error) {
       logger.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
       Alert.alert('Error', 'Failed to send friend request. Please try again.');
@@ -360,6 +361,7 @@ const AddFriendsScreen = () => {
                   logger.debug('🔍 [AddFriendsScreen] Search button pressed!');
                   logger.debug('🔍 [AddFriendsScreen] Loading state:', loading);
                   logger.debug('🔍 [AddFriendsScreen] Search query:', searchQuery);
+                  Keyboard.dismiss(); // Dismiss keyboard when search is initiated
                   searchUsers();
                 }}
                 disabled={loading}

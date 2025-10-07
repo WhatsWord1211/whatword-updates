@@ -1144,7 +1144,7 @@ const GameScreen = () => {
               zIndex: 1
             }]}
             onPress={() => {
-              playSound('chime');
+              playSound('backspace');
               navigation.goBack();
             }}
           >

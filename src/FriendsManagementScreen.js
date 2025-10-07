@@ -52,6 +52,13 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
   // Share app link function
   const shareAppLink = async () => {
     try {
+      // Play sound BEFORE opening share dialog to avoid background audio issues
+      console.log('FriendsManagementScreen: Playing rank sound before share');
+      playSound('rank');
+      
+      // Small delay to ensure sound starts playing before share dialog opens
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
       const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
       
@@ -60,8 +67,6 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         url: shareUrl,
         title: 'WhatWord - Word Game'
       });
-      
-      playSound('chime');
     } catch (error) {
       console.error('Failed to share app link:', error);
       Alert.alert('Error', 'Failed to share app link. Please try again.');
@@ -299,6 +304,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       return;
     }
     
+    // Dismiss keyboard when search is initiated
+    Keyboard.dismiss();
+    
     try {
       setSearching(true);
       console.log('🔍 [FriendsManagementScreen] Searching for username:', searchQuery);
@@ -390,9 +398,10 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
       playSound('chime');
       
-      // Clear search
+      // Clear search and dismiss keyboard
       setSearchQuery('');
       setSearchResults([]);
+      Keyboard.dismiss();
     } catch (error) {
       console.error('❌ [FriendsManagementScreen] Failed to send friend request:', error);
       logger.error('Failed to send friend request:', error);
@@ -628,10 +637,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
 
   return (
     <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}> 
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={{ flex: 1 }}>
-          {/* Tab Navigation */}
-          <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={{ flex: 1 }}>
+        {/* Tab Navigation */}
+        <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={[
             styles.tab,
@@ -744,31 +752,32 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
 
       {/* Search Bar - Only visible when Add Friends tab is active */}
       {activeTab === 'add' && (
-        <View style={{ marginTop: 10, marginHorizontal: 20, alignItems: 'center' }}>
-          <TextInput
-            style={{
-              width: '100%',
-              paddingHorizontal: 12,
-              paddingVertical: 10,
-              borderRadius: 6,
-              borderWidth: 1,
-              fontSize: 16,
-              color: 'white',
-              fontFamily: 'Roboto-Regular',
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              marginBottom: 10,
-            }}
-            placeholder="username"
-            placeholderTextColor={colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={searchUsers}
-            selectionColor="#FFFFFF"
-            cursorColor="#FFFFFF"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ marginTop: 10, marginHorizontal: 20, alignItems: 'center' }}>
+            <TextInput
+              style={{
+                width: '100%',
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderRadius: 6,
+                borderWidth: 1,
+                fontSize: 16,
+                color: 'white',
+                fontFamily: 'Roboto-Regular',
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                marginBottom: 10,
+              }}
+              placeholder="username"
+              placeholderTextColor={colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={searchUsers}
+              selectionColor="#FFFFFF"
+              cursorColor="#FFFFFF"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
               style={{
@@ -780,7 +789,10 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 justifyContent: 'center',
                 width: 120,
               }}
-              onPress={searchUsers}
+              onPress={() => {
+                playSound('guess');
+                searchUsers();
+              }}
               disabled={searching}
             >
               <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
@@ -801,6 +813,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 onPress={() => {
                   setSearchResults([]);
                   setSearchQuery('');
+                  Keyboard.dismiss();
                   playSound('backspace').catch(() => {});
                 }}
               >
@@ -823,12 +836,13 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
             </TouchableOpacity>
           </View>
         </View>
+        </TouchableWithoutFeedback>
       )}
 
       {/* Content */}
       <View style={{ flex: 1, width: '100%', paddingHorizontal: 16, paddingTop: 0, alignItems: 'stretch', justifyContent: 'flex-start' }}>
         {activeTab === 'friends' && (
-          <View style={styles.tabContent}>
+          <View style={{ flex: 1, width: '100%' }}>
             {loadingFriends ? (
               <Text style={styles.loadingText}>
                 Loading friends...
@@ -844,8 +858,11 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 data={friends}
                 keyExtractor={(item) => item.id}
                 renderItem={renderFriend}
-                style={styles.list}
-                contentContainerStyle={{ paddingBottom: 100 }}
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 20 }}
+                showsVerticalScrollIndicator={true}
+                scrollEnabled={true}
+                nestedScrollEnabled={true}
               />
             )}
           </View>
@@ -1016,7 +1033,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 }}
                 ListEmptyComponent={(
                   <View style={[styles.emptyState, { paddingHorizontal: 16 }]}>
-                    <Text style={styles.emptyStateText}>No friend requests</Text>
+                    <Text style={styles.emptyStateText}>No current friend requests</Text>
                   </View>
                 )}
                 showsVerticalScrollIndicator={true}
@@ -1063,7 +1080,6 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         )}
         </View>
       </View>
-      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 };

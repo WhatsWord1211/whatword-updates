@@ -62,7 +62,6 @@ This document describes the clean, professional push notification system impleme
 - `sendGameChallengeNotification(toUserId, challengerName, wordLength)`
 - `sendGameStartedNotification(toUserId, playerName, wordLength)`
 - `sendGameCompletedNotification(toUserId, playerName, won)`
-- `sendGameMoveNotification(toUserId, playerName, gameId)`
 
 ---
 
@@ -151,11 +150,13 @@ await notificationService.sendFriendRequestNotification(
    - Body: "{username} declined your challenge"
    - Channel: `game_updates`
 
-### Game Play Notifications (1)
+### Game Play Notifications
 7. **Battle Over** (Game Completed)
    - Title: "Battle Over"
    - Body: "{opponentName} solved your word, view results"
    - Channel: `game_updates`
+   - Sent to: First to solve (when second to solve finishes)
+   - Note: Second to solve doesn't need notification because they already see the results popup
 
 ---
 
@@ -229,7 +230,7 @@ Users can control notification settings per channel in Android settings.
    - `sendGameChallengeNotification()`
 2. Removed redundant "Challenge Accepted" notification
 3. Updated channel assignments for all notification types
-4. Changed "Game Completed" title to "Battle Over"
+4. Game Completed notifications sent only to first to solve (second to solve already sees results popup)
 5. Cleaned up notification service architecture
 
 ---

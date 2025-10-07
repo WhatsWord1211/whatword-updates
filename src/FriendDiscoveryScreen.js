@@ -235,7 +235,10 @@ const FriendDiscoveryScreen = () => {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            playSound('backspace');
+            navigation.goBack();
+          }}
         >
           <Text style={[styles.backButtonText, { color: theme.textPrimary }]}>← Back</Text>
         </TouchableOpacity>

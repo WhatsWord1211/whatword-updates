@@ -485,68 +485,6 @@ class FriendsService {
     }
   }
 
-  async acceptChallenge(challengeId) {
-    try {
-      if (!this.currentUser) throw new Error('User not authenticated');
-      
-      const challengeDoc = await getDoc(doc(db, 'challenges', challengeId));
-      if (!challengeDoc.exists()) throw new Error('Challenge not found');
-      
-      const challengeData = challengeDoc.data();
-      
-      if (challengeData.toUid !== this.currentUser.uid) {
-        throw new Error('Not authorized to accept this challenge');
-      }
-      
-      if (challengeData.status !== 'pending') {
-        throw new Error('Challenge is no longer pending');
-      }
-      
-      // Update challenge status
-      await updateDoc(doc(db, 'challenges', challengeId), {
-        status: 'accepted',
-        acceptedAt: new Date().toISOString()
-      });
-
-      // Create game
-      const gameId = `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await setDoc(doc(db, 'games', gameId), {
-        gameId,
-        challengeId,
-        playerIds: [challengeData.fromUid, challengeData.toUid],
-        wordLength: challengeData.wordLength,
-        type: 'pvp',
-        gameMode: 'pvp',
-        status: 'ready',
-        createdAt: new Date().toISOString(),
-        lastActivity: new Date().toISOString()
-      });
-
-      // Send game started notification (combines challenge acceptance + game ready)
-      const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
-      const userData = userDoc.data();
-      
-      await getNotificationService().sendPushNotification(
-        challengeData.fromUid,
-        'Game Started',
-        `${userData.username || 'Someone'} accepted your challenge! Your battle has begun.`,
-        {
-          type: 'game_started',
-          gameId,
-          challengeId,
-          opponentId: this.currentUser.uid,
-          opponentName: userData.username || 'Someone',
-          wordLength: challengeData.wordLength,
-          timestamp: new Date().toISOString()
-        }
-      );
-
-      return gameId;
-    } catch (error) {
-      console.error('FriendsService: Failed to accept challenge:', error);
-      throw error;
-    }
-  }
 
   async declineChallenge(challengeId) {
     try {

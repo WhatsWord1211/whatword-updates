@@ -19,6 +19,13 @@ const CreateChallengeScreen = () => {
   // Share app link function
   const shareAppLink = async () => {
     try {
+      // Play sound BEFORE opening share dialog to avoid background audio issues
+      console.log('CreateChallengeScreen: Playing rank sound before share');
+      playSound('rank');
+      
+      // Small delay to ensure sound starts playing before share dialog opens
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
       const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
       
@@ -27,8 +34,6 @@ const CreateChallengeScreen = () => {
         url: shareUrl,
         title: 'WhatWord - Word Game'
       });
-      
-      playSound('chime');
     } catch (error) {
       console.error('Failed to share app link:', error);
       Alert.alert('Error', 'Failed to share app link. Please try again.');
@@ -173,7 +178,7 @@ const CreateChallengeScreen = () => {
         <TouchableOpacity
           style={[styles.createChallengeBackButton, { alignSelf: 'flex-start', marginLeft: 0 }]}
           onPress={() => {
-            playSound('chime');
+            playSound('backspace');
             navigation.navigate('MainTabs');
           }}
         >

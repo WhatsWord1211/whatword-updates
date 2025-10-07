@@ -122,7 +122,10 @@ const PendingChallengesScreen = () => {
       {/* Back Button */}
       <TouchableOpacity
         style={styles.textButton}
-        onPress={() => navigation.goBack()}
+        onPress={() => {
+          playSound('backspace');
+          navigation.goBack();
+        }}
       >
         <Text style={styles.textButtonText}>Back to Friends</Text>
       </TouchableOpacity>

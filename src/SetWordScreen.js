@@ -6,6 +6,7 @@ import { db } from './firebase';
 import { addDoc, updateDoc, doc, collection } from 'firebase/firestore';
 // Audio mode is now handled in soundsUtil.js
 import { playSound } from './soundsUtil';
+import { useTheme } from './ThemeContext';
 import styles from './styles';
 
 const SetWordScreen = () => {
@@ -13,6 +14,7 @@ const SetWordScreen = () => {
   const route = useRoute();
   const { challenge, isAccepting } = route.params;
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -125,20 +127,15 @@ const SetWordScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
-      {/* Back Button - safe area aware and always visible */}
+    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      {/* Back Button - styled like other back buttons in the app */}
       <TouchableOpacity
-        style={{
+        style={[styles.backButton, { 
           position: 'absolute',
-          left: 12,
-          top: (insets?.top || 0) + 8,
-          height: 44,
-          minWidth: 44,
-          paddingHorizontal: 10,
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
-        }}
+          top: (insets?.top || 0) + 10,
+          left: 20,
+          zIndex: 100
+        }]}
         onPress={() => {
           playSound('backspace').catch(() => {});
           navigation.goBack();
@@ -146,7 +143,7 @@ const SetWordScreen = () => {
         accessibilityRole="button"
         accessibilityLabel="Go back"
       >
-        <Text style={{ color: '#F59E0B', fontSize: 16, fontWeight: '600' }}>‹ Back</Text>
+        <Text style={styles.backButtonText}>← Back</Text>
       </TouchableOpacity>
       <View style={styles.difficultyContainer}>
         {showDifficultySelection ? (
