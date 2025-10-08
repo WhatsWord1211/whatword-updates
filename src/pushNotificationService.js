@@ -7,19 +7,8 @@ import { db } from './firebase';
 import settingsService from './settingsService';
 import logger from './logger';
 
-// Configure notification behavior for background and foreground
-// Industry standard: Always show notifications - filtering should be done server-side
-Notifications.setNotificationHandler({
-  handleNotification: async () => {
-    // Always allow notifications to display
-    // User settings are respected when SENDING, not when RECEIVING
-    return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    };
-  },
-});
+// Note: Notification handler is now configured in App.js at the top level
+// This is required for background notifications to work on iOS and Android
 
 class PushNotificationService {
   constructor() {
@@ -82,7 +71,8 @@ class PushNotificationService {
         
         // Save token to Firestore if we have a user ID
         if (this.currentUserId) {
-          await this.savePushTokenToFirestore(this.currentUserId, token);
+          // CRITICAL: Validate and clean up corrupted tokens from Expo Go interference
+          await this.validateAndCleanupToken(this.currentUserId, token);
         }
         
         // Set up listeners asynchronously
@@ -237,6 +227,66 @@ class PushNotificationService {
   }
 
   /**
+   * Validate and cleanup corrupted tokens (fixes Expo Go interference)
+   * This automatically repairs mismatched/duplicate/missing tokens for all users
+   */
+  async validateAndCleanupToken(userId, currentToken) {
+    try {
+      console.log('PushNotificationService: Validating token for user:', userId);
+      
+      // Get current user data from Firestore
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) {
+        // New user - just save token normally
+        await this.savePushTokenToFirestore(userId, currentToken);
+        return true;
+      }
+      
+      const userData = userDoc.data();
+      const storedExpoPushToken = userData.expoPushToken;
+      const storedPushToken = userData.pushToken;
+      
+      // Check for issues:
+      // 1. Missing expoPushToken
+      // 2. Mismatched expoPushToken vs pushToken
+      // 3. expoPushToken doesn't match current device token
+      
+      const hasMismatch = storedExpoPushToken !== storedPushToken;
+      const needsUpdate = !storedExpoPushToken || storedExpoPushToken !== currentToken;
+      
+      if (needsUpdate || hasMismatch) {
+        console.log('PushNotificationService: Token corruption detected, cleaning up...', {
+          storedExpoPushToken,
+          storedPushToken,
+          currentToken,
+          hasMismatch,
+          needsUpdate
+        });
+        
+        // Fix: Update expoPushToken to current device token and remove duplicate pushToken
+        await setDoc(doc(db, 'users', userId), {
+          expoPushToken: currentToken,
+          pushToken: currentToken, // Keep both in sync for backward compatibility
+          pushTokenUpdatedAt: new Date().toISOString(),
+        }, { merge: true });
+        
+        console.log('PushNotificationService: Token cleanup successful - unified to:', currentToken);
+        return true;
+      }
+      
+      // Token is valid and matches
+      console.log('PushNotificationService: Token validation passed');
+      return true;
+      
+    } catch (error) {
+      logger.error('PushNotificationService: Token validation failed:', error);
+      // Fallback: Just save the current token
+      await this.savePushTokenToFirestore(userId, currentToken);
+      return false;
+    }
+  }
+
+  /**
    * Save push token to user's Firestore document
    */
   async savePushTokenToFirestore(userId, token) {
@@ -244,6 +294,7 @@ class PushNotificationService {
       const isExpoToken = typeof token === 'string' && token.startsWith('ExponentPushToken');
       await setDoc(doc(db, 'users', userId), {
         expoPushToken: isExpoToken ? token : null,
+        pushToken: isExpoToken ? token : null, // Keep both fields in sync
         pushTokenUpdatedAt: new Date().toISOString(),
       }, { merge: true });
       return true;
@@ -443,8 +494,23 @@ class PushNotificationService {
           data: data,
           channelId: channelId,
           priority: 'high', // Android delivery priority
-          badge: undefined,
-          ttl: undefined,
+          badge: 1, // Set badge to 1 to show notification badge on app icon
+          // CRITICAL: These fields are required for background notifications
+          _contentAvailable: true, // iOS: Wake app in background to handle notification
+          mutableContent: true, // iOS: Allow notification content to be modified
+          // Android-specific: Ensure notification shows when app is closed
+          android: {
+            channelId: channelId,
+            sound: 'default',
+            priority: 'max',
+            sticky: false,
+            vibrate: true,
+          },
+          // iOS-specific: Ensure notification shows when app is closed
+          ios: {
+            sound: 'default',
+            _displayInForeground: true,
+          },
         };
 
         // Industry standard: Add explicit timeout to Expo API fetch
@@ -552,8 +618,8 @@ class PushNotificationService {
    * Send game challenge notification
    */
   async sendGameChallengeNotification(toUserId, challengerName, wordLength) {
-    const title = '🎯 New Challenge!';
-    const body = `${challengerName} challenged you to a ${wordLength}-letter word game!`;
+    const title = 'WhatWord';
+    const body = `${challengerName} challenges you to a battle.`;
     
     return this.sendPushNotification(toUserId, title, body, {
       type: 'challenge',
@@ -613,8 +679,8 @@ class PushNotificationService {
    * Send game started notification
    */
   async sendGameStartedNotification(toUserId, playerName, wordLength) {
-    const title = '🎮 Game Started!';
-    const body = `Your ${wordLength}-letter word game with ${playerName} has begun!`;
+    const title = 'WhatWord';
+    const body = 'Let the battle begin!';
     
     return this.sendPushNotification(toUserId, title, body, {
       type: 'game_started',

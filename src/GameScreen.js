@@ -29,8 +29,6 @@ const GameScreen = () => {
     wordLength, 
     soloWord, 
     gameId: initialGameId, 
-    playerId, 
-    isCreator, 
     guesses: savedGuesses,
     resumeGame, 
     inputWord: savedInputWord, 
@@ -61,7 +59,7 @@ const GameScreen = () => {
     setGuesses(newGuesses);
   }, []);
   const [targetWord, setTargetWord] = useState(savedTargetWord || '');
-  const [gameState, setGameState] = useState(savedGameState || (showDifficulty ? 'selectDifficulty' : gameMode === 'pvp' ? 'selectDifficulty' : 'playing'));
+  const [gameState, setGameState] = useState(savedGameState || (showDifficulty ? 'selectDifficulty' : 'playing'));
 
   
 
@@ -70,24 +68,13 @@ const GameScreen = () => {
   const [usedHintLetters, setUsedHintLetters] = useState([]);
   const [showInvalidPopup, setShowInvalidPopup] = useState(false);
   const [showWinPopup, setShowWinPopup] = useState(false);
-  const [showLosePopup, setShowLosePopup] = useState(false);
-  const [showTiePopup, setShowTiePopup] = useState(false);
-  const [showCongratsPopup, setShowCongratsPopup] = useState(false);
-  const [isFirstPlayerToSolve, setIsFirstPlayerToSolve] = useState(false);
-  const [showStartGamePopup, setShowStartGamePopup] = useState(false);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showQuitConfirmPopup, setShowQuitConfirmPopup] = useState(false);
   const [showWordRevealPopup, setShowWordRevealPopup] = useState(false);
   const [showHintPopup, setShowHintPopup] = useState(false);
   const [showHintLimitPopup, setShowHintLimitPopup] = useState(false);
-  const [showOpponentSolvedPopup, setShowOpponentSolvedPopup] = useState(false);
-  const [hasShownOpponentSolved, setHasShownOpponentSolved] = useState(false);
   const [showMaxGuessesPopup, setShowMaxGuessesPopup] = useState(false);
-  const [opponentGuessCountOnSolve, setOpponentGuessCountOnSolve] = useState(null);
   const [hintLetter, setHintLetter] = useState('');
-  const [opponentGuesses, setOpponentGuesses] = useState([]);
-  const [opponentWord, setOpponentWord] = useState('');
-  const [opponentUsername, setOpponentUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [soundsLoaded, setSoundsLoaded] = useState(false);
   const [gameId, setGameId] = useState(initialGameId || `solo_${Date.now()}`);
@@ -213,12 +200,21 @@ const GameScreen = () => {
       // Let adService handle its own timeouts - Grok's suggestion
       await adService.showInterstitialAd();
       
-      // iOS fix: Add delay after ad closes to prevent UI freeze
-      if (Platform.OS === 'ios') {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      // CRITICAL: Real ads completely hijack audio session
+      // Need aggressive recovery with proper delays (both iOS and Android)
+      console.log('GameScreen: Ad completed, recovering audio...');
       
-      console.log('GameScreen: showGameCompletionAd completed');
+      // 1. Wait for ad framework to fully release audio (500ms is industry standard)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 2. Reconfigure audio session
+      const { reconfigureAudio } = require('./soundsUtil');
+      await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+      
+      // 3. Additional delay to ensure audio session is ready (iOS needs this)
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      console.log('GameScreen: showGameCompletionAd completed with audio recovery');
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
       // Don't throw - continue game flow even if ad fails
@@ -236,11 +232,21 @@ const GameScreen = () => {
       // Show interstitial ad for hint
       await adService.showInterstitialAdForHint();
 
-      // iOS fix: Add delay after ad closes to prevent UI freeze
-      if (Platform.OS === 'ios') {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      // CRITICAL: Real ads completely hijack audio session
+      // Need aggressive recovery with proper delays (both iOS and Android)
+      console.log('GameScreen: Hint ad completed, recovering audio...');
+      
+      // 1. Wait for ad framework to fully release audio (500ms is industry standard)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 2. Reconfigure audio session
+      const { reconfigureAudio } = require('./soundsUtil');
+      await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+      
+      // 3. Additional delay to ensure audio session is ready (iOS needs this)
+      await new Promise(resolve => setTimeout(resolve, 200));
 
+      console.log('GameScreen: Playing hint sound after ad...');
       await playSound('hint').catch(() => {});
 
       // Get letter frequencies in target word
@@ -396,15 +402,7 @@ const GameScreen = () => {
                 setDifficulty(inferredDifficulty);
               }
               
-              // Restore PvP-specific state if it's a PvP game
-              if (savedGame.gameMode === 'pvp') {
-                setPlayerId(savedGame.playerId);
-                setIsCreator(savedGame.isCreator);
-                setOpponentGuessCountOnSolve(savedGame.opponentGuessCountOnSolve);
-                console.log('GameScreen: PvP game state restored successfully');
-              } else {
-                console.log('GameScreen: Solo game state restored successfully');
-              }
+              console.log('GameScreen: Solo game state restored successfully');
             } else {
               console.warn('GameScreen: No saved game found for gameId:', gameId);
               // Navigate back if no saved game found
@@ -425,144 +423,6 @@ const GameScreen = () => {
     loadSavedGameState();
   }, [gameMode, gameId, initialGameId, navigation]);
 
-  // Firebase subscription effect
-  useEffect(() => {
-    // Early return if not PvP or no gameId
-    if (gameMode !== 'pvp' || !gameId) {
-      return;
-    }
-
-    // Early return if creator is still selecting difficulty
-    if (isCreator && gameState === 'selectDifficulty') {
-      return;
-    }
-
-    // For joining players, add a longer delay to ensure they're properly added to the game document
-    const delay = isCreator ? 500 : 3000; // 3 seconds for joining players to ensure they're added
-
-
-    // Add a delay to ensure the document is created/accessible before setting up the listener
-    const setupListener = (retryCount = 0) => {
-      const gameRef = doc(db, 'games', gameId);
-      
-      const unsubscribe = onSnapshot(gameRef, (docSnapshot) => {
-        if (docSnapshot.exists()) {
-          const data = docSnapshot.data();
-          
-          // For joining players, verify they have access to this game
-          if (!isCreator && data.players && !data.players.includes(auth.currentUser?.uid)) {
-            // Wait a bit more for the player to be added
-            return;
-          }
-          
-          // Update opponent guesses
-          setOpponentGuesses(isCreator ? data.opponentGuesses || [] : data.playerGuesses || []);
-          
-          // Fetch opponent username for PvP games
-          if (gameMode === 'pvp' && data.playerIds && !opponentUsername) {
-            fetchOpponentUsername(data);
-          }
-          
-          // Check if game is ready and both players can start setting words
-          if (data.status === 'ready' && gameState === 'setWord') {
-            // Game is ready, both players can now set their words
-          }
-          
-          // Check if both words are set to start the game
-          if (data.playerWord && data.opponentWord && gameState !== 'playing' && gameState !== 'gameOver' && gameState !== 'maxGuesses') {
-            const target = isCreator ? data.opponentWord.toUpperCase() : data.playerWord.toUpperCase();
-            setOpponentWord(target);
-            setTargetWord(target);
-            setGameState('playing');
-            if (data.wordLength) navigation.setParams({ wordLength: data.wordLength });
-            setShowStartGamePopup(true);
-            playSound('startGame').catch(() => {});
-            // Start game popup will be dismissed when user clicks OK button
-            setDoc(gameRef, { status: 'active' }, { merge: true }).catch(error => {
-              console.error('GameScreen: Failed to update game status to active', error);
-            });
-          }
-          // Set opponent guess count when they solve
-          if (isCreator && data.opponentGuesses?.length > 0 && data.opponentGuesses.some(g => g.isCorrect) && opponentGuessCountOnSolve === null) {
-            setOpponentGuessCountOnSolve(data.opponentGuesses.length);
-          } else if (!isCreator && data.playerGuesses?.length > 0 && data.playerGuesses.some(g => g.isCorrect) && opponentGuessCountOnSolve === null) {
-            setOpponentGuessCountOnSolve(data.playerGuesses.length);
-          }
-        } else {
-          // Don't show invalid word popup for missing game documents in PvP mode
-          // This could mean the game is still being created by the first player
-          if (gameMode === 'pvp' && isCreator) {
-            // Creator is waiting for difficulty selection, this is normal
-          } else if (gameMode === 'pvp' && !isCreator) {
-            // Second player trying to join a game that doesn't exist yet
-            // Don't show an alert immediately - this might be a timing issue
-            // The document could be created shortly after
-          } else {
-            // Solo mode or other cases
-            setShowInvalidPopup(true);
-            setTimeout(() => setShowInvalidPopup(false), 2000);
-          }
-        }
-      }, (error) => {
-        console.error('GameScreen: Firebase snapshot error', error);
-        if (gameMode === 'pvp') {
-          // Only show connection error if it's not a permission issue
-          if (error.code === 'permission-denied') {
-            // For joining players, show a more helpful message and retry after a delay
-            if (!isCreator && retryCount < 5) { // Increased retry count
-              // Retry after a longer delay for permission issues
-              setTimeout(() => {
-                setupListener(retryCount + 1);
-              }, 5000); // Wait 5 seconds before retry (increased delay)
-            } else if (retryCount >= 5) {
-              Alert.alert('Game Access Error', 'Unable to access the game after multiple attempts. Please check with your friend to ensure the challenge was sent correctly.');
-            }
-          } else if (error.code === 'unavailable') {
-            Alert.alert('Connection Error', 'Unable to connect to the game server. Please check your internet connection and try again.');
-          } else {
-            Alert.alert('Connection Error', 'Failed to connect to the game. Please check your connection and try again.');
-          }
-        } else {
-          setShowInvalidPopup(true);
-          setTimeout(() => setShowInvalidPopup(false), 2000);
-        }
-      });
-
-      return unsubscribe;
-    };
-
-    // Add a delay to ensure the document is created/accessible before setting up the listener
-    const timer = setTimeout(() => {
-      
-      // Store the unsubscribe function for cleanup
-      let unsubscribeRef = null;
-      
-      const cleanup = () => {
-        clearTimeout(timer);
-        if (unsubscribeRef && typeof unsubscribeRef === 'function') {
-          unsubscribeRef();
-        }
-      };
-      
-      // Set up the listener and store the unsubscribe function
-      unsubscribeRef = setupListener(0);
-      
-      return cleanup;
-    }, delay);
-
-
-    return () => {
-      // Industry standard: Clean up Firebase listener and timer
-      try {
-        clearTimeout(timer);
-        if (unsubscribeRef && typeof unsubscribeRef === 'function') {
-          unsubscribeRef();
-        }
-      } catch (error) {
-        console.warn('GameScreen: Error during Firebase listener cleanup:', error);
-      }
-    };
-  }, [gameMode, gameId, isCreator, playerId, gameState, auth.currentUser?.uid]);
 
   // Preload game completion ad when game starts
   useEffect(() => {
@@ -581,88 +441,6 @@ const GameScreen = () => {
     }
   }, [gameState, gameMode]);
 
-  // Game state logic effect
-  useEffect(() => {
-    if (gameMode !== 'pvp' || !gameId || gameState !== 'playing') return;
-
-    const opponentHasCorrect = opponentGuesses.some(g => g.isCorrect);
-    const playerHasCorrect = guesses.some(g => g.isCorrect);
-
-    if (opponentHasCorrect && !playerHasCorrect && opponentGuessCountOnSolve !== null && !hasShownOpponentSolved) {
-      setShowOpponentSolvedPopup(true);
-      setHasShownOpponentSolved(true);
-      playSound('opponentSolved').catch(() => {});
-    }
-
-    if (playerHasCorrect && (opponentHasCorrect || opponentGuesses.length >= MAX_GUESSES)) {
-      setGameState('gameOver');
-      const playerGuessCount = guesses.length;
-      const opponentGuessCount = opponentGuessCountOnSolve || opponentGuesses.length;
-      
-      // Check if this is the second player to solve (opponent already solved)
-      const isSecondPlayerToSolve = opponentHasCorrect && !isFirstPlayerToSolve;
-      
-      if (isSecondPlayerToSolve) {
-        // Second player to solve - don't show results popup yet, let congrats popup handle it
-        // The results popup will be shown when congrats popup is dismissed
-      } else {
-        // First player to solve or solo mode - show results popup immediately
-        if (playerHasCorrect && opponentHasCorrect) {
-          if (playerGuessCount < opponentGuessCount) {
-            setShowWinPopup(true);
-            playSound('victory').catch(() => {});
-          } else if (playerGuessCount > opponentGuessCount) {
-            if (gameMode !== 'solo') {
-              setShowLosePopup(true);
-              playSound('lose').catch(() => {});
-            }
-          } else {
-            if (gameMode !== 'solo') {
-              setShowTiePopup(true);
-              playSound('tie').catch(() => {});
-            }
-          }
-        } else if (playerHasCorrect && !opponentHasCorrect) {
-          setShowWinPopup(true);
-          playSound('victory').catch(() => {});
-        } else if (!playerHasCorrect && opponentHasCorrect) {
-          if (gameMode !== 'solo') {
-            setShowLosePopup(true);
-            playSound('lose').catch(() => {});
-          }
-        } else {
-          // No tie state in solo mode; in PvP, both unsolved implies tie when game ends
-          if (gameMode !== 'solo') {
-            setShowTiePopup(true);
-            playSound('tie').catch(() => {});
-          }
-        }
-      }
-    } else if (guesses.length >= MAX_GUESSES && !playerHasCorrect) {
-      setGameState('maxGuesses');
-      setShowMaxGuessesPopup(true);
-      playSound('maxGuesses').catch(() => {});
-    }
-  }, [guesses, opponentGuesses, gameState, hasShownOpponentSolved, gameMode, gameId, opponentGuessCountOnSolve]);
-
-  // Fetch opponent username for PvP games
-  const fetchOpponentUsername = useCallback(async (gameData) => {
-    if (gameMode !== 'pvp' || !gameData.playerIds) return;
-    
-    try {
-      const opponentId = gameData.playerIds.find(id => id !== auth.currentUser?.uid);
-      if (!opponentId) return;
-      
-      const opponentDoc = await getDoc(doc(db, 'users', opponentId));
-      if (opponentDoc.exists()) {
-        const opponentData = opponentDoc.data();
-        setOpponentUsername(opponentData.username || opponentData.displayName || 'Opponent');
-      }
-    } catch (error) {
-      console.error('GameScreen: Failed to fetch opponent username:', error);
-      setOpponentUsername('Opponent');
-    }
-  }, [gameMode, auth.currentUser?.uid]);
 
   const saveGameState = async () => {
     if (gameState !== 'gameOver' && gameMode !== 'resume' && targetWord) {
@@ -671,8 +449,6 @@ const GameScreen = () => {
           gameMode,
           wordLength: wordLength || 5,
           gameId,
-          playerId: playerId || auth.currentUser?.uid || null,
-          isCreator: isCreator || false,
           guesses: guesses.map(guess => ({
             word: guess.word,
             dots: guaranteeCircles(guess.dots),
@@ -687,7 +463,6 @@ const GameScreen = () => {
           gameState,
           hintCount,
           usedHintLetters,
-          opponentGuessCountOnSolve,
           difficulty: difficulty || (wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular'),
           timestamp: new Date().toISOString(),
         };
@@ -732,7 +507,7 @@ const GameScreen = () => {
     // Don't save if guesses haven't been loaded yet (for resume games)
     if (guessesLoaded === false && (gameMode === 'resume' || resumeGame)) return;
     saveGameState();
-  }, [guesses, inputWord, targetWord, gameState, hintCount, gameMode, gameId, isCreator, opponentGuessCountOnSolve, usedHintLetters, alphabet, guessesLoaded, resumeGame]);
+  }, [guesses, inputWord, targetWord, gameState, hintCount, gameMode, gameId, usedHintLetters, alphabet, guessesLoaded, resumeGame]);
 
   // Auto-scroll to bottom when guesses change
   useEffect(() => {
@@ -802,62 +577,17 @@ const GameScreen = () => {
             await playSound('guess').catch(() => {});
       const upperInput = inputWord.toUpperCase();
 
-      if (gameState === 'setWord') {
-        setGameState('waiting');
-        setInputWord('');
-        if (gameMode === 'pvp' && gameId) {
-          try {
-            const updateData = isCreator
-              ? { playerWord: upperInput, playerGuesses: [], wordLength: wordLength || 5, playerGuessCountOnSolve: null }
-              : { opponentWord: upperInput, opponentGuesses: [], wordLength: wordLength || 5, opponentGuessCountOnSolve: null };
-            await setDoc(doc(db, 'games', gameId), updateData, { merge: true });
-          } catch (error) {
-            console.error('GameScreen: Failed to update Firestore with word', error);
-            setShowInvalidPopup(true);
-            setTimeout(() => setShowInvalidPopup(false), 2000);
-          }
-        }
-      } else if (gameState === 'playing') {
+      if (gameState === 'playing') {
         const { dots, circles, feedback } = getFeedback(upperInput, targetWord);
         const newGuess = { word: upperInput, dots, circles, feedback, isCorrect: dots === (wordLength || 5) };
         setGuessesWithLog(guesses => [...guesses, newGuess]);
         setInputWord('');
 
-        if (gameMode === 'pvp' && gameId) {
-          // Use the updated guesses array after setGuesses
-          const updatedGuesses = [...guesses, newGuess];
-          const updateData = isCreator
-            ? { 
-                playerGuesses: updatedGuesses, 
-                playerGuessCountOnSolve: newGuess.isCorrect ? updatedGuesses.length : null 
-              }
-            : { 
-                opponentGuesses: updatedGuesses, 
-                opponentGuessCountOnSolve: newGuess.isCorrect ? updatedGuesses.length : null 
-              };
-          await setDoc(doc(db, 'games', gameId), updateData, { merge: true });
-        }
-
         if (dots === (wordLength || 5)) {
-          setShowCongratsPopup(true);
-          await playSound('congratulations').catch(() => {});
-          
-          // For PvP games, check if this is the first player to solve
-          if (gameMode === 'pvp') {
-            // Check if opponent has already solved
-            const opponentHasSolved = opponentGuesses.some(g => g.isCorrect);
-            setIsFirstPlayerToSolve(!opponentHasSolved);
-          }
-          
-          if (gameMode === 'solo') {
-            // Solo: go straight to detailed win popup and sound
-            setGameState('gameOver');
-            setShowWinPopup(true);
-            playSound('congratulations').catch(() => {});
-          } else {
-            // For non-solo games, just show congratulations popup
-            // Popup will be dismissed when user clicks OK button
-          }
+          // Solo: go straight to detailed win popup and sound
+          setGameState('gameOver');
+          setShowWinPopup(true);
+          playSound('congratulations').catch(() => {});
           
           // Save game data for solo games
           if (gameMode === 'solo') {
@@ -957,9 +687,9 @@ const GameScreen = () => {
               );
             }
           }
-        } else if (gameMode === 'solo' && guesses.length + 1 >= MAX_GUESSES) {
-          setGameState('gameOver');
-          setShowLosePopup(true);
+        } else if (guesses.length + 1 >= MAX_GUESSES) {
+          setGameState('maxGuesses');
+          setShowMaxGuessesPopup(true);
           await playSound('lose').catch(() => {});
           
           // Ensure difficulty is set for solo games
@@ -990,10 +720,6 @@ const GameScreen = () => {
               );
             }
           }
-        } else if (gameMode === 'pvp' && guesses.length + 1 >= MAX_GUESSES) {
-          setGameState('maxGuesses');
-          setShowMaxGuessesPopup(true);
-          await playSound('maxGuesses').catch(() => {});
         }
       }
     } catch (error) {
@@ -1021,12 +747,9 @@ const GameScreen = () => {
       setGameState('gameOver');
       await saveGameState();
 
-      if (gameMode === 'pvp' && gameId) {
-        await setDoc(doc(db, 'games', gameId), { status: 'quit', quitBy: playerId }, { merge: true });
-      } else if (gameMode === 'solo') {
-        // Clean up quit solo game from saved games
-        await cleanupCompletedSoloGame();
-      }
+      // Clean up quit solo game from saved games
+      await cleanupCompletedSoloGame();
+      
       setShowWordRevealPopup(true);
       await playSound('chime').catch(() => {});
       // Word reveal popup will be dismissed when user clicks OK button
@@ -1070,44 +793,29 @@ const GameScreen = () => {
 
       const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
       await playSound('chime').catch(() => {});
-      setGameState(gameMode === 'pvp' ? 'setWord' : 'playing');
+      setGameState('playing');
       setDifficulty(diff);
       setHintCount(0);
       setUsedHintLetters([]);
       
-      if (gameMode === 'solo') {
-        setIsLoading(true);
-        try {
-          const word = await selectRandomWord(length);
-          if (!word) {
-            throw new Error('Failed to select random word');
-          }
-          const upperWord = word.toUpperCase();
-          setTargetWord(upperWord);
-          navigation.setParams({ wordLength: length, showDifficulty: false });
-        } catch (error) {
-          console.error('GameScreen: Failed to select random word', error);
-          // Fallback: use a default word to prevent game from crashing
-          const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
-          setTargetWord(fallbackWord);
-          navigation.setParams({ wordLength: length, showDifficulty: false });
-          Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
-        } finally {
-          setIsLoading(false);
+      setIsLoading(true);
+      try {
+        const word = await selectRandomWord(length);
+        if (!word) {
+          throw new Error('Failed to select random word');
         }
-      } else if (gameMode === 'pvp' && gameId) {
-        try {
-          // Update the existing game document with word length
-          await setDoc(doc(db, 'games', gameId), {
-            wordLength: length,
-            lastUpdated: new Date().toISOString(),
-          }, { merge: true });
-          navigation.setParams({ wordLength: length, showDifficulty: false, gameId });
-          // Set game state to 'setWord' to trigger Firebase subscription
-          setGameState('setWord');
-        } catch (error) {
-          console.error('GameScreen: Failed to update PvP game document', error);
-        }
+        const upperWord = word.toUpperCase();
+        setTargetWord(upperWord);
+        navigation.setParams({ wordLength: length, showDifficulty: false });
+      } catch (error) {
+        console.error('GameScreen: Failed to select random word', error);
+        // Fallback: use a default word to prevent game from crashing
+        const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
+        setTargetWord(fallbackWord);
+        navigation.setParams({ wordLength: length, showDifficulty: false });
+        Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
+      } finally {
+        setIsLoading(false);
       }
     } catch (error) {
       console.error('GameScreen: Error in handleDifficultySelect:', error);
@@ -1430,58 +1138,14 @@ const GameScreen = () => {
           </TouchableOpacity>
           <Modal visible={!!showInvalidPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.invalidGuessPopup, styles.modalShadow]}>
-                <Text style={[styles.invalidGuessTitle, { color: colors.textPrimary }]}>Invalid Guess!</Text>
-                <Text style={[styles.invalidGuessMessage, { color: colors.textSecondary }]}>
+              <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Invalid Word</Text>
+                <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
                   Please enter a valid {wordLength || 5}-letter word.
                 </Text>
                 <TouchableOpacity
-                  style={styles.invalidGuessButtonContainer}
+                  style={styles.winButtonContainer}
                   onPress={() => setShowInvalidPopup(false)}
-                >
-                  <Text style={styles.buttonText}>OK</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-          <Modal visible={!!showCongratsPopup && gameMode !== 'solo'} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-              <View style={[styles.congratsPopup, styles.modalShadow]}>
-                <Text style={[styles.congratsTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
-                <Text style={[styles.congratsMessage, { color: colors.textSecondary }]}>You solved the word!</Text>
-                <TouchableOpacity
-                  style={styles.congratsButtonContainer}
-                  onPress={async () => {
-                    setShowCongratsPopup(false);
-                    
-                    if (gameMode === 'pvp' && isFirstPlayerToSolve) {
-                      // PvP first player ad handled in PvPGameScreen congratulations popup
-                      navigation.navigate('MainTabs');
-                    } else if (gameMode === 'pvp' && !isFirstPlayerToSolve) {
-                      // Second player to solve - show results popup after congrats
-                      const playerGuessCount = guesses.length;
-                      const opponentGuessCount = opponentGuessCountOnSolve || opponentGuesses.length;
-                      const opponentHasCorrect = opponentGuesses.some(g => g.isCorrect);
-                      
-                      if (opponentHasCorrect) {
-                        if (playerGuessCount < opponentGuessCount) {
-                          setShowWinPopup(true);
-                          playSound('victory').catch(() => {});
-                        } else if (playerGuessCount > opponentGuessCount) {
-                          setShowLosePopup(true);
-                          playSound('lose').catch(() => {});
-                        } else {
-                          setShowTiePopup(true);
-                          playSound('tie').catch(() => {});
-                        }
-                      } else {
-                        // Opponent didn't solve, player wins
-                        setShowWinPopup(true);
-                        playSound('victory').catch(() => {});
-                      }
-                    }
-                    playSound('chime').catch(() => {});
-                  }}
                 >
                   <Text style={styles.buttonText}>OK</Text>
                 </TouchableOpacity>
@@ -1490,14 +1154,10 @@ const GameScreen = () => {
           </Modal>
           <Modal visible={!!showWinPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.winPopup, styles.modalShadow]}>
-                <Text style={[styles.winTitle, { color: colors.textPrimary }]}>
-                  {gameMode === 'solo' ? 'Congratulations!' : 'Victory!'}
-                </Text>
+              <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
                 <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
-                  {gameMode === 'solo'
-                    ? `You solved the word in ${guesses.length} guesses!`
-                    : `You won! You solved ${opponentUsername || 'your opponent'}'s word in ${guesses.length} guesses, while they solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses!`}
+                  You solved the word in ${guesses.length} guesses!
                 </Text>
                 {/* 
                   Solo Congratulations Popup (Results) - Shows after solving word in solo mode
@@ -1557,84 +1217,9 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          {gameMode !== 'solo' && (
-          <Modal visible={!!showLosePopup} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-              <View style={[styles.losePopup, styles.modalShadow]}>
-                <Text style={[styles.loseTitle, { color: colors.textPrimary }]}>You Lost!</Text>
-                <Text style={[styles.loseMessage, { color: colors.textSecondary }]}>
-                  {gameMode === 'solo'
-                    ? `The word was: ${targetWord}`
-                    : `You lost! ${opponentUsername || 'Your opponent'} solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses, while you solved their word in ${guesses.length} guesses.`}
-                </Text>
-                <TouchableOpacity
-                  style={styles.loseButtonContainer}
-                  onPress={() => {
-                    setShowLosePopup(false);
-                    // Show ad only for solo mode - PvP ad already played after congratulations
-                    if (gameMode === 'solo') {
-                      showGameCompletionAd().catch(() => {});
-                    }
-                    navigation.navigate('MainTabs');
-                    playSound('chime').catch(() => {});
-                  }}
-                >
-                  <Text style={styles.buttonText}>Main Menu</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-          )}
-          {gameMode !== 'solo' && (
-          <Modal visible={!!showTiePopup} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-              <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
-                <Text style={[styles.opponentGuessesTitle, { color: colors.textPrimary }]}>It's a Tie!</Text>
-                <Text style={[styles.opponentGuessesMessage, { color: colors.textSecondary }]}>
-                  {gameMode === 'solo'
-                    ? `You used ${guesses.length} guesses!`
-                    : `It's a tie! Both you and ${opponentUsername || 'your opponent'} solved each other's words in ${guesses.length} guesses!`}
-                </Text>
-                <TouchableOpacity
-                  style={styles.opponentGuessesButtonContainer}
-                  onPress={() => {
-                    setShowTiePopup(false);
-                    // Show ad only for solo mode - PvP ad already played after congratulations
-                    if (gameMode === 'solo') {
-                      showGameCompletionAd().catch(() => {});
-                    }
-                    navigation.navigate('MainTabs');
-                    playSound('chime').catch(() => {});
-                  }}
-                >
-                  <Text style={styles.buttonText}>Main Menu</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-          )}
-          <Modal visible={!!showStartGamePopup} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-              <View style={[styles.opponentGuessesPopup, styles.modalShadow]}>
-                <Text style={[styles.opponentGuessesTitle, { color: colors.textPrimary }]}>Let The Games Begin!</Text>
-                <Text style={[styles.opponentGuessesMessage, { color: colors.textSecondary }]}>
-                  Both players have set their words. Start guessing!
-                </Text>
-                <TouchableOpacity
-                  style={styles.opponentGuessesButtonContainer}
-                  onPress={() => {
-                    setShowStartGamePopup(false);
-                    playSound('chime').catch(() => {});
-                  }}
-                >
-                  <Text style={styles.buttonText}>OK</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
           <Modal visible={!!showMenuPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.menuPopup, styles.modalShadow]}>
+              <View style={[styles.menuPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.menuTitle, { color: colors.textPrimary }]}>Menu</Text>
                 <TouchableOpacity
                   style={styles.menuButtonContainer}
@@ -1659,7 +1244,7 @@ const GameScreen = () => {
           </Modal>
           <Modal visible={!!showQuitConfirmPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.quitConfirmPopup, styles.modalShadow]}>
+              <View style={[styles.quitConfirmPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.quitConfirmTitle, { color: colors.textPrimary }]}>Quit Game?</Text>
                 <Text style={[styles.quitConfirmMessage, { color: colors.textSecondary }]}>
                   Are you sure you want to quit?
@@ -1684,7 +1269,7 @@ const GameScreen = () => {
           </Modal>
           <Modal visible={!!showWordRevealPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.wordRevealPopup, styles.modalShadow]}>
+              <View style={[styles.wordRevealPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.wordRevealTitle, { color: colors.textPrimary }]}>Game Over</Text>
                 <Text style={[styles.wordRevealMessage, { color: colors.textSecondary }]}>
                   The word was: {targetWord || 'Unknown'}
@@ -1709,7 +1294,7 @@ const GameScreen = () => {
           </Modal>
           <Modal visible={!!showHintPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.hintPopup, styles.modalShadow]}>
+              <View style={[styles.hintPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>Hint</Text>
                 <Text style={[styles.hintMessage, { color: colors.textSecondary }]}>
                   The word contains the letter: {hintLetter}
@@ -1728,7 +1313,7 @@ const GameScreen = () => {
           </Modal>
           <Modal visible={!!showHintLimitPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.hintPopup, styles.modalShadow]}>
+              <View style={[styles.hintPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>No Hints Left!</Text>
                 <Text style={[styles.hintMessage, { color: colors.textSecondary }]}>
                   You have used all 3 hints for this game.
@@ -1745,99 +1330,60 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showOpponentSolvedPopup} transparent animationType="fade">
+          <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.opponentSolvedPopup, styles.modalShadow]}>
-                <Text style={[styles.opponentSolvedTitle, { color: colors.textPrimary }]}>Opponent Solved!</Text>
-                <Text style={[styles.opponentSolvedMessage, { color: colors.textSecondary }]}>
-                  {opponentGuessCountOnSolve && guesses.length < opponentGuessCountOnSolve
-                    ? `Your opponent solved your word in ${opponentGuessCountOnSolve} guesses! You have ${opponentGuessCountOnSolve - guesses.length} guesses left to tie or win.`
-                    : `Your opponent solved your word in ${opponentGuessCountOnSolve || opponentGuesses.length} guesses. You've used too many guesses to win.`}
+              <View style={[styles.maxGuessesPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
+                <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}>
+                  You've reached the maximum of ${MAX_GUESSES} guesses.
                 </Text>
                 <TouchableOpacity
-                  style={styles.opponentGuessesButtonContainer}
-                  onPress={() => {
-                    setShowOpponentSolvedPopup(false);
+                  style={styles.maxGuessesButtonContainer}
+                  onPress={async () => {
+                    setShowMaxGuessesPopup(false);
+                    await saveGameState();
+                    
+                    // Industry standard: Show ad as overlay (fire-and-forget)
+                    showGameCompletionAd().catch(() => {});
+                    
+                    // Reset game state and select new word
+                    setGuessesWithLog([]);
+                    setInputWord('');
+                    setAlphabet(Array(26).fill('unknown'));
+                    setHintCount(0);
+                    setUsedHintLetters([]);
+                    setGameState('playing');
+                    setIsLoading(true);
+                    
+                    try {
+                      const word = await selectRandomWord(wordLength || 5);
+                      const upperWord = word.toUpperCase();
+                      setTargetWord(upperWord);
+                    } catch (error) {
+                      console.error('GameScreen: Failed to select random word after max guesses', error);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.buttonText}>Play Again</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.maxGuessesButtonContainer}
+                  onPress={async () => {
+                    setShowMaxGuessesPopup(false);
+                    await saveGameState();
+                    
+                    // Industry standard: Show ad as overlay (fire-and-forget)
+                    showGameCompletionAd().catch(() => {});
+                    
+                    // Navigate immediately - ad will show on top
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >
-                  <Text style={styles.buttonText}>OK</Text>
+                  <Text style={styles.buttonText}>Main Menu</Text>
                 </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-          <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-              <View style={[styles.maxGuessesPopup, styles.modalShadow]}>
-                <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
-                <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}> 
-                  {gameMode === 'solo'
-                    ? `You've reached the maximum of ${MAX_GUESSES} guesses.`
-                    : `You've reached the maximum of ${MAX_GUESSES} guesses. Waiting for ${opponentUsername} to finish.`}
-                </Text>
-                {gameMode === 'solo' ? (
-                  <>
-                    <TouchableOpacity
-                      style={styles.maxGuessesButtonContainer}
-                      onPress={async () => {
-                        setShowMaxGuessesPopup(false);
-                        await saveGameState();
-                        
-                        // Industry standard: Show ad as overlay (fire-and-forget)
-                        showGameCompletionAd().catch(() => {});
-                        
-                        // Reset game state and select new word
-                        setGuessesWithLog([]);
-                        setInputWord('');
-                        setAlphabet(Array(26).fill('unknown'));
-                        setHintCount(0);
-                        setUsedHintLetters([]);
-                        setGameState('playing');
-                        setIsLoading(true);
-                        
-                        try {
-                          const word = await selectRandomWord(wordLength || 5);
-                          const upperWord = word.toUpperCase();
-                          setTargetWord(upperWord);
-                        } catch (error) {
-                          console.error('GameScreen: Failed to select random word after max guesses', error);
-                        } finally {
-                          setIsLoading(false);
-                        }
-                      }}
-                    >
-                      <Text style={styles.buttonText}>Play Again</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.maxGuessesButtonContainer}
-                      onPress={async () => {
-                        setShowMaxGuessesPopup(false);
-                        await saveGameState();
-                        
-                        // Industry standard: Show ad as overlay (fire-and-forget)
-                        showGameCompletionAd().catch(() => {});
-                        
-                        // Navigate immediately - ad will show on top
-                        navigation.navigate('MainTabs');
-                        playSound('chime').catch(() => {});
-                      }}
-                    >
-                      <Text style={styles.buttonText}>Main Menu</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.maxGuessesButtonContainer}
-                    onPress={async () => {
-                      setShowMaxGuessesPopup(false);
-                      await saveGameState();
-                      navigation.navigate('MainTabs');
-                      playSound('chime').catch(() => {});
-                    }}
-                  >
-                    <Text style={styles.buttonText}>Return to Home</Text>
-                  </TouchableOpacity>
-                )}
               </View>
             </View>
           </Modal>

@@ -290,8 +290,8 @@ const SetWordGameScreen = () => {
           const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
           await getNotificationService().sendPushNotification(
             challenge.from,
-            'Game Started',
-            `Your challenge with ${challenge.toUsername || 'Player 2'} has started!`,
+            'WhatWord',
+            'Let the battle begin!',
             {
               type: 'game_started',
               gameId: gameRef.id,

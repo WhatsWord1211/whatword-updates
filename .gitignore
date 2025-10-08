@@ -37,5 +37,6 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# Firebase service account
-whatword-a3f4b-f454de64b671.json
+# Firebase service account keys (sensitive - never commit!)
+whatword-a3f4b-*.json
+*-firebase-adminsdk-*.json

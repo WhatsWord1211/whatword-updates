@@ -1035,11 +1035,11 @@ const HomeScreen = () => {
 
       <Modal visible={showInvalidPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.invalidGuessPopup, styles.modalShadow]}>
-            <Text style={styles.header}>Error</Text>
-            <Text style={styles.invalidGuessMessage}>An error occurred. Please try again.</Text>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Error</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>An error occurred. Please try again.</Text>
             <TouchableOpacity
-              style={styles.invalidGuessButtonContainer}
+              style={styles.winButtonContainer}
               onPress={() => setShowInvalidPopup(false)}
             >
               <Text style={styles.buttonText}>OK</Text>

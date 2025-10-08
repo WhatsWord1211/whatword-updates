@@ -35,6 +35,16 @@ import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
 import { getNotificationService } from './src/notificationService';
 
+// Configure notification handler at TOP LEVEL for background notifications
+// This MUST be set before the app renders for background notifications to work
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 

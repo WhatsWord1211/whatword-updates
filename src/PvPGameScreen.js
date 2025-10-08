@@ -15,6 +15,7 @@ import gameService from './gameService';
 import playerProfileService from './playerProfileService';
 import ThreeDPurpleRing from './ThreeDPurpleRing';
 import ThreeDGreenDot from './ThreeDGreenDot';
+import { getNotificationService } from './notificationService';
 
 /**
  * PvP Game State System:
@@ -74,6 +75,7 @@ const PvPGameScreen = () => {
   const [pendingResultData, setPendingResultData] = useState(null);
   const [resultSoundPlayed, setResultSoundPlayed] = useState(false);
   const [opponentGuessCountOnSolve, setOpponentGuessCountOnSolve] = useState(null);
+  const [showStartGamePopup, setShowStartGamePopup] = useState(false);
   const showGameOverPopupRef = useRef(false);
   const resultSoundPlayedRef = useRef(false);
   const handledCompletionRef = useRef(false);
@@ -81,6 +83,7 @@ const PvPGameScreen = () => {
   const hasRestoredStateRef = useRef(false);
   const scrollTimeoutRef = useRef(null);
   const resultsShownForSessionRef = useRef(false);
+  const hasShownStartGamePopupRef = useRef(false);
   
   const scrollViewRef = useRef(null);
   
@@ -274,6 +277,7 @@ const PvPGameScreen = () => {
         setShowMenuPopup(false);
         setShowMaxGuessesPopup(false);
         setShowQuitConfirmPopup(false);
+        setShowStartGamePopup(false);
       };
     }, [])
   );
@@ -319,6 +323,7 @@ const PvPGameScreen = () => {
     setResultSoundPlayed(false);
     hasRestoredStateRef.current = false; // Reset restore flag for new game
     resultsShownForSessionRef.current = false; // Reset results shown flag for new game
+    hasShownStartGamePopupRef.current = false; // Reset start game popup flag for new game
   }, [gameId]);
 
   // Helper functions to get player data
@@ -405,35 +410,6 @@ const PvPGameScreen = () => {
                           : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
                           : null
       });
-
-      // Send "Game Completed" notification to the first player to solve (they need to know the results)
-      // Only send to the first finisher since the second finisher already knows the game is over
-      const firstFinisherId = (gameData.player1?.solved && !gameData.player2?.solved) ? gameData.player1?.uid
-                             : (!gameData.player1?.solved && gameData.player2?.solved) ? gameData.player2?.uid
-                             : (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) < new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
-                             : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
-                             : null;
-
-      if (firstFinisherId) {
-        try {
-          const opponentPlayerData = getOpponentPlayerData(gameData);
-          const opponentName = opponentPlayerData?.username || opponentPlayerData?.displayName || 'your opponent';
-          
-          await getNotificationService().sendPushNotification(
-            firstFinisherId,
-            'Battle Over',
-            `${opponentName} solved your word, view results`,
-            {
-              type: 'game_completed',
-              gameId,
-              opponentName,
-              timestamp: new Date().toISOString()
-            }
-          );
-        } catch (notificationError) {
-          console.error('PvPGameScreen: Failed to send game completed notification:', notificationError);
-        }
-      }
       
       // Update stats only for the current user (avoid permission issues updating other user's profile)
       await updateUserStats(currentUserId, winnerId === currentUserId);
@@ -497,18 +473,48 @@ const PvPGameScreen = () => {
           // Only notify the first finisher to avoid ghost badge for the second finisher
           const firstFinisher = fresh.firstFinisherId || null;
           if (tie && player1Uid && player2Uid) {
-            await Promise.all([
-              notificationService.sendGameCompletionNotification(player1Uid, gameId, messageFor(player1Uid)),
-              notificationService.sendGameCompletionNotification(player2Uid, gameId, messageFor(player2Uid))
-            ]);
-            // Push notifications removed to prevent freezing
+            // Send notifications ONLY to the first finisher (who is waiting at home)
+            // Second finisher is actively in the app viewing results - they don't need any notification
+            const secondFinisherId = fresh.secondFinisherId || null;
+            if (firstFinisher && secondFinisherId && firstFinisher !== secondFinisherId) {
+              // Send in-app Firestore notification (for badge count)
+              await notificationService.sendGameCompletionNotification(firstFinisher, gameId, messageFor(firstFinisher));
+              
+              // Send push notification - no results shared
+              const opponentUsername = firstFinisher === player1Uid 
+                ? gameData.player2?.username || 'your opponent'
+                : gameData.player1?.username || 'your opponent';
+              
+              await notificationService.sendPushNotification(
+                firstFinisher, 
+                'WhatWord', 
+                `The Battle with ${opponentUsername} is over. View Results`, 
+                {
+                  type: 'game_completed',
+                  gameId,
+                  timestamp: new Date().toISOString()
+                }
+              ).catch(err => console.error('Failed to send push notification to first finisher:', err));
+            }
           } else if (firstFinisher && (firstFinisher === player1Uid || firstFinisher === player2Uid)) {
+            // Send in-app Firestore notification to first finisher
             await notificationService.sendGameCompletionNotification(firstFinisher, gameId, messageFor(firstFinisher));
-            // Send push notification to first finisher when game is complete
+            
+            // Send push notification to first finisher - no results shared
             const opponentUid = firstFinisher === player1Uid ? player2Uid : player1Uid;
             const opponentUsername = firstFinisher === player1Uid ? gameData.player2?.username : gameData.player1?.username;
-            const firstFinisherWon = winnerId === firstFinisher;
-            // Push notification removed to prevent freezing
+            
+            // Send push notification to first finisher
+            await notificationService.sendPushNotification(
+              firstFinisher,
+              'WhatWord',
+              `The Battle with ${opponentUsername || 'your opponent'} is over. View Results`,
+              {
+                type: 'game_completed',
+                gameId,
+                timestamp: new Date().toISOString()
+              }
+            ).catch(err => console.error('Failed to send push notification to first finisher:', err));
           }
           // Mark notifications sent
           await updateDoc(gameRef, { notificationsSent: true });
@@ -623,32 +629,22 @@ const PvPGameScreen = () => {
         const gameData = { id: docSnap.id, ...docSnap.data() };
         console.log('PvPGameScreen: Game data loaded:', gameData);
         
-        // If this is a "View Results" scenario, show the game over popup
-        // Only show for first solver (second solver already saw results immediately after congratulations)
-        console.log('PvPGameScreen: Checking View Results logic - showResults:', showResults, 'status:', gameData.status, 'winnerId:', gameData.winnerId, 'tie:', gameData.tie);
-        if (showResults && gameData.status === 'completed' && (gameData.winnerId !== undefined || gameData.tie) && !showGameOverPopupRef.current && !resultsShownForSessionRef.current) {
-          // Check if current user was the first solver (not the second solver)
-          // This is independent of Player 1/2 roles - it's about who solved their opponent's word first
-          const isCurrentUserPlayer1 = gameData.player1?.uid === currentUser.uid;
-          const currentUserWasFirstSolver = isCurrentUserPlayer1 ? 
-            (gameData.firstFinisherId === gameData.player1?.uid) : 
-            (gameData.firstFinisherId === gameData.player2?.uid);
+        // If this is a "View Results" scenario from ResumeGamesScreen, show the game over popup
+        // Only trigger this if showResults is explicitly true AND we're not showing congratulations popup
+        console.log('PvPGameScreen: Checking View Results logic - showResults:', showResults, 'status:', gameData.status, 'winnerId:', gameData.winnerId, 'tie:', gameData.tie, 'showCongratulations:', showCongratulationsPopup);
+        if (showResults === true && gameData.status === 'completed' && (gameData.winnerId !== undefined || gameData.tie) && !showGameOverPopupRef.current && !resultsShownForSessionRef.current && !showCongratulationsPopupRef.current) {
+          const resultPayload = {
+            winnerId: gameData.winnerId,
+            tie: gameData.tie,
+            currentUserId: currentUser.uid
+          };
+          console.log('PvPGameScreen: Showing results popup from ResumeGamesScreen');
+          setGameOverData(resultPayload);
+          setShowGameOverPopup(true);
+          resultsShownForSessionRef.current = true; // Mark that we've shown results for this session
           
-          console.log('PvPGameScreen: Solver check - currentUser:', currentUser?.uid, 'isCurrentUserPlayer1:', isCurrentUserPlayer1, 'firstFinisherId:', gameData.firstFinisherId, 'currentUserWasFirstSolver:', currentUserWasFirstSolver);
-          
-          // Only show results popup for first solver (second solver already saw it immediately)
-          if (currentUserWasFirstSolver) {
-            const resultPayload = {
-              winnerId: gameData.winnerId,
-              tie: gameData.tie,
-              currentUserId: currentUser.uid
-            };
-            console.log('PvPGameScreen: Showing results popup for first solver');
-            setGameOverData(resultPayload);
-            setShowGameOverPopup(true);
-            resultsShownForSessionRef.current = true; // Mark that we've shown results for this session
-            
-            // Play appropriate sound
+          // Play appropriate sound for results when viewing from ResumeGamesScreen
+          if (!resultSoundPlayedRef.current) {
             if (gameData.tie) {
               playSound('tie').catch(() => {});
             } else if (gameData.winnerId === currentUser.uid) {
@@ -656,10 +652,8 @@ const PvPGameScreen = () => {
             } else {
               playSound('lose').catch(() => {});
             }
-          } else {
-            console.log('PvPGameScreen: Second solver already saw results, navigating back to where we came from');
-            // Second solver already saw results immediately after congratulations, just navigate back to where we came from
-            navigation.goBack();
+            setResultSoundPlayed(true);
+            resultSoundPlayedRef.current = true;
           }
         }
         // Ensure UI leaves loading state immediately regardless of status
@@ -701,7 +695,17 @@ const PvPGameScreen = () => {
           console.log('PvPGameScreen: Game data has valid structure, setting game');
           setGame(gameData);
           
-          
+          // Show "Let the Battle Begin!" popup when game becomes active (both words are set)
+          // Only show once per player per game session
+          if (gameData.status === 'active' && !hasShownStartGamePopupRef.current && !showResults) {
+            const hasWords = (gameData.player1?.word && gameData.player2?.word) || (gameData.playerWord && gameData.opponentWord);
+            if (hasWords) {
+              console.log('PvPGameScreen: Game is active with both words set, showing start game popup');
+              setShowStartGamePopup(true);
+              playSound('startGame').catch(() => {});
+              hasShownStartGamePopupRef.current = true;
+            }
+          }
           
           // Check if game should be automatically completed (both players finished but status still 'active')
           if (gameData.status === 'active') {
@@ -1116,35 +1120,32 @@ const PvPGameScreen = () => {
                // Auto-scroll to show the latest guess when player solves the word
                scrollToBottom(100, true);
                
-                              // Mark current player as solved
-               const currentPlayerData = getMyPlayerData();
-               await updateDoc(gameRef, {
-                 [`${currentPlayerData.field}.solved`]: true,
-                 [`${currentPlayerData.field}.attempts`]: guesses.length + 1,
-                 [`${currentPlayerData.field}.solveTime`]: new Date().toISOString()
-               });
-               
-               // Update game status to waiting_for_opponent if opponent hasn't solved yet
-               const currentOpponentData = getOpponentPlayerData(game);
-               if (currentOpponentData && !currentOpponentData.solved) {
-                 await updateDoc(gameRef, {
-                   status: 'waiting_for_opponent',
-                   waitingForPlayer: currentOpponentData.uid,
-                   lastUpdated: new Date().toISOString()
-                 });
-               }
-               
-               // Get fresh game data to check opponent status
-               const freshGameDoc = await getDoc(gameRef);
-               const freshGameData = freshGameDoc.data();
-               
-               // Check if both players have finished (both solved or both reached max attempts)
-               const opponentPlayerData = getOpponentPlayerData(freshGameData);
-               
-               if (opponentPlayerData?.solved || opponentPlayerData?.attempts >= getMaxGuesses()) {
-                 // Game is over - determine final result
-                 await determineGameResult(freshGameData, currentUser.uid);
-               }
+                             // Mark current player as solved
+              const currentPlayerData = getMyPlayerData();
+              await updateDoc(gameRef, {
+                [`${currentPlayerData.field}.solved`]: true,
+                [`${currentPlayerData.field}.attempts`]: guesses.length + 1,
+                [`${currentPlayerData.field}.solveTime`]: new Date().toISOString()
+              });
+              
+              // Get fresh game data to check opponent status BEFORE deciding on status update
+              const freshGameDoc = await getDoc(gameRef);
+              const freshGameData = freshGameDoc.data();
+              
+              // Check if both players have finished (both solved or both reached max attempts)
+              const opponentPlayerData = getOpponentPlayerData(freshGameData);
+              
+              if (opponentPlayerData?.solved || opponentPlayerData?.attempts >= getMaxGuesses()) {
+                // Game is over - determine final result
+                await determineGameResult(freshGameData, currentUser.uid);
+              } else {
+                // Opponent hasn't finished yet - update game status to waiting_for_opponent
+                await updateDoc(gameRef, {
+                  status: 'waiting_for_opponent',
+                  waitingForPlayer: opponentPlayerData.uid,
+                  lastUpdated: new Date().toISOString()
+                });
+              }
                // If game not over, player waits for opponent to finish
                // If game not over, player waits for opponent to finish
              } else if (guesses.length + 1 >= getMaxGuesses()) {
@@ -1464,8 +1465,8 @@ const PvPGameScreen = () => {
       {/* Menu Popup Modal */}
       <Modal visible={showMenuPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, styles.modalShadow]}>
-            <Text style={styles.header}>Game Menu</Text>
+          <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.header, { color: colors.textPrimary }]}>Game Menu</Text>
             
             <TouchableOpacity
               style={styles.button}
@@ -1500,16 +1501,34 @@ const PvPGameScreen = () => {
       {/* Invalid Word Popup */}
       <Modal visible={showInvalidPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.invalidGuessPopup, styles.modalShadow]}>
-            <Text style={styles.invalidGuessTitle}>Invalid Guess!</Text>
-            <Text style={styles.invalidGuessMessage}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Invalid Word</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
               Please enter a valid {game.wordLength}-letter word.
             </Text>
             <TouchableOpacity
-              style={styles.invalidGuessButtonContainer}
+              style={styles.winButtonContainer}
               onPress={() => setShowInvalidPopup(false)}
             >
               <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Start Game Popup - "Let the Battle Begin!" */}
+      <Modal visible={showStartGamePopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Let the Battle Begin!</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
+              Both players have set their words. Time to see who can solve first!
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => setShowStartGamePopup(false)}
+            >
+              <Text style={styles.buttonText}>Let's Go!</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1540,11 +1559,49 @@ const PvPGameScreen = () => {
                   // Second solver - blocking ad before results popup
                   await adService.showInterstitialAd();
                   
+                  // CRITICAL: Real ads completely hijack audio session
+                  // Need aggressive recovery with proper delays
+                  console.log('PvPGameScreen: Ad completed, recovering audio...');
+                  
+                  // 1. Wait for ad framework to fully release audio (500ms is industry standard)
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  
+                  // 2. Reconfigure audio session
+                  const { reconfigureAudio } = require('./soundsUtil');
+                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                  
+                  // 3. Additional delay to ensure audio session is ready (iOS needs this)
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                  
                   // Process results after ad completes
                   const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
                     ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
                     : null);
                   if (resolvedResult) {
+                    // Determine which sound to play
+                    let soundKey = 'lose';
+                    if (resolvedResult.tie) {
+                      soundKey = 'tie';
+                    } else if (resolvedResult.winnerId === currentUser?.uid) {
+                      soundKey = 'victory';
+                    }
+                    
+                    // Play result sound FIRST, before showing popup
+                    // Force reload sound to ensure it works after ad
+                    if (!resultSoundPlayedRef.current) {
+                      console.log(`PvPGameScreen: Playing result sound: ${soundKey}`);
+                      try {
+                        // Use playSound with retry logic built-in
+                        await playSound(soundKey);
+                        console.log(`PvPGameScreen: Result sound played successfully: ${soundKey}`);
+                      } catch (soundError) {
+                        console.error('PvPGameScreen: Failed to play result sound:', soundError);
+                      }
+                      setResultSoundPlayed(true);
+                      resultSoundPlayedRef.current = true;
+                    }
+                    
+                    // THEN show results popup after sound starts
                     if (!showGameOverPopupRef.current) {
                       setGameOverData(resolvedResult);
                       setShowGameOverPopup(true);
@@ -1557,17 +1614,6 @@ const PvPGameScreen = () => {
                         }).catch(err => console.error('Failed to mark results seen for second solver:', err));
                       }
                     }
-                    if (!resultSoundPlayedRef.current) {
-                      if (resolvedResult.tie) {
-                        playSound('tie').catch(() => {});
-                      } else if (resolvedResult.winnerId === currentUser?.uid) {
-                        playSound('victory').catch(() => {});
-                      } else {
-                        playSound('lose').catch(() => {});
-                      }
-                      setResultSoundPlayed(true);
-                      resultSoundPlayedRef.current = true;
-                    }
                     setPendingResultData(null);
                   } else {
                     playSound('chime').catch(() => {});
@@ -1575,6 +1621,14 @@ const PvPGameScreen = () => {
                 } else {
                   // First solver - blocking ad before navigating to home
                   await adService.showInterstitialAd();
+                  
+                  // CRITICAL: Real ads hijack audio - need recovery delay
+                  console.log('PvPGameScreen: Ad completed (first solver), recovering audio...');
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  const { reconfigureAudio } = require('./soundsUtil');
+                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                  
                   playSound('chime').catch(() => {});
                   navigation.navigate('MainTabs');
                 }
