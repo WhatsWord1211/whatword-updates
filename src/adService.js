@@ -258,22 +258,39 @@ class AdService {
       
       console.log('AdService: Attempting to show interstitial ad');
       
-      // Try to show the ad with timeout to prevent hanging
-      try {
-        const showAdPromise = this.interstitialAd.show();
-        const timeoutPromise = new Promise((resolve) => 
-          setTimeout(() => {
-            console.log('AdService: Ad show timeout (15s), continuing without ad');
-            resolve();
-          }, 15000) // Increased to 15 seconds
-        );
-        
-        await Promise.race([showAdPromise, timeoutPromise]);
-        console.log('AdService: Successfully showed interstitial ad');
-        return true;
-      } catch (showError) {
-        console.error('AdService: Failed to show interstitial ad:', showError);
-        return true; // Return true so game flow continues
+      // Platform-specific ad handling:
+      // iOS: Fire-and-forget (non-blocking) - ads work better without blocking
+      // Android: Blocking (wait for ad) - works perfectly with blocking
+      if (Platform.OS === 'ios') {
+        console.log('AdService: iOS - Showing ad with fire-and-forget (non-blocking)');
+        try {
+          // Fire-and-forget: Don't await, just trigger the ad
+          this.interstitialAd.show();
+          console.log('AdService: iOS - Ad show triggered, continuing immediately');
+          return true;
+        } catch (showError) {
+          console.error('AdService: iOS - Failed to trigger ad:', showError);
+          return true;
+        }
+      } else {
+        // Android: Blocking ad with timeout
+        console.log('AdService: Android - Showing ad with blocking (wait for completion)');
+        try {
+          const showAdPromise = this.interstitialAd.show();
+          const timeoutPromise = new Promise((resolve) => 
+            setTimeout(() => {
+              console.log('AdService: Android - Ad show timeout (15s), continuing');
+              resolve();
+            }, 15000)
+          );
+          
+          await Promise.race([showAdPromise, timeoutPromise]);
+          console.log('AdService: Android - Successfully showed interstitial ad');
+          return true;
+        } catch (showError) {
+          console.error('AdService: Android - Failed to show interstitial ad:', showError);
+          return true;
+        }
       }
       
     } catch (error) {
@@ -338,22 +355,39 @@ class AdService {
       
       console.log('AdService: Attempting to show interstitial ad for hint');
       
-      // Try to show the ad with timeout to prevent hanging
-      try {
-        const showAdPromise = this.interstitialAd.show();
-        const timeoutPromise = new Promise((resolve) => 
-          setTimeout(() => {
-            console.log('AdService: Hint ad show timeout (15s), continuing without ad');
-            resolve();
-          }, 15000) // Increased to 15 seconds
-        );
-        
-        await Promise.race([showAdPromise, timeoutPromise]);
-        console.log('AdService: Successfully showed interstitial ad for hint');
-        return true; // Ad shown successfully
-      } catch (showError) {
-        console.error('AdService: Failed to show interstitial ad for hint:', showError);
-        return true; // Allow hint even if ad fails
+      // Platform-specific ad handling for hints:
+      // iOS: Fire-and-forget (non-blocking)
+      // Android: Blocking (wait for ad)
+      if (Platform.OS === 'ios') {
+        console.log('AdService: iOS Hint - Showing ad with fire-and-forget (non-blocking)');
+        try {
+          // Fire-and-forget: Don't await, just trigger the ad
+          this.interstitialAd.show();
+          console.log('AdService: iOS Hint - Ad show triggered, continuing immediately');
+          return true;
+        } catch (showError) {
+          console.error('AdService: iOS Hint - Failed to trigger ad:', showError);
+          return true;
+        }
+      } else {
+        // Android: Blocking ad with timeout
+        console.log('AdService: Android Hint - Showing ad with blocking (wait for completion)');
+        try {
+          const showAdPromise = this.interstitialAd.show();
+          const timeoutPromise = new Promise((resolve) => 
+            setTimeout(() => {
+              console.log('AdService: Android Hint - Ad show timeout (15s), continuing');
+              resolve();
+            }, 15000)
+          );
+          
+          await Promise.race([showAdPromise, timeoutPromise]);
+          console.log('AdService: Android Hint - Successfully showed interstitial ad');
+          return true;
+        } catch (showError) {
+          console.error('AdService: Android Hint - Failed to show interstitial ad:', showError);
+          return true;
+        }
       }
       
     } catch (error) {
