@@ -197,24 +197,30 @@ const GameScreen = () => {
       console.log('GameScreen: showGameCompletionAd called for gameMode:', gameMode);
       console.log('GameScreen: Platform:', Platform?.OS);
       
-      // Let adService handle its own timeouts - Grok's suggestion
+      // Show ad (fire-and-forget on iOS, blocking on Android)
       await adService.showInterstitialAd();
       
-      // CRITICAL: Real ads completely hijack audio session
-      // Need aggressive recovery with proper delays (both iOS and Android)
-      console.log('GameScreen: Ad completed, recovering audio...');
+      // Platform-specific delays:
+      // iOS: Fire-and-forget ad needs time to display before results popup
+      // Android: Blocking ad already completed, just need audio recovery
+      if (Platform.OS === 'ios') {
+        console.log('GameScreen: iOS - Delaying results to let ad display...');
+        // Give ad 3 seconds to display before showing results
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } else {
+        console.log('GameScreen: Android - Ad completed, recovering audio...');
+        // 1. Wait for ad framework to fully release audio
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 2. Reconfigure audio session
+        const { reconfigureAudio } = require('./soundsUtil');
+        await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+        
+        // 3. Additional delay to ensure audio session is ready
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
       
-      // 1. Wait for ad framework to fully release audio (500ms is industry standard)
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // 2. Reconfigure audio session
-      const { reconfigureAudio } = require('./soundsUtil');
-      await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-      
-      // 3. Additional delay to ensure audio session is ready (iOS needs this)
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      console.log('GameScreen: showGameCompletionAd completed with audio recovery');
+      console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
       // Don't throw - continue game flow even if ad fails
@@ -232,19 +238,25 @@ const GameScreen = () => {
       // Show interstitial ad for hint
       await adService.showInterstitialAdForHint();
 
-      // CRITICAL: Real ads completely hijack audio session
-      // Need aggressive recovery with proper delays (both iOS and Android)
-      console.log('GameScreen: Hint ad completed, recovering audio...');
-      
-      // 1. Wait for ad framework to fully release audio (500ms is industry standard)
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // 2. Reconfigure audio session
-      const { reconfigureAudio } = require('./soundsUtil');
-      await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-      
-      // 3. Additional delay to ensure audio session is ready (iOS needs this)
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Platform-specific delays:
+      // iOS: Fire-and-forget ad needs time to display before revealing hint
+      // Android: Blocking ad already completed, just need audio recovery
+      if (Platform.OS === 'ios') {
+        console.log('GameScreen: iOS - Delaying hint reveal to let ad display...');
+        // Give ad 3 seconds to display before revealing hint
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } else {
+        console.log('GameScreen: Android - Ad completed, recovering audio...');
+        // 1. Wait for ad framework to fully release audio
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 2. Reconfigure audio session
+        const { reconfigureAudio } = require('./soundsUtil');
+        await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+        
+        // 3. Additional delay to ensure audio session is ready
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
 
       console.log('GameScreen: Playing hint sound after ad...');
       await playSound('hint').catch(() => {});
@@ -1157,7 +1169,7 @@ const GameScreen = () => {
               <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
                 <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
-                  You solved the word in ${guesses.length} guesses!
+                  You solved the word in {guesses.length} guesses!
                 </Text>
                 {/* 
                   Solo Congratulations Popup (Results) - Shows after solving word in solo mode
@@ -1219,22 +1231,25 @@ const GameScreen = () => {
           </Modal>
           <Modal visible={!!showMenuPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <View style={[styles.menuPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
-                <Text style={[styles.menuTitle, { color: colors.textPrimary }]}>Menu</Text>
+              <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.header, { color: colors.textPrimary }]}>Game Menu</Text>
+                
                 <TouchableOpacity
-                  style={styles.menuButtonContainer}
-                  onPress={handleQuit}
-                >
-                  <Text style={styles.buttonText}>Quit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.menuButtonContainer}
+                  style={styles.button}
                   onPress={handleSave}
                 >
-                  <Text style={styles.buttonText}>Save</Text>
+                  <Text style={styles.buttonText}>Save & Exit</Text>
                 </TouchableOpacity>
+                
                 <TouchableOpacity
-                  style={styles.menuButtonContainer}
+                  style={[styles.button, styles.deleteButton]}
+                  onPress={handleQuit}
+                >
+                  <Text style={styles.buttonText}>Quit Without Saving</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.button}
                   onPress={() => setShowMenuPopup(false)}
                 >
                   <Text style={styles.buttonText}>Cancel</Text>
@@ -1335,7 +1350,7 @@ const GameScreen = () => {
               <View style={[styles.maxGuessesPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
                 <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}>
-                  You've reached the maximum of ${MAX_GUESSES} guesses.
+                  You've reached the maximum of {MAX_GUESSES} guesses.
                 </Text>
                 <TouchableOpacity
                   style={styles.maxGuessesButtonContainer}

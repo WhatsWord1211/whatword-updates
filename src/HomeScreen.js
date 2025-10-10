@@ -276,12 +276,34 @@ const HomeScreen = () => {
                       const firstFinisherId = gameData.firstFinisherId || null;
                       
                       if (firstFinisherId) {
+                        // Only show badge if current user is the first finisher and hasn't seen results
                         if (firstFinisherId === currentUser.uid && !seen.includes(currentUser.uid)) unseen += 1;
                       } else {
+                        // Fallback for older games without firstFinisherId
+                        // Determine who finished first by comparing solve times
                         const isPlayer1 = playersArray[0] === currentUser.uid;
-                        const meSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
-                        const oppSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
-                        if (meSolved && !seen.includes(currentUser.uid)) {
+                        const player1SolveTime = gameData.player1?.solveTime;
+                        const player2SolveTime = gameData.player2?.solveTime;
+                        
+                        // Only show badge if current user finished first
+                        let currentUserIsFirstFinisher = false;
+                        if (player1SolveTime && player2SolveTime) {
+                          // Both have solve times - compare them
+                          if (isPlayer1) {
+                            currentUserIsFirstFinisher = new Date(player1SolveTime) < new Date(player2SolveTime);
+                          } else {
+                            currentUserIsFirstFinisher = new Date(player2SolveTime) < new Date(player1SolveTime);
+                          }
+                        } else if (isPlayer1 && player1SolveTime && !player2SolveTime) {
+                          // Only player1 solved
+                          currentUserIsFirstFinisher = true;
+                        } else if (!isPlayer1 && player2SolveTime && !player1SolveTime) {
+                          // Only player2 solved
+                          currentUserIsFirstFinisher = true;
+                        }
+                        
+                        // Only count as unseen if user was first finisher and hasn't seen results
+                        if (currentUserIsFirstFinisher && !seen.includes(currentUser.uid)) {
                           unseen += 1;
                         }
                       }
@@ -434,6 +456,41 @@ const HomeScreen = () => {
     }
   };
 
+  // Initialize push notifications - defined here so it's available in useEffect
+  const initializePushNotifications = async (userId) => {
+    try {
+      console.log('HomeScreen: Initializing push notifications for user:', userId);
+      
+      // Check if we've already requested permissions for this user in this session
+      const permissionRequestedKey = `notification_permission_requested_${userId}`;
+      const hasRequestedPermissions = await AsyncStorage.getItem(permissionRequestedKey);
+      
+      // For existing users, check if they have notification permissions
+      const { status: permissionStatus } = await Notifications.getPermissionsAsync();
+      console.log('HomeScreen: Current permission status:', permissionStatus);
+      
+      if (permissionStatus === 'granted') {
+        console.log('HomeScreen: Permissions already granted, initializing...');
+        
+        // Always initialize to ensure token validation runs (fixes corrupted tokens)
+        const pushToken = await pushNotificationService.initialize(userId);
+        
+        if (pushToken) {
+          console.log('HomeScreen: Push notifications initialized successfully');
+          
+          // Set up notification listeners
+          pushNotificationService.setupNotificationListeners();
+        }
+      } else {
+        console.log('HomeScreen: Permissions not granted yet - will ask at relevant moment');
+        // Industry standard: Don't ask here - will ask contextually when user uses social features
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to initialize push notifications:', error);
+      // Don't show error alert for initialization failures
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -456,6 +513,11 @@ const HomeScreen = () => {
               appUpdateService.checkForUpdates(), // Check for Google Play Store updates
               checkForEASUpdates() // Check for EAS Updates
             ]).catch(console.error);
+            
+            // Initialize push notifications separately to avoid blocking other operations
+            initializePushNotifications(currentUser.uid).catch(error => {
+              console.error('HomeScreen: Push notification initialization failed:', error);
+            });
           }
           return;
         }
@@ -474,9 +536,13 @@ const HomeScreen = () => {
                 checkFirstLaunch(),
                 clearStuckGameState(), // Clear any stuck game state
                 checkForResumableSoloGames(currentUser.uid), // Check for resumable solo games
-                initializePushNotifications(currentUser.uid), // Initialize push notifications
                 appUpdateService.checkForUpdates() // Check for app updates
               ]).catch(console.error);
+              
+              // Initialize push notifications separately to avoid blocking other operations
+              initializePushNotifications(currentUser.uid).catch(error => {
+                console.error('HomeScreen: Push notification initialization failed:', error);
+              });
             } else {
               // No user authenticated - this shouldn't happen in the new flow
               setIsAuthenticating(false);
@@ -635,50 +701,6 @@ const HomeScreen = () => {
     }
   };
 
-  const initializePushNotifications = async (userId) => {
-    try {
-      console.log('HomeScreen: Initializing push notifications for user:', userId);
-      
-      // Check if we've already requested permissions for this user in this session
-      const permissionRequestedKey = `notification_permission_requested_${userId}`;
-      const hasRequestedPermissions = await AsyncStorage.getItem(permissionRequestedKey);
-      
-      // Check if notifications are already initialized
-      const existingToken = await pushNotificationService.getUserPushToken(userId);
-      if (existingToken) {
-        console.log('HomeScreen: Push notifications already initialized');
-        // Still set up listeners
-        pushNotificationService.setupNotificationListeners();
-        return;
-      }
-      
-      // For existing users, check if they have notification permissions
-      const { status: permissionStatus } = await Notifications.getPermissionsAsync();
-      console.log('HomeScreen: Current permission status:', permissionStatus);
-      
-      if (permissionStatus === 'granted') {
-        console.log('HomeScreen: Permissions already granted, initializing...');
-        
-        // Initialize the push notification service with current user ID
-        const pushToken = await pushNotificationService.initialize(userId);
-        
-        if (pushToken) {
-          // Save the push token to the user's Firestore document
-          await pushNotificationService.savePushTokenToFirestore(userId, pushToken);
-          console.log('HomeScreen: Push notifications initialized successfully');
-          
-          // Set up notification listeners
-          pushNotificationService.setupNotificationListeners();
-        }
-      } else {
-        console.log('HomeScreen: Permissions not granted yet - will ask at relevant moment');
-        // Industry standard: Don't ask here - will ask contextually when user uses social features
-      }
-    } catch (error) {
-      console.error('HomeScreen: Failed to initialize push notifications:', error);
-      // Don't show error alert for initialization failures
-    }
-  };
 
 
 
@@ -874,6 +896,31 @@ const HomeScreen = () => {
 
             // Clear the badge when user acknowledges by clicking Resume
             setBadgeCleared(true);
+            
+            // Delete all game completion notifications since user is acknowledging them
+            // These are one-time notifications that don't need to persist
+            if (notifications.length > 0) {
+              const gameCompletionNotifs = notifications.filter(n => 
+                n.type === 'game_completed' || n.data?.type === 'game_completed'
+              );
+              
+              gameCompletionNotifs.forEach(notification => {
+                deleteDoc(doc(db, 'notifications', notification.id)).catch(err => 
+                  console.error('Failed to delete game completion notification:', err)
+                );
+              });
+              
+              // Mark other notifications as read
+              const otherNotifs = notifications.filter(n => 
+                n.type !== 'game_completed' && n.data?.type !== 'game_completed'
+              );
+              
+              otherNotifs.forEach(notification => {
+                markNotificationAsRead(notification.id).catch(err => 
+                  console.error('Failed to mark notification as read:', err)
+                );
+              });
+            }
               
             handleButtonPress('ResumeGames');
             }}

@@ -39,15 +39,13 @@ class Logger {
 
   // Core logging methods
   error(message, ...args) {
-    if (this.shouldLog(LOG_LEVELS.ERROR)) {
-      console.error(`[ERROR] ${message}`, ...args);
-    }
+    // ERROR logs should ALWAYS be visible, even in production
+    console.error(`[ERROR] ${message}`, ...args);
   }
 
   warn(message, ...args) {
-    if (this.shouldLog(LOG_LEVELS.WARN)) {
-      console.warn(`[WARN] ${message}`, ...args);
-    }
+    // WARN logs should also be visible in production
+    console.warn(`[WARN] ${message}`, ...args);
   }
 
   info(message, ...args) {

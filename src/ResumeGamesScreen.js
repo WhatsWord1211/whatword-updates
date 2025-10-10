@@ -9,9 +9,11 @@ import styles from './styles';
 import adService from './adService';
 import gameService from './gameService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from './ThemeContext';
 
 const ResumeGamesScreen = () => {
   const navigation = useNavigation();
+  const { colors } = useTheme();
   const [user, setUser] = useState(null);
   const [soloGames, setSoloGames] = useState([]);
   const [pvpGames, setPvpGames] = useState([]);
@@ -21,6 +23,9 @@ const ResumeGamesScreen = () => {
   const [loading, setLoading] = useState(true);
   const [showChallengeResponsePopup, setShowChallengeResponsePopup] = useState(false);
   const [challengeData, setChallengeData] = useState(null);
+  const [showCancelChallengeConfirm, setShowCancelChallengeConfirm] = useState(false);
+  const [showChallengeCanceledPopup, setShowChallengeCanceledPopup] = useState(false);
+  const [challengeToCancel, setChallengeToCancel] = useState(null);
   
   // This screen now shows:
   // 1. Pending challenges (waiting for acceptance)
@@ -642,37 +647,35 @@ const ResumeGamesScreen = () => {
 
   const handleCancelChallenge = async (challenge) => {
     try {
-      Alert.alert(
-        'Cancel Challenge?',
-        `Are you sure you want to cancel the challenge sent to ${challenge.toUsername}? This action cannot be undone.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Cancel Challenge', 
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                // Delete the challenge from Firestore
-                await deleteDoc(doc(db, 'challenges', challenge.id));
-                
-                // Remove from pending challenges list immediately
-                setPendingChallenges(prevChallenges => 
-                  prevChallenges.filter(c => c.id !== challenge.id)
-                );
-                
-                playSound('chime');
-                Alert.alert('Challenge Cancelled', 'The challenge has been cancelled.');
-              } catch (error) {
-                console.error('Failed to cancel challenge:', error);
-                Alert.alert('Error', 'Failed to cancel challenge. Please try again.');
-              }
-            }
-          }
-        ]
-      );
+      setChallengeToCancel(challenge);
+      setShowCancelChallengeConfirm(true);
     } catch (error) {
       console.error('Failed to handle cancel challenge:', error);
       Alert.alert('Error', 'Failed to process cancel challenge action. Please try again.');
+    }
+  };
+
+  const confirmCancelChallenge = async () => {
+    try {
+      if (!challengeToCancel) return;
+      
+      // Delete the challenge from Firestore
+      await deleteDoc(doc(db, 'challenges', challengeToCancel.id));
+      
+      // Remove from pending challenges list immediately
+      setPendingChallenges(prevChallenges => 
+        prevChallenges.filter(c => c.id !== challengeToCancel.id)
+      );
+      
+      playSound('chime');
+      setShowCancelChallengeConfirm(false);
+      setChallengeToCancel(null);
+      setShowChallengeCanceledPopup(true);
+    } catch (error) {
+      console.error('Failed to cancel challenge:', error);
+      Alert.alert('Error', 'Failed to cancel challenge. Please try again.');
+      setShowCancelChallengeConfirm(false);
+      setChallengeToCancel(null);
     }
   };
 
@@ -1019,6 +1022,57 @@ const ResumeGamesScreen = () => {
               }}
             >
               <Text style={[styles.buttonText, { color: '#E5E7EB' }]}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Cancel Challenge Confirmation Modal */}
+      <Modal visible={showCancelChallengeConfirm} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.header, { color: colors.textPrimary }]}>Cancel Challenge?</Text>
+            <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+              Are you sure you want to cancel the challenge sent to {challengeToCancel?.toUsername}? This action cannot be undone.
+            </Text>
+            <View style={styles.modalActionsVertical}>
+              <TouchableOpacity
+                style={[styles.button, styles.deleteButton]}
+                onPress={confirmCancelChallenge}
+              >
+                <Text style={styles.buttonText}>Cancel Challenge</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => {
+                  setShowCancelChallengeConfirm(false);
+                  setChallengeToCancel(null);
+                  playSound('backspace').catch(() => {});
+                }}
+              >
+                <Text style={styles.buttonText}>Back</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Challenge Canceled Success Modal */}
+      <Modal visible={showChallengeCanceledPopup} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Challenge Canceled</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
+              The challenge has been canceled.
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => {
+                setShowChallengeCanceledPopup(false);
+                playSound('chime').catch(() => {});
+              }}
+            >
+              <Text style={styles.buttonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>

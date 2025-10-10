@@ -21,6 +21,7 @@ const SetWordScreen = () => {
   const [difficulty, setDifficulty] = useState(null);
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
   const [showGameStartedPopup, setShowGameStartedPopup] = useState(false);
+  const [createdGameId, setCreatedGameId] = useState(null);
 
   // If accepting a challenge, use the challenge's difficulty and skip selection
   useEffect(() => {
@@ -81,8 +82,10 @@ const SetWordScreen = () => {
           acceptedAt: new Date()
         });
 
+        // Store gameId for navigation after popup
+        setCreatedGameId(gameRef.id);
         setShowGameStartedPopup(true);
-        playSound('chime');
+        playSound('startGame');
       } else {
         // Player 1 is creating the challenge
         const challengeData = {
@@ -220,7 +223,7 @@ const SetWordScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow]}>
             <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>
-              Game Started!
+              The Battle Has Begun!
             </Text>
             <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>
               Both players can now play at their own pace!
@@ -230,7 +233,8 @@ const SetWordScreen = () => {
               onPress={() => {
                 setShowGameStartedPopup(false);
                 playSound('chime').catch(() => {});
-                navigation.navigate('MainTabs');
+                // Navigate to the game screen so P2 can start playing
+                navigation.navigate('PvPGame', { gameId: createdGameId });
               }}
             >
               <Text style={styles.buttonText}>OK</Text>

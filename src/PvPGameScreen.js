@@ -4,7 +4,7 @@ import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/nativ
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from './ThemeContext';
 import { db, auth } from './firebase';
-import { doc, onSnapshot, updateDoc, arrayUnion, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // Audio mode is now handled in soundsUtil.js
 import { playSound } from './soundsUtil';
@@ -393,23 +393,47 @@ const PvPGameScreen = () => {
         tie = true;
       }
       
+      // Determine second finisher
+      const secondFinisherId = (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) > new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
+                              : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
+                              : null;
+      
       // Update game status and track results visibility
+      // Initialize resultsSeenBy with second finisher since they're seeing results right now
       await updateDoc(doc(db, 'games', gameId), {
         status: 'completed',
         completedAt: new Date().toISOString(),
         winnerId: winnerId,
         tie: tie,
-        resultsSeenBy: [],
+        resultsSeenBy: secondFinisherId ? [secondFinisherId] : [],
         // Mark first and second finisher for precise badge logic on Home
         firstFinisherId: (gameData.player1?.solved && !gameData.player2?.solved) ? gameData.player1?.uid
                          : (!gameData.player1?.solved && gameData.player2?.solved) ? gameData.player2?.uid
                          : (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) < new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
                          : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
                          : null,
-        secondFinisherId: (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) > new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
-                          : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
-                          : null
+        secondFinisherId: secondFinisherId
       });
+      
+      // Remove game from both players' activeGames arrays since game is now completed
+      try {
+        const player1Uid = gameData.player1?.uid;
+        const player2Uid = gameData.player2?.uid;
+        
+        if (player1Uid) {
+          await updateDoc(doc(db, 'users', player1Uid), {
+            activeGames: arrayRemove(gameId)
+          }).catch(() => {}); // Ignore errors
+        }
+        
+        if (player2Uid) {
+          await updateDoc(doc(db, 'users', player2Uid), {
+            activeGames: arrayRemove(gameId)
+          }).catch(() => {}); // Ignore errors
+        }
+      } catch (error) {
+        console.log('PvPGameScreen: Failed to remove game from activeGames (non-critical):', error);
+      }
       
       // Update stats only for the current user (avoid permission issues updating other user's profile)
       await updateUserStats(currentUserId, winnerId === currentUserId);
@@ -695,10 +719,11 @@ const PvPGameScreen = () => {
           console.log('PvPGameScreen: Game data has valid structure, setting game');
           setGame(gameData);
           
-          // Show "Let the Battle Begin!" popup when game becomes active (both words are set)
-          // Only show once per player per game session
+          // Show "The Battle Has Begun!" popup when game becomes active (both words are set)
+          // Only show once per session (using ref to track)
           if (gameData.status === 'active' && !hasShownStartGamePopupRef.current && !showResults) {
             const hasWords = (gameData.player1?.word && gameData.player2?.word) || (gameData.playerWord && gameData.opponentWord);
+            
             if (hasWords) {
               console.log('PvPGameScreen: Game is active with both words set, showing start game popup');
               setShowStartGamePopup(true);
@@ -1516,25 +1541,28 @@ const PvPGameScreen = () => {
         </View>
       </Modal>
 
-      {/* Start Game Popup - "Let the Battle Begin!" */}
+      {/* Start Game Popup - "The Battle Has Begun!" */}
       <Modal visible={showStartGamePopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Let the Battle Begin!</Text>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>The Battle Has Begun!</Text>
             <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
               Both players have set their words. Time to see who can solve first!
             </Text>
             <TouchableOpacity
               style={styles.winButtonContainer}
-              onPress={() => setShowStartGamePopup(false)}
+              onPress={() => {
+                setShowStartGamePopup(false);
+                playSound('chime').catch(() => {});
+              }}
             >
               <Text style={styles.buttonText}>Let's Go!</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-      
-             {/* Congratulations Popup - Individual Word Solved */}
+
+      {/* Congratulations Popup - Individual Word Solved */}
       <Modal visible={showCongratulationsPopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
@@ -1556,24 +1584,30 @@ const PvPGameScreen = () => {
                 setShowCongratulationsPopup(false);
                 
                 if (isSecondSolver) {
-                  // Second solver - blocking ad before results popup
+                  // Second solver - show ad before results popup
                   await adService.showInterstitialAd();
                   
-                  // CRITICAL: Real ads completely hijack audio session
-                  // Need aggressive recovery with proper delays
-                  console.log('PvPGameScreen: Ad completed, recovering audio...');
+                  // Platform-specific delays:
+                  // iOS: Fire-and-forget ad needs time to display before results show
+                  // Android: Blocking ad already completed, just need audio recovery
+                  if (Platform.OS === 'ios') {
+                    console.log('PvPGameScreen: iOS - Delaying results to let ad display...');
+                    // Give ad 3 seconds to display before showing results
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                  } else {
+                    console.log('PvPGameScreen: Android - Ad completed, recovering audio...');
+                    // 1. Wait for ad framework to fully release audio
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // 2. Reconfigure audio session
+                    const { reconfigureAudio } = require('./soundsUtil');
+                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                    
+                    // 3. Additional delay to ensure audio session is ready
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                  }
                   
-                  // 1. Wait for ad framework to fully release audio (500ms is industry standard)
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                  
-                  // 2. Reconfigure audio session
-                  const { reconfigureAudio } = require('./soundsUtil');
-                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                  
-                  // 3. Additional delay to ensure audio session is ready (iOS needs this)
-                  await new Promise(resolve => setTimeout(resolve, 200));
-                  
-                  // Process results after ad completes
+                  // Process results after ad displays
                   const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
                     ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
                     : null);
@@ -1606,28 +1640,31 @@ const PvPGameScreen = () => {
                       setGameOverData(resolvedResult);
                       setShowGameOverPopup(true);
                       
-                      // Mark results as seen immediately for second solver
-                      // This prevents them from seeing "View Results" in ResumeGamesScreen
-                      if (game?.id && currentUser?.uid) {
-                        updateDoc(doc(db, 'games', game.id), {
-                          resultsSeenBy: arrayUnion(currentUser.uid)
-                        }).catch(err => console.error('Failed to mark results seen for second solver:', err));
-                      }
+                      // Second solver is already marked as having seen results in determineGameResult
+                      // No need to update resultsSeenBy again here
                     }
                     setPendingResultData(null);
                   } else {
                     playSound('chime').catch(() => {});
                   }
                 } else {
-                  // First solver - blocking ad before navigating to home
+                  // First solver - show ad before navigating
                   await adService.showInterstitialAd();
                   
-                  // CRITICAL: Real ads hijack audio - need recovery delay
-                  console.log('PvPGameScreen: Ad completed (first solver), recovering audio...');
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                  const { reconfigureAudio } = require('./soundsUtil');
-                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                  await new Promise(resolve => setTimeout(resolve, 200));
+                  // Platform-specific delays:
+                  // iOS: Fire-and-forget ad needs time to display before navigation
+                  // Android: Blocking ad already completed, just need audio recovery
+                  if (Platform.OS === 'ios') {
+                    console.log('PvPGameScreen: iOS - Delaying navigation to let ad display...');
+                    // Give ad 3 seconds to display before navigating away
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                  } else {
+                    console.log('PvPGameScreen: Android - Ad completed, recovering audio...');
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const { reconfigureAudio } = require('./soundsUtil');
+                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                  }
                   
                   playSound('chime').catch(() => {});
                   navigation.navigate('MainTabs');

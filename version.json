@@ -1,9 +1,9 @@
 {
-  "latestBuildNumber": 35,
-  "versionCode": 35,
-  "versionName": "1.2.0",
-  "releaseDate": "2025-10-07",
-  "updateMessage": "Push notifications now work in background - Added FCM v1 and APNs support for iOS and Android, improved UI consistency, enhanced sound system reliability, various bug fixes"
+  "latestBuildNumber": 37,
+  "versionCode": 37,
+  "versionName": "1.2.2",
+  "releaseDate": "2025-10-10",
+  "updateMessage": "Complete ghost badge fix - Added missing sendGameCompletionNotification method, game completion notifications now deleted on Resume click, added debug logging to track badge triggers"
 }
 
 

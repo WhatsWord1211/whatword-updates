@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput, StatusBar, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput, StatusBar, Keyboard, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +9,8 @@ import { getThemeColors } from './theme';
 import styles from './styles';
 import adService from './adService';
 import pushNotificationService from './pushNotificationService';
+import * as Notifications from 'expo-notifications';
+import { auth } from './firebase';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -19,11 +21,15 @@ const SettingsScreen = () => {
   const [timePickerType, setTimePickerType] = useState('start');
   const [tempTime, setTempTime] = useState('');
   const [adStats, setAdStats] = useState({});
+  const [notificationDiagnostics, setNotificationDiagnostics] = useState(null);
+  const [fixingNotifications, setFixingNotifications] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   useEffect(() => {
     loadSettings();
     loadCacheSize();
     loadAdStats();
+    loadNotificationDiagnostics();
   }, []);
 
   const loadSettings = async () => {
@@ -211,6 +217,61 @@ const SettingsScreen = () => {
     const key = timePickerType === 'start' ? 'quietHoursStart' : 'quietHoursEnd';
     updateSetting(key, tempTime);
     setShowTimePicker(false);
+  };
+
+  const loadNotificationDiagnostics = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (userId) {
+        const diagnostics = await pushNotificationService.getDiagnostics(userId);
+        setNotificationDiagnostics(diagnostics);
+      }
+    } catch (error) {
+      console.error('Failed to load notification diagnostics:', error);
+    }
+  };
+
+  const handleFixNotifications = async () => {
+    try {
+      setFixingNotifications(true);
+      const userId = auth.currentUser?.uid;
+      
+      if (!userId) {
+        Alert.alert('Error', 'No user logged in');
+        return;
+      }
+
+      console.log('SettingsScreen: Starting notification fix for user:', userId);
+      
+      const result = await pushNotificationService.forceRefreshToken(userId);
+      console.log('SettingsScreen: Fix notification result:', result);
+      
+      // Reload diagnostics
+      await loadNotificationDiagnostics();
+      
+      if (result.success) {
+        Alert.alert(
+          '✅ Notifications Fixed!',
+          'Your push notification token has been registered successfully. You should now receive background notifications.\n\nToken: ' + (result.steps.find(s => s.token)?.token || 'N/A'),
+          [{ text: 'Great!', onPress: () => playSound('chime').catch(() => {}) }]
+        );
+      } else {
+        const errorSteps = result.steps?.map(s => `${s.step}: ${s.status || s.action || 'done'}`).join('\n') || '';
+        Alert.alert(
+          '❌ Fix Failed',
+          `Could not fix notifications.\n\nError: ${result.error || 'Unknown error'}\n\nSteps:\n${errorSteps}`,
+          [
+            { text: 'View Details', onPress: () => setShowDiagnostics(true) },
+            { text: 'OK' }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('SettingsScreen: Fix notifications error:', error);
+      Alert.alert('Error', 'Failed to fix notifications: ' + error.message);
+    } finally {
+      setFixingNotifications(false);
+    }
   };
 
   const theme = getThemeColors(settings.theme || 'dark');
@@ -431,6 +492,80 @@ const SettingsScreen = () => {
               </View>
             </>
           )}
+        </View>
+
+        {/* Notification Diagnostics & Fix */}
+        <View style={[styles.settingsSection, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Notification Troubleshooting</Text>
+          
+          <View style={[styles.cacheManagementContainer, { 
+            backgroundColor: theme.surfaceLight,
+            borderColor: theme.border
+          }]}>
+            <Text style={[styles.cacheInfoLabel, { color: theme.textSecondary }]}>
+              🔧 Fix Push Notifications
+            </Text>
+            
+            <Text style={[styles.cacheDescription, { color: theme.textMuted }]}>
+              If you're not receiving background notifications, tap the button below to force re-registration of your push notification token.
+            </Text>
+            
+            {notificationDiagnostics && (
+              <View style={{ marginVertical: 8 }}>
+                <Text style={[styles.cacheDescription, { color: theme.textPrimary, fontWeight: 'bold' }]}>
+                  Current Status:
+                </Text>
+                <Text style={[styles.cacheDescription, { color: theme.textMuted, fontSize: 12 }]}>
+                  • Permissions: {notificationDiagnostics.permissions?.status || 'unknown'}
+                </Text>
+                <Text style={[styles.cacheDescription, { color: theme.textMuted, fontSize: 12 }]}>
+                  • Token in Firestore: {notificationDiagnostics.firestore?.hasExpoPushToken ? '✅ Yes' : '❌ No'}
+                </Text>
+                <Text style={[styles.cacheDescription, { color: theme.textMuted, fontSize: 12 }]}>
+                  • Service initialized: {notificationDiagnostics.service?.isInitialized ? '✅ Yes' : '❌ No'}
+                </Text>
+                {showDiagnostics && notificationDiagnostics.firestore?.expoPushToken && (
+                  <Text style={[styles.cacheDescription, { color: theme.textMuted, fontSize: 10, marginTop: 4 }]}>
+                    Token: {notificationDiagnostics.firestore.expoPushToken}
+                  </Text>
+                )}
+              </View>
+            )}
+            
+            <TouchableOpacity
+              style={[styles.enhancedActionButton, { 
+                backgroundColor: fixingNotifications ? theme.border : theme.accent,
+                borderColor: fixingNotifications ? theme.border : theme.accentDark
+              }]}
+              onPress={handleFixNotifications}
+              disabled={fixingNotifications}
+            >
+              {fixingNotifications ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <ActivityIndicator color={theme.textInverse} size="small" />
+                  <Text style={[styles.enhancedActionButtonText, { color: theme.textInverse, marginLeft: 8 }]}>
+                    Fixing...
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.enhancedActionButtonText, { color: theme.textInverse }]}>
+                  🔧 Fix Notifications Now
+                </Text>
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.settingButton, { backgroundColor: theme.surfaceLight, marginTop: 8 }]}
+              onPress={() => {
+                setShowDiagnostics(!showDiagnostics);
+                loadNotificationDiagnostics();
+              }}
+            >
+              <Text style={[styles.settingButtonText, { color: theme.textSecondary, fontSize: 12 }]}>
+                {showDiagnostics ? '▼ Hide Details' : '► Show Details'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Cache & Data Management */}

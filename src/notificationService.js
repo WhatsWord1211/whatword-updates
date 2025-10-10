@@ -204,6 +204,24 @@ class NotificationService {
   }
 
   /**
+   * Send game completion notification (in-app Firestore notification for badge)
+   * This is different from sendGameCompletedNotification which is for push notifications
+   */
+  async sendGameCompletionNotification(toUserId, gameId, message) {
+    try {
+      await this.saveNotificationToFirestore(toUserId, 'Game Complete', message, {
+        type: 'game_completed',
+        gameId,
+        timestamp: new Date().toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error('NotificationService: Failed to send game completion notification:', error);
+      return false;
+    }
+  }
+
+  /**
    * Send game move notification
    */
   async sendGameMoveNotification(toUserId, playerName, gameId) {

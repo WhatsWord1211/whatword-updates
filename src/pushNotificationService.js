@@ -36,54 +36,129 @@ class PushNotificationService {
 
   /**
    * Initialize push notifications and get Expo push token
+   * AGGRESSIVE FIX: Always checks Firestore and forces re-registration if token missing
    */
-  async initialize(userId = null) {
-    // If already initialized but a userId is provided, ensure we associate and persist token
-    if (this.isInitialized) {
-      if (userId && userId !== this.currentUserId) {
-        this.currentUserId = userId;
-        if (this.expoPushToken) {
-          try {
-            await this.savePushTokenToFirestore(userId, this.expoPushToken);
-          } catch (_) {}
+  async initialize(userId = null, forceRefresh = false) {
+    logger.error('PushNotificationService: initialize() called', { userId, forceRefresh });
+    
+    // Set current user ID if provided
+    if (userId) {
+      this.currentUserId = userId;
+    }
+    
+    // CRITICAL FIX: Always check Firestore for token, even if we think we're initialized
+    if (userId && !forceRefresh) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+          const storedToken = userDoc.data().expoPushToken;
+          if (!storedToken) {
+            logger.error('PushNotificationService: NO TOKEN IN FIRESTORE - forcing re-registration');
+            // Force re-registration by clearing state
+            this.isInitialized = false;
+            this.expoPushToken = null;
+            forceRefresh = true;
+          } else {
+            logger.error('PushNotificationService: Token found in Firestore:', storedToken);
+          }
         }
+      } catch (error) {
+        logger.error('PushNotificationService: Error checking Firestore token:', error);
+      }
+    }
+    
+    // If forcing refresh, reset state
+    if (forceRefresh) {
+      logger.error('PushNotificationService: Force refresh requested - resetting state');
+      this.isInitialized = false;
+      this.expoPushToken = null;
+    }
+    
+    // If already initialized, validate and return
+    if (this.isInitialized && this.expoPushToken && userId) {
+      logger.error('PushNotificationService: Already initialized, validating token');
+      try {
+        await this.validateAndCleanupToken(userId, this.expoPushToken);
+      } catch (error) {
+        logger.error('PushNotificationService: Token validation failed:', error);
       }
       return this.expoPushToken;
     }
     
     if (this.isInitializing) {
+      logger.error('PushNotificationService: Already initializing, waiting...');
       return this.tokenRefreshPromise;
     }
     
     this.isInitializing = true;
     
     try {
-      // Set current user ID if provided
-      if (userId) {
-        this.currentUserId = userId;
+      logger.error('PushNotificationService: Starting token registration process...');
+      
+      // Check permissions first
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      logger.error('PushNotificationService: Current permission status:', existingStatus);
+      
+      if (existingStatus !== 'granted') {
+        logger.error('PushNotificationService: Permissions not granted - cannot register token');
+        return null;
       }
       
       // Register for push notifications
+      logger.error('PushNotificationService: Calling registerForPushNotificationsAsync...');
       const token = await this.registerForPushNotificationsAsync();
-      if (token) {
-        this.expoPushToken = token;
-        this.isInitialized = true;
-        
-        // Save token to Firestore if we have a user ID
-        if (this.currentUserId) {
-          // CRITICAL: Validate and clean up corrupted tokens from Expo Go interference
-          await this.validateAndCleanupToken(this.currentUserId, token);
-        }
-        
-        // Set up listeners asynchronously
-        this.setupNotificationListeners();
-
-        return token;
+      
+      if (!token) {
+        logger.error('PushNotificationService: registerForPushNotificationsAsync returned null');
+        return null;
       }
       
-      return null;
+      logger.error('PushNotificationService: Token obtained from Expo:', token);
+      this.expoPushToken = token;
+      this.isInitialized = true;
+      
+      // CRITICAL: Save token to Firestore immediately
+      if (this.currentUserId) {
+        logger.error('PushNotificationService: Saving token to Firestore for user:', this.currentUserId);
+        try {
+          const saveSuccess = await this.validateAndCleanupToken(this.currentUserId, token);
+          logger.error('PushNotificationService: Token save completed, success:', saveSuccess);
+          
+          // Verify it was actually saved
+          const verifyDoc = await getDoc(doc(db, 'users', this.currentUserId));
+          if (verifyDoc.exists()) {
+            const verifyToken = verifyDoc.data().expoPushToken;
+            logger.error('PushNotificationService: Verification - token in Firestore:', verifyToken);
+            if (verifyToken !== token) {
+              logger.error('PushNotificationService: WARNING - Token mismatch after save!');
+            }
+          }
+        } catch (saveError) {
+          logger.error('PushNotificationService: CRITICAL - Failed to save token:', saveError);
+          // Try direct save as fallback
+          try {
+            await this.savePushTokenToFirestore(this.currentUserId, token);
+            logger.error('PushNotificationService: Direct save fallback completed');
+          } catch (fallbackError) {
+            logger.error('PushNotificationService: Direct save fallback also failed:', fallbackError);
+          }
+        }
+      } else {
+        logger.error('PushNotificationService: WARNING - No userId, token NOT saved to Firestore');
+      }
+      
+      // Set up listeners
+      this.setupNotificationListeners();
+
+      return token;
+      
     } catch (error) {
-      logger.error('PushNotificationService: Failed to initialize:', error);
+      logger.error('PushNotificationService: Initialize failed with error:', error);
+      logger.error('PushNotificationService: Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       return null;
     } finally {
       this.isInitializing = false;
@@ -232,7 +307,7 @@ class PushNotificationService {
    */
   async validateAndCleanupToken(userId, currentToken) {
     try {
-      console.log('PushNotificationService: Validating token for user:', userId);
+      logger.error('PushNotificationService: Validating token for user:', userId); // Using logger.error so it shows in production
       
       // Get current user data from Firestore
       const userDoc = await getDoc(doc(db, 'users', userId));
@@ -255,7 +330,7 @@ class PushNotificationService {
       const needsUpdate = !storedExpoPushToken || storedExpoPushToken !== currentToken;
       
       if (needsUpdate || hasMismatch) {
-        console.log('PushNotificationService: Token corruption detected, cleaning up...', {
+        logger.error('PushNotificationService: Token corruption detected, cleaning up...', {
           storedExpoPushToken,
           storedPushToken,
           currentToken,
@@ -270,12 +345,12 @@ class PushNotificationService {
           pushTokenUpdatedAt: new Date().toISOString(),
         }, { merge: true });
         
-        console.log('PushNotificationService: Token cleanup successful - unified to:', currentToken);
+        logger.error('PushNotificationService: Token cleanup successful - unified to:', currentToken);
         return true;
       }
       
       // Token is valid and matches
-      console.log('PushNotificationService: Token validation passed');
+      logger.error('PushNotificationService: Token validation passed');
       return true;
       
     } catch (error) {
@@ -773,6 +848,142 @@ class PushNotificationService {
     // Clear notification queue
     this.notificationQueue = [];
     this.isProcessingQueue = false;
+  }
+
+  /**
+   * Force refresh token - for manual "Fix Notifications" button
+   * Returns diagnostic information
+   */
+  async forceRefreshToken(userId) {
+    try {
+      logger.error('PushNotificationService: Force refresh token requested for user:', userId);
+      
+      const diagnostics = {
+        userId,
+        timestamp: new Date().toISOString(),
+        steps: []
+      };
+      
+      // Step 1: Check permissions
+      const { status } = await Notifications.getPermissionsAsync();
+      diagnostics.steps.push({ step: 'permissions', status });
+      logger.error('PushNotificationService: Permission status:', status);
+      
+      if (status !== 'granted') {
+        diagnostics.error = 'Permissions not granted';
+        diagnostics.steps.push({ step: 'request_permissions', action: 'requesting' });
+        
+        const { status: newStatus } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+          },
+          android: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+          },
+        });
+        
+        diagnostics.steps.push({ step: 'request_permissions', newStatus });
+        logger.error('PushNotificationService: New permission status:', newStatus);
+        
+        if (newStatus !== 'granted') {
+          diagnostics.error = 'User denied permissions';
+          return diagnostics;
+        }
+      }
+      
+      // Step 2: Force re-initialization
+      diagnostics.steps.push({ step: 'force_initialize', action: 'starting' });
+      const token = await this.initialize(userId, true);
+      
+      if (token) {
+        diagnostics.steps.push({ step: 'token_obtained', token });
+        logger.error('PushNotificationService: Token obtained:', token);
+        
+        // Step 3: Verify in Firestore
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+          const storedToken = userDoc.data().expoPushToken;
+          diagnostics.steps.push({ step: 'firestore_verify', storedToken });
+          
+          if (storedToken === token) {
+            diagnostics.success = true;
+            diagnostics.message = 'Token successfully registered and verified';
+          } else {
+            diagnostics.success = false;
+            diagnostics.error = 'Token mismatch between local and Firestore';
+          }
+        } else {
+          diagnostics.success = false;
+          diagnostics.error = 'User document not found in Firestore';
+        }
+      } else {
+        diagnostics.success = false;
+        diagnostics.error = 'Failed to obtain token from Expo';
+        diagnostics.steps.push({ step: 'token_obtained', error: 'null token' });
+      }
+      
+      logger.error('PushNotificationService: Force refresh diagnostics:', diagnostics);
+      return diagnostics;
+      
+    } catch (error) {
+      logger.error('PushNotificationService: Force refresh failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack
+      };
+    }
+  }
+
+  /**
+   * Get notification diagnostics - for Settings screen display
+   */
+  async getDiagnostics(userId) {
+    try {
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        service: {
+          isInitialized: this.isInitialized,
+          hasToken: !!this.expoPushToken,
+          currentToken: this.expoPushToken,
+          currentUserId: this.currentUserId,
+        },
+        permissions: null,
+        firestore: null,
+      };
+      
+      // Check permissions
+      const { status } = await Notifications.getPermissionsAsync();
+      diagnostics.permissions = { status };
+      
+      // Check Firestore
+      if (userId) {
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          diagnostics.firestore = {
+            hasExpoPushToken: !!data.expoPushToken,
+            expoPushToken: data.expoPushToken,
+            hasPushToken: !!data.pushToken,
+            pushToken: data.pushToken,
+            pushTokenUpdatedAt: data.pushTokenUpdatedAt,
+          };
+        } else {
+          diagnostics.firestore = { error: 'User document not found' };
+        }
+      }
+      
+      return diagnostics;
+    } catch (error) {
+      return {
+        error: error.message,
+        stack: error.stack,
+      };
+    }
   }
 
 }
