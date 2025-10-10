@@ -191,34 +191,27 @@ const GameScreen = () => {
     }
   }, []);
 
-  // Show interstitial ad after game completion with iOS-safe timeout
+  // Show interstitial ad after game completion
   const showGameCompletionAd = useCallback(async () => {
     try {
       console.log('GameScreen: showGameCompletionAd called for gameMode:', gameMode);
       console.log('GameScreen: Platform:', Platform?.OS);
       
-      // Show ad (fire-and-forget on iOS, blocking on Android)
+      // Show ad and wait for completion (both iOS and Android now block properly)
       await adService.showInterstitialAd();
       
-      // Platform-specific delays:
-      // iOS: Fire-and-forget ad needs time to display before results popup
-      // Android: Blocking ad already completed, just need audio recovery
-      if (Platform.OS === 'ios') {
-        console.log('GameScreen: iOS - Delaying results to let ad display...');
-        // Give ad 3 seconds to display before showing results
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      } else {
-        console.log('GameScreen: Android - Ad completed, recovering audio...');
-        // 1. Wait for ad framework to fully release audio
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // 2. Reconfigure audio session
-        const { reconfigureAudio } = require('./soundsUtil');
-        await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-        
-        // 3. Additional delay to ensure audio session is ready
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+      // Ad has completed - audio recovery for both platforms
+      console.log('GameScreen: Ad completed, recovering audio...');
+      
+      // Wait for ad framework to fully release audio
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Reconfigure audio session
+      const { reconfigureAudio } = require('./soundsUtil');
+      await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+      
+      // Additional delay to ensure audio session is ready
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
@@ -235,28 +228,21 @@ const GameScreen = () => {
     }
 
     try {
-      // Show interstitial ad for hint
+      // Show interstitial ad for hint and wait for completion (both platforms now block)
       await adService.showInterstitialAdForHint();
 
-      // Platform-specific delays:
-      // iOS: Fire-and-forget ad needs time to display before revealing hint
-      // Android: Blocking ad already completed, just need audio recovery
-      if (Platform.OS === 'ios') {
-        console.log('GameScreen: iOS - Delaying hint reveal to let ad display...');
-        // Give ad 3 seconds to display before revealing hint
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      } else {
-        console.log('GameScreen: Android - Ad completed, recovering audio...');
-        // 1. Wait for ad framework to fully release audio
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // 2. Reconfigure audio session
-        const { reconfigureAudio } = require('./soundsUtil');
-        await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-        
-        // 3. Additional delay to ensure audio session is ready
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+      // Ad has completed - audio recovery for both platforms
+      console.log('GameScreen: Hint ad completed, recovering audio...');
+      
+      // Wait for ad framework to fully release audio
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Reconfigure audio session
+      const { reconfigureAudio } = require('./soundsUtil');
+      await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+      
+      // Additional delay to ensure audio session is ready
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       console.log('GameScreen: Playing hint sound after ad...');
       await playSound('hint').catch(() => {});
@@ -880,25 +866,27 @@ const GameScreen = () => {
           
           <TouchableOpacity
             style={styles.button}
-            onPress={async () => {
-              try {
-                await handleDifficultySelect('easy');
-              } catch (error) {
+            onPress={() => {
+              console.log('GameScreen: Easy difficulty button pressed');
+              handleDifficultySelect('easy').catch(error => {
                 console.error('Failed to select easy difficulty:', error);
-              }
+              });
             }}
+            disabled={isLoading}
+            activeOpacity={0.7}
           >
             <Text style={styles.buttonText}>Easy (4 Letters)</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.button}
-            onPress={async () => {
-              try {
-                await handleDifficultySelect('regular');
-              } catch (error) {
+            onPress={() => {
+              console.log('GameScreen: Regular difficulty button pressed');
+              handleDifficultySelect('regular').catch(error => {
                 console.error('Failed to select regular difficulty:', error);
-              }
+              });
             }}
+            disabled={isLoading}
+            activeOpacity={0.7}
           >
             <Text style={styles.buttonText}>Regular (5 Letters)</Text>
           </TouchableOpacity>
@@ -907,13 +895,12 @@ const GameScreen = () => {
               styles.button, 
               !hardModeUnlocked && styles.lockedButton
             ]}
-            onPress={async () => {
+            onPress={() => {
+              console.log('GameScreen: Hard difficulty button pressed');
               if (hardModeUnlocked) {
-                try {
-                  await handleDifficultySelect('hard');
-                } catch (error) {
+                handleDifficultySelect('hard').catch(error => {
                   console.error('Failed to select hard difficulty:', error);
-                }
+                });
               } else {
                 // Show unlock popup for locked hard mode
                 Alert.alert(
@@ -926,6 +913,8 @@ const GameScreen = () => {
                 );
               }
             }}
+            disabled={!hardModeUnlocked && false || isLoading}
+            activeOpacity={0.7}
           >
             <Text style={[
               styles.buttonText,
@@ -1173,19 +1162,19 @@ const GameScreen = () => {
                 </Text>
                 {/* 
                   Solo Congratulations Popup (Results) - Shows after solving word in solo mode
-                  - Always fire-and-forget ad → Proceed with chosen action (Main Menu/Play Again)
+                  - Ad shows and blocks until closed → Then proceed with chosen action (Main Menu/Play Again)
                 */}
                 <TouchableOpacity
                   style={styles.winButtonContainer}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowWinPopup(false);
                     
                     // Show ad only for solo mode - PvP ad already played after congratulations
                     if (gameMode === 'solo') {
-                      showGameCompletionAd().catch(() => {});
+                      await showGameCompletionAd().catch(() => {});
                     }
                     
-                    // Navigate immediately - ad will show on top
+                    // Navigate after ad completes
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
@@ -1198,9 +1187,9 @@ const GameScreen = () => {
                     onPress={async () => {
                       setShowWinPopup(false);
                       
-                      // Industry standard: Show ad as overlay (fire-and-forget)
+                      // Show ad and wait for completion before starting new game
                       if (gameMode === 'solo') {
-                        showGameCompletionAd().catch(() => {});
+                        await showGameCompletionAd().catch(() => {});
                       }
                       
                       // Reset game state and select new word
@@ -1291,13 +1280,13 @@ const GameScreen = () => {
                 </Text>
                 <TouchableOpacity
                   style={styles.wordRevealButtonContainer}
-                  onPress={() => {
+                  onPress={async () => {
                     setShowWordRevealPopup(false);
                     
-                    // Industry standard: Show ad as overlay (fire-and-forget)
-                    showGameCompletionAd().catch(() => {});
+                    // Show ad and wait for completion before navigating
+                    await showGameCompletionAd().catch(() => {});
                     
-                    // Navigate immediately - ad will show on top
+                    // Navigate after ad completes
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
@@ -1358,8 +1347,8 @@ const GameScreen = () => {
                     setShowMaxGuessesPopup(false);
                     await saveGameState();
                     
-                    // Industry standard: Show ad as overlay (fire-and-forget)
-                    showGameCompletionAd().catch(() => {});
+                    // Show ad and wait for completion before starting new game
+                    await showGameCompletionAd().catch(() => {});
                     
                     // Reset game state and select new word
                     setGuessesWithLog([]);
@@ -1389,10 +1378,10 @@ const GameScreen = () => {
                     setShowMaxGuessesPopup(false);
                     await saveGameState();
                     
-                    // Industry standard: Show ad as overlay (fire-and-forget)
-                    showGameCompletionAd().catch(() => {});
+                    // Show ad and wait for completion before navigating
+                    await showGameCompletionAd().catch(() => {});
                     
-                    // Navigate immediately - ad will show on top
+                    // Navigate after ad completes
                     navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}

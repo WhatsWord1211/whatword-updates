@@ -16,6 +16,7 @@ import playerProfileService from './playerProfileService';
 import ThreeDPurpleRing from './ThreeDPurpleRing';
 import ThreeDGreenDot from './ThreeDGreenDot';
 import { getNotificationService } from './notificationService';
+import friendRecordsService from './friendRecordsService';
 
 /**
  * PvP Game State System:
@@ -447,6 +448,24 @@ const PvPGameScreen = () => {
         await playerProfileService.updatePvpDifficultyRollingAverages(currentUserId, gameDifficulty, currentUserWin);
       } catch (error) {
         console.error('PvPGameScreen: Failed to update PvP rolling averages:', error);
+      }
+
+      // Update friend vs friend records
+      try {
+        const player1Uid = gameData.player1?.uid;
+        const player2Uid = gameData.player2?.uid;
+        
+        console.log('PvPGameScreen: Updating friend records', { player1Uid, player2Uid, winnerId, tie });
+        
+        if (player1Uid && player2Uid) {
+          await friendRecordsService.updateGameRecord(player1Uid, player2Uid, winnerId, tie);
+          console.log('PvPGameScreen: Friend records updated successfully');
+        } else {
+          console.warn('PvPGameScreen: Missing player UIDs, cannot update friend records', { player1Uid, player2Uid });
+        }
+      } catch (error) {
+        console.error('PvPGameScreen: Failed to update friend records:', error);
+        console.error('PvPGameScreen: Error details:', error.message, error.code);
       }
 
       // Save stats immediately for leaderboard (do not wait for archival)
@@ -1584,30 +1603,23 @@ const PvPGameScreen = () => {
                 setShowCongratulationsPopup(false);
                 
                 if (isSecondSolver) {
-                  // Second solver - show ad before results popup
+                  // Second solver - show ad before results popup and wait for completion
                   await adService.showInterstitialAd();
                   
-                  // Platform-specific delays:
-                  // iOS: Fire-and-forget ad needs time to display before results show
-                  // Android: Blocking ad already completed, just need audio recovery
-                  if (Platform.OS === 'ios') {
-                    console.log('PvPGameScreen: iOS - Delaying results to let ad display...');
-                    // Give ad 3 seconds to display before showing results
-                    await new Promise(resolve => setTimeout(resolve, 3000));
-                  } else {
-                    console.log('PvPGameScreen: Android - Ad completed, recovering audio...');
-                    // 1. Wait for ad framework to fully release audio
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // 2. Reconfigure audio session
-                    const { reconfigureAudio } = require('./soundsUtil');
-                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                    
-                    // 3. Additional delay to ensure audio session is ready
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                  }
+                  // Ad has completed - audio recovery for both platforms
+                  console.log('PvPGameScreen: Ad completed, recovering audio...');
                   
-                  // Process results after ad displays
+                  // Wait for ad framework to fully release audio
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  
+                  // Reconfigure audio session
+                  const { reconfigureAudio } = require('./soundsUtil');
+                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                  
+                  // Additional delay to ensure audio session is ready
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                  
+                  // Process results after ad completes
                   const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
                     ? { winnerId: game.winnerId, tie: !!game.tie, currentUserId: currentUser?.uid }
                     : null);
@@ -1648,23 +1660,21 @@ const PvPGameScreen = () => {
                     playSound('chime').catch(() => {});
                   }
                 } else {
-                  // First solver - show ad before navigating
+                  // First solver - show ad before navigating and wait for completion
                   await adService.showInterstitialAd();
                   
-                  // Platform-specific delays:
-                  // iOS: Fire-and-forget ad needs time to display before navigation
-                  // Android: Blocking ad already completed, just need audio recovery
-                  if (Platform.OS === 'ios') {
-                    console.log('PvPGameScreen: iOS - Delaying navigation to let ad display...');
-                    // Give ad 3 seconds to display before navigating away
-                    await new Promise(resolve => setTimeout(resolve, 3000));
-                  } else {
-                    console.log('PvPGameScreen: Android - Ad completed, recovering audio...');
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    const { reconfigureAudio } = require('./soundsUtil');
-                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                  }
+                  // Ad has completed - audio recovery for both platforms
+                  console.log('PvPGameScreen: First solver ad completed, recovering audio...');
+                  
+                  // Wait for ad framework to fully release audio
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  
+                  // Reconfigure audio session
+                  const { reconfigureAudio } = require('./soundsUtil');
+                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                  
+                  // Additional delay to ensure audio session is ready
+                  await new Promise(resolve => setTimeout(resolve, 200));
                   
                   playSound('chime').catch(() => {});
                   navigation.navigate('MainTabs');
@@ -1766,10 +1776,10 @@ const PvPGameScreen = () => {
                     });
                   }
                   
-                  // Industry standard: Show ad as overlay (fire-and-forget)
-                  adService.showInterstitialAd().catch(() => {});
+                  // Show ad and wait for completion before navigating
+                  await adService.showInterstitialAd().catch(() => {});
                   
-                  // Navigate immediately - ad will show on top
+                  // Navigate after ad completes
                   navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 } catch (markErr) {

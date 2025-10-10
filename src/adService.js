@@ -27,7 +27,7 @@ if (isExpoGo) {
   }
 }
 
-// Interstitial Ad Unit IDs - Production (both platforms)
+// Interstitial Ad Unit IDs
 const AD_UNIT_IDS = {
   INTERSTITIAL: Platform.OS === 'ios'
     ? 'ca-app-pub-8036041739101786/9274366810' // iOS production interstitial
@@ -40,6 +40,7 @@ class AdService {
     this.isInitialized = false;
     this.isAdLoaded = false;
     this.isLoadingAd = false; // Prevent concurrent loads - Grok's suggestion
+    this.loadRetries = 0; // Track retry attempts with exponential backoff
     this.adFrequency = 1; // Show ad after every X games (1 = every game)
     this.gamesPlayed = 0;
     
@@ -69,18 +70,13 @@ class AdService {
         return;
       }
 
-      // iOS App Tracking Transparency (ATT) - Grok's suggestion
+      // iOS App Tracking Transparency (ATT)
       if (Platform.OS === 'ios') {
         try {
           const { requestTrackingPermission } = require('expo-tracking-transparency');
-          const status = await requestTrackingPermission();
-          if (status !== 'granted') {
-            console.warn('AdService: ATT not granted, ads may be limited');
-          } else {
-            console.log('AdService: ATT granted, ads should work normally');
-          }
+          await requestTrackingPermission();
         } catch (attError) {
-          console.warn('AdService: ATT not available or failed:', attError.message);
+          // ATT not available, continue without it
         }
       }
 
@@ -159,30 +155,29 @@ class AdService {
         keywords: ['word game', 'puzzle', 'brain game'],
       });
 
-      // Add event listeners with enhanced error logging
       this.interstitialAd.addAdEventListener('loaded', () => {
         console.log('AdService: Interstitial ad loaded successfully');
         this.isAdLoaded = true;
         this.isLoadingAd = false;
+        this.loadRetries = 0;
       });
 
       this.interstitialAd.addAdEventListener('closed', () => {
         console.log('AdService: Interstitial ad closed, reloading...');
+        this.isAdLoaded = false; // Mark as not loaded after close
         // Reload for next use
         setTimeout(() => this.loadInterstitialAd(), 1000);
       });
 
       this.interstitialAd.addAdEventListener('error', (error) => {
-        console.error('AdService: Interstitial ad error:', error);
-        console.error('AdService: Error details:', {
-          code: error.code,
-          message: error.message,
-          domain: error.domain,
-          userInfo: error.userInfo
-        });
+        console.error('AdService: Ad error:', error.code, error.message);
         this.isLoadingAd = false;
-        // Retry loading after delay
-        setTimeout(() => this.loadInterstitialAd(), 5000);
+        this.isAdLoaded = false;
+        
+        // Retry with exponential backoff
+        const retryDelay = 5000 * Math.pow(2, Math.min(this.loadRetries || 0, 2));
+        this.loadRetries = (this.loadRetries || 0) + 1;
+        setTimeout(() => this.loadInterstitialAd(), retryDelay);
       });
 
       console.log('AdService: Starting to load interstitial ad...');
@@ -233,22 +228,9 @@ class AdService {
         hasAdInstance: !!this.interstitialAd
       });
 
-      // iOS-specific: Use InteractionManager and longer delay for stable presentation
-      if (Platform.OS === 'ios') {
-        console.log('AdService: iOS - Waiting for interactions to complete...');
-        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-        await new Promise(resolve => setTimeout(resolve, 500)); // Increased to 500ms
-        
-        // Double-check ad is still loaded after delay
-        if (!this.isAdLoaded) {
-          console.log('AdService: iOS - Ad no longer loaded after delay, skipping');
-          return true;
-        }
-      } else {
-        // Android: shorter delay but still wait for interactions
-        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+      // Wait for UI to settle before showing ad (both platforms)
+      await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Final check before showing
       if (!this.isAdLoaded) {
@@ -256,41 +238,58 @@ class AdService {
         return true;
       }
       
-      console.log('AdService: Attempting to show interstitial ad');
-      
-      // Platform-specific ad handling:
-      // iOS: Fire-and-forget (non-blocking) - ads work better without blocking
-      // Android: Blocking (wait for ad) - works perfectly with blocking
-      if (Platform.OS === 'ios') {
-        console.log('AdService: iOS - Showing ad with fire-and-forget (non-blocking)');
-        try {
-          // Fire-and-forget: Don't await, just trigger the ad
-          this.interstitialAd.show();
-          console.log('AdService: iOS - Ad show triggered, continuing immediately');
-          return true;
-        } catch (showError) {
-          console.error('AdService: iOS - Failed to trigger ad:', showError);
-          return true;
-        }
-      } else {
-        // Android: Blocking ad with timeout
-        console.log('AdService: Android - Showing ad with blocking (wait for completion)');
-        try {
-          const showAdPromise = this.interstitialAd.show();
-          const timeoutPromise = new Promise((resolve) => 
-            setTimeout(() => {
-              console.log('AdService: Android - Ad show timeout (15s), continuing');
-              resolve();
-            }, 15000)
-          );
+      // INDUSTRY STANDARD: Both iOS and Android should WAIT for ad completion
+      // This ensures proper UI flow and prevents conflicts with popups/navigation
+      console.log('AdService: Showing ad with blocking (wait for completion)');
+      try {
+        // Create a promise that resolves when ad closes or errors
+        const adCompletionPromise = new Promise((resolve, reject) => {
+          let completed = false;
           
-          await Promise.race([showAdPromise, timeoutPromise]);
-          console.log('AdService: Android - Successfully showed interstitial ad');
-          return true;
-        } catch (showError) {
-          console.error('AdService: Android - Failed to show interstitial ad:', showError);
-          return true;
-        }
+          // Set up one-time listeners for this ad show attempt
+          const closeListener = this.interstitialAd.addAdEventListener('closed', () => {
+            if (!completed) {
+              completed = true;
+              console.log('AdService: Ad closed, resolving promise');
+              resolve();
+            }
+          });
+          
+          const errorListener = this.interstitialAd.addAdEventListener('error', (error) => {
+            if (!completed) {
+              completed = true;
+              console.log('AdService: Ad error during show, resolving promise:', error);
+              resolve(); // Resolve, don't reject - game should continue
+            }
+          });
+          
+          // Show the ad
+          try {
+            this.interstitialAd.show();
+            console.log('AdService: Ad show() called successfully');
+          } catch (showError) {
+            console.error('AdService: Exception calling show():', showError);
+            if (!completed) {
+              completed = true;
+              resolve(); // Continue game flow even if show fails
+            }
+          }
+        });
+        
+        // Wait for ad to complete with 15 second timeout
+        const timeoutPromise = new Promise((resolve) => 
+          setTimeout(() => {
+            console.log('AdService: Ad show timeout (15s), continuing');
+            resolve();
+          }, 15000)
+        );
+        
+        await Promise.race([adCompletionPromise, timeoutPromise]);
+        console.log('AdService: Successfully completed ad show');
+        return true;
+      } catch (showError) {
+        console.error('AdService: Failed to show interstitial ad:', showError);
+        return true;
       }
       
     } catch (error) {
@@ -318,8 +317,11 @@ class AdService {
 
       // Ensure ad is loaded before attempting to show
       if (!this.isAdLoaded) {
-        console.log('AdService: Hint - ad not loaded yet, triggering immediate reload');
-        this.loadInterstitialAd();
+        console.log('AdService: Hint - ad not loaded yet, allowing hint anyway');
+        // Don't block hints if ads fail to load - just skip the ad
+        if (!this.isLoadingAd) {
+          this.loadInterstitialAd(); // Try to load for next time
+        }
         return true;
       }
 
@@ -330,22 +332,9 @@ class AdService {
         hasAdInstance: !!this.interstitialAd
       });
 
-      // iOS-specific: Use InteractionManager and longer delay for stable presentation
-      if (Platform.OS === 'ios') {
-        console.log('AdService: iOS Hint - Waiting for interactions to complete...');
-        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-        await new Promise(resolve => setTimeout(resolve, 500)); // Increased to 500ms
-        
-        // Double-check ad is still loaded after delay
-        if (!this.isAdLoaded) {
-          console.log('AdService: iOS Hint - Ad no longer loaded after delay, skipping');
-          return true;
-        }
-      } else {
-        // Android: shorter delay but still wait for interactions
-        await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+      // Wait for UI to settle before showing ad (both platforms)
+      await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Final check before showing
       if (!this.isAdLoaded) {
@@ -353,41 +342,57 @@ class AdService {
         return true;
       }
       
-      console.log('AdService: Attempting to show interstitial ad for hint');
-      
-      // Platform-specific ad handling for hints:
-      // iOS: Fire-and-forget (non-blocking)
-      // Android: Blocking (wait for ad)
-      if (Platform.OS === 'ios') {
-        console.log('AdService: iOS Hint - Showing ad with fire-and-forget (non-blocking)');
-        try {
-          // Fire-and-forget: Don't await, just trigger the ad
-          this.interstitialAd.show();
-          console.log('AdService: iOS Hint - Ad show triggered, continuing immediately');
-          return true;
-        } catch (showError) {
-          console.error('AdService: iOS Hint - Failed to trigger ad:', showError);
-          return true;
-        }
-      } else {
-        // Android: Blocking ad with timeout
-        console.log('AdService: Android Hint - Showing ad with blocking (wait for completion)');
-        try {
-          const showAdPromise = this.interstitialAd.show();
-          const timeoutPromise = new Promise((resolve) => 
-            setTimeout(() => {
-              console.log('AdService: Android Hint - Ad show timeout (15s), continuing');
-              resolve();
-            }, 15000)
-          );
+      // INDUSTRY STANDARD: Both iOS and Android should WAIT for ad completion
+      console.log('AdService: Hint - Showing ad with blocking (wait for completion)');
+      try {
+        // Create a promise that resolves when ad closes or errors
+        const adCompletionPromise = new Promise((resolve, reject) => {
+          let completed = false;
           
-          await Promise.race([showAdPromise, timeoutPromise]);
-          console.log('AdService: Android Hint - Successfully showed interstitial ad');
-          return true;
-        } catch (showError) {
-          console.error('AdService: Android Hint - Failed to show interstitial ad:', showError);
-          return true;
-        }
+          // Set up one-time listeners for this ad show attempt
+          const closeListener = this.interstitialAd.addAdEventListener('closed', () => {
+            if (!completed) {
+              completed = true;
+              console.log('AdService: Hint ad closed, resolving promise');
+              resolve();
+            }
+          });
+          
+          const errorListener = this.interstitialAd.addAdEventListener('error', (error) => {
+            if (!completed) {
+              completed = true;
+              console.log('AdService: Hint ad error during show, resolving promise:', error);
+              resolve(); // Resolve, don't reject - hint should continue
+            }
+          });
+          
+          // Show the ad
+          try {
+            this.interstitialAd.show();
+            console.log('AdService: Hint ad show() called successfully');
+          } catch (showError) {
+            console.error('AdService: Exception calling hint ad show():', showError);
+            if (!completed) {
+              completed = true;
+              resolve(); // Continue hint flow even if show fails
+            }
+          }
+        });
+        
+        // Wait for ad to complete with 15 second timeout
+        const timeoutPromise = new Promise((resolve) => 
+          setTimeout(() => {
+            console.log('AdService: Hint ad show timeout (15s), continuing');
+            resolve();
+          }, 15000)
+        );
+        
+        await Promise.race([adCompletionPromise, timeoutPromise]);
+        console.log('AdService: Successfully completed hint ad show');
+        return true;
+      } catch (showError) {
+        console.error('AdService: Failed to show hint ad:', showError);
+        return true;
       }
       
     } catch (error) {
@@ -420,17 +425,25 @@ class AdService {
     try {
       console.log('AdService: Preloading game completion ad...');
       
-      if (!this.isInitialized || !this.interstitialAd) {
+      if (!this.isInitialized) {
         console.log('AdService: Cannot preload - not initialized');
         return false;
       }
 
-      // Force reload the ad to ensure it's fresh
-      this.loadInterstitialAd();
+      // Only reload if no ad is currently loaded (don't destroy working ads!)
+      if (this.isAdLoaded) {
+        console.log('AdService: Ad already loaded, skipping preload');
+        return true;
+      }
       
-      // Wait a bit for the ad to load with timeout to prevent infinite loop
+      // Load ad if not already loaded
+      if (!this.interstitialAd || !this.isLoadingAd) {
+        this.loadInterstitialAd();
+      }
+      
+      // Wait for ad to load - iOS can take 3-5s (Grok's suggestion)
       let attempts = 0;
-      const maxAttempts = 15; // 1.5 seconds max
+      const maxAttempts = 50; // 5 seconds max (increased from 1.5s)
       const checkInterval = 100; // 100ms intervals
       
       while (!this.isAdLoaded && attempts < maxAttempts) {
@@ -438,7 +451,6 @@ class AdService {
         attempts++;
       }
       
-      console.log('AdService: Game completion ad preloaded:', this.isAdLoaded, `(attempts: ${attempts})`);
       return this.isAdLoaded;
       
     } catch (error) {
