@@ -1,9 +1,9 @@
 {
-  "latestBuildNumber": 37,
-  "versionCode": 37,
-  "versionName": "1.2.2",
-  "releaseDate": "2025-10-10",
-  "updateMessage": "Complete ghost badge fix - Added missing sendGameCompletionNotification method, game completion notifications now deleted on Resume click, added debug logging to track badge triggers"
+  "latestBuildNumber": 38,
+  "versionCode": 38,
+  "versionName": "1.2.3",
+  "releaseDate": "2025-10-11",
+  "updateMessage": "iOS ad fix complete: removed timing delays causing ad expiration, added ATT status tracking for better diagnostics, optimized ad requests based on tracking permission, removed duplicate 'Game Started' popup, enhanced error logging for ad failures"
 }
 
 
