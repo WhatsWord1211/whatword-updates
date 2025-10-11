@@ -773,6 +773,12 @@ const GameScreen = () => {
 
   const handleDifficultySelect = async (diff) => {
     try {
+      // Prevent double-clicks
+      if (isLoading) {
+        console.log('GameScreen: Already loading, ignoring duplicate difficulty selection');
+        return;
+      }
+      
       // Check if hard mode is locked
       if (diff === 'hard') {
         const isUnlocked = await checkHardModeUnlocked();
@@ -790,14 +796,15 @@ const GameScreen = () => {
       }
 
       const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
-      await playSound('chime').catch(() => {});
-      setGameState('playing');
-      setDifficulty(diff);
-      setHintCount(0);
-      setUsedHintLetters([]);
       
       setIsLoading(true);
       try {
+        await playSound('chime').catch(() => {});
+        setGameState('playing');
+        setDifficulty(diff);
+        setHintCount(0);
+        setUsedHintLetters([]);
+        
         const word = await selectRandomWord(length);
         if (!word) {
           throw new Error('Failed to select random word');
@@ -817,6 +824,7 @@ const GameScreen = () => {
       }
     } catch (error) {
       console.error('GameScreen: Error in handleDifficultySelect:', error);
+      setIsLoading(false); // Ensure loading state is cleared
       Alert.alert('Error', 'Failed to select difficulty. Please try again.');
     }
   };
@@ -831,10 +839,10 @@ const GameScreen = () => {
 
   return (
     <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
-      {/* Immersive mode - hide status bar during gameplay for more screen space */}
-      <StatusBar hidden={true} />
+      {/* Immersive mode - hide status bar during gameplay ONLY, not during difficulty selection */}
+      <StatusBar hidden={gameState !== 'selectDifficulty'} />
       
-      {isLoading && gameState !== 'selectDifficulty' && (
+      {isLoading && (
         <View style={styles.loadingOverlay}>
           <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading...</Text>
         </View>
