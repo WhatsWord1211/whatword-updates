@@ -44,6 +44,7 @@ class AdService {
     this.adFrequency = 1; // Show ad after every X games (1 = every game)
     this.gamesPlayed = 0;
     this.showCompletionCallback = null; // Callback for when ad closes
+    this.attStatus = null; // Track iOS ATT status
     
     // Don't auto-initialize - wait for consent manager to complete first
     // this.initialize();
@@ -75,8 +76,21 @@ class AdService {
       if (Platform.OS === 'ios') {
         try {
           const { requestTrackingPermission } = require('expo-tracking-transparency');
-          await requestTrackingPermission();
+          const status = await requestTrackingPermission();
+          this.attStatus = status; // Store for ad request configuration
+          console.log('AdService: ATT status:', status);
+          
+          if (status === 'denied') {
+            console.warn('AdService: ATT denied - this may prevent ads from loading on iOS');
+            console.warn('AdService: Users can enable tracking in Settings > Privacy > Tracking');
+            console.warn('AdService: Will request non-personalized ads only');
+            // Continue anyway - we'll try non-personalized ads
+          } else if (status === 'authorized') {
+            console.log('AdService: ATT authorized - personalized ads available for better fill rates');
+          }
         } catch (attError) {
+          console.log('AdService: ATT not available or failed:', attError);
+          this.attStatus = 'unavailable';
           // ATT not available, continue without it
         }
       }
@@ -151,8 +165,15 @@ class AdService {
       
       this.isLoadingAd = true;
       console.log('AdService: Creating interstitial ad with ID:', AD_UNIT_IDS.INTERSTITIAL);
+      
+      // Configure ad request based on ATT status
+      // If ATT authorized on iOS, allow personalized ads for better fill rates (~80% vs ~30%)
+      // If denied or Android, use non-personalized ads
+      const requestNonPersonalized = Platform.OS === 'ios' ? this.attStatus !== 'authorized' : true;
+      console.log('AdService: Request non-personalized ads:', requestNonPersonalized, '(ATT status:', this.attStatus, ')');
+      
       this.interstitialAd = InterstitialAd.createForAdRequest(AD_UNIT_IDS.INTERSTITIAL, {
-        requestNonPersonalizedAdsOnly: true,
+        requestNonPersonalizedAdsOnly: requestNonPersonalized,
         keywords: ['word game', 'puzzle', 'brain game'],
       });
 
@@ -165,35 +186,59 @@ class AdService {
 
       this.interstitialAd.addAdEventListener('closed', () => {
         console.log('AdService: Interstitial ad closed');
-        this.isAdLoaded = false; // Mark as not loaded after close
         
-        // Call completion callback if one is waiting
+        // Call completion callback FIRST if one is waiting
         if (this.showCompletionCallback) {
           console.log('AdService: Calling show completion callback');
-          this.showCompletionCallback();
+          const callback = this.showCompletionCallback;
           this.showCompletionCallback = null;
+          callback(); // Call after clearing to prevent recursion
         }
         
-        // Reload for next use
-        setTimeout(() => this.loadInterstitialAd(), 1000);
+        // THEN mark as not loaded and reload
+        this.isAdLoaded = false;
+        
+        // Reload for next use after a delay
+        setTimeout(() => {
+          if (!this.isLoadingAd) {
+            this.loadInterstitialAd();
+          }
+        }, 2000); // Increased delay to prevent interference
       });
 
       this.interstitialAd.addAdEventListener('error', (error) => {
         console.error('AdService: Ad error:', error.code, error.message);
-        this.isLoadingAd = false;
-        this.isAdLoaded = false;
         
-        // Call completion callback if one is waiting (ad failed, continue game flow)
+        // Log detailed error information for diagnosis
+        if (error.code === 1) {
+          console.error('AdService: Error code 1 (No fill) - often caused by ATT denial on iOS');
+          if (Platform.OS === 'ios' && this.attStatus === 'denied') {
+            console.error('AdService: ATT is denied - this is likely preventing ad fill');
+          }
+        } else if (error.code === 3) {
+          console.error('AdService: Error code 3 (No ad config) - check AdMob setup or ATT status');
+        }
+        
+        // Call completion callback FIRST if one is waiting (ad failed, continue game flow)
         if (this.showCompletionCallback) {
           console.log('AdService: Ad error, calling show completion callback to continue game flow');
-          this.showCompletionCallback();
+          const callback = this.showCompletionCallback;
           this.showCompletionCallback = null;
+          callback(); // Call after clearing to prevent recursion
         }
+        
+        // THEN update state
+        this.isLoadingAd = false;
+        this.isAdLoaded = false;
         
         // Retry with exponential backoff
         const retryDelay = 5000 * Math.pow(2, Math.min(this.loadRetries || 0, 2));
         this.loadRetries = (this.loadRetries || 0) + 1;
-        setTimeout(() => this.loadInterstitialAd(), retryDelay);
+        setTimeout(() => {
+          if (!this.isLoadingAd) {
+            this.loadInterstitialAd();
+          }
+        }, retryDelay);
       });
 
       console.log('AdService: Starting to load interstitial ad...');
@@ -228,24 +273,17 @@ class AdService {
       this.gamesPlayed++;
 
       // Ensure ad is loaded before attempting to show
-      if (!this.isAdLoaded) {
-        console.log('AdService: Ad not loaded yet, will skip this time');
-        this.loadInterstitialAd();
+      if (!this.isAdLoaded || !this.interstitialAd) {
+        console.log('AdService: Ad not loaded or ad instance missing, skipping');
+        if (!this.isLoadingAd) {
+          this.loadInterstitialAd();
+        }
         return true;
       }
 
-      // Wait for UI to settle before showing ad
-      await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Final check before showing
-      if (!this.isAdLoaded) {
-        console.log('AdService: Ad not loaded after delays, skipping');
-        return true;
-      }
-      
-      // Use existing event listeners via callback mechanism
-      console.log('AdService: Showing ad and waiting for completion via existing listeners');
+      // iOS CRITICAL: Show ad IMMEDIATELY without delays
+      // Delays cause ads to expire on iOS
+      console.log('AdService: Showing ad immediately (no delays)');
       
       return new Promise((resolve) => {
         // Set up timeout
@@ -262,7 +300,7 @@ class AdService {
           resolve(true);
         };
         
-        // Show the ad - existing listeners will handle the rest
+        // Show the ad IMMEDIATELY - existing listeners will handle the rest
         try {
           console.log('AdService: Calling show() on interstitialAd');
           this.interstitialAd.show();
@@ -299,26 +337,17 @@ class AdService {
       }
 
       // Ensure ad is loaded before attempting to show
-      if (!this.isAdLoaded) {
-        console.log('AdService: Hint - ad not loaded yet, allowing hint anyway');
+      if (!this.isAdLoaded || !this.interstitialAd) {
+        console.log('AdService: Hint - ad not loaded or ad instance missing, allowing hint anyway');
         if (!this.isLoadingAd) {
           this.loadInterstitialAd();
         }
         return true;
       }
 
-      // Wait for UI to settle before showing ad
-      await new Promise(resolve => InteractionManager.runAfterInteractions(resolve));
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Final check before showing
-      if (!this.isAdLoaded) {
-        console.log('AdService: Hint - Ad not loaded after delays, skipping');
-        return true;
-      }
-      
-      // Use existing event listeners via callback mechanism
-      console.log('AdService: Hint - Showing ad and waiting for completion via existing listeners');
+      // iOS CRITICAL: Show ad IMMEDIATELY without delays
+      // Delays cause ads to expire on iOS
+      console.log('AdService: Hint - Showing ad immediately (no delays)');
       
       return new Promise((resolve) => {
         // Set up timeout
@@ -335,7 +364,7 @@ class AdService {
           resolve(true);
         };
         
-        // Show the ad - existing listeners will handle the rest
+        // Show the ad IMMEDIATELY - existing listeners will handle the rest
         try {
           console.log('AdService: Hint - Calling show() on interstitialAd');
           this.interstitialAd.show();

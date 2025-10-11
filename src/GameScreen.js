@@ -195,23 +195,19 @@ const GameScreen = () => {
   const showGameCompletionAd = useCallback(async () => {
     try {
       console.log('GameScreen: showGameCompletionAd called for gameMode:', gameMode);
-      console.log('GameScreen: Platform:', Platform?.OS);
       
-      // Show ad and wait for completion (both iOS and Android now block properly)
+      // Show ad and wait for completion (blocks until ad closes)
       await adService.showInterstitialAd();
       
-      // Ad has completed - audio recovery for both platforms
+      // Ad has completed - minimal audio recovery
       console.log('GameScreen: Ad completed, recovering audio...');
       
-      // Wait for ad framework to fully release audio
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Brief delay for audio recovery
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Reconfigure audio session
       const { reconfigureAudio } = require('./soundsUtil');
       await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-      
-      // Additional delay to ensure audio session is ready
-      await new Promise(resolve => setTimeout(resolve, 200));
       
       console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
@@ -228,21 +224,18 @@ const GameScreen = () => {
     }
 
     try {
-      // Show interstitial ad for hint and wait for completion (both platforms now block)
+      // Show interstitial ad for hint and wait for completion
       await adService.showInterstitialAdForHint();
 
-      // Ad has completed - audio recovery for both platforms
+      // Ad has completed - minimal audio recovery
       console.log('GameScreen: Hint ad completed, recovering audio...');
       
-      // Wait for ad framework to fully release audio
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Brief delay for audio recovery
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Reconfigure audio session
       const { reconfigureAudio } = require('./soundsUtil');
       await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-      
-      // Additional delay to ensure audio session is ready
-      await new Promise(resolve => setTimeout(resolve, 200));
 
       console.log('GameScreen: Playing hint sound after ad...');
       await playSound('hint').catch(() => {});

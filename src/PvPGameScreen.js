@@ -1606,18 +1606,15 @@ const PvPGameScreen = () => {
                   // Second solver - show ad before results popup and wait for completion
                   await adService.showInterstitialAd();
                   
-                  // Ad has completed - audio recovery for both platforms
+                  // Ad has completed - minimal audio recovery
                   console.log('PvPGameScreen: Ad completed, recovering audio...');
                   
-                  // Wait for ad framework to fully release audio
-                  await new Promise(resolve => setTimeout(resolve, 500));
+                  // Brief delay for audio recovery
+                  await new Promise(resolve => setTimeout(resolve, 300));
                   
                   // Reconfigure audio session
                   const { reconfigureAudio } = require('./soundsUtil');
                   await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                  
-                  // Additional delay to ensure audio session is ready
-                  await new Promise(resolve => setTimeout(resolve, 200));
                   
                   // Process results after ad completes
                   const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
@@ -1663,18 +1660,15 @@ const PvPGameScreen = () => {
                   // First solver - show ad before navigating and wait for completion
                   await adService.showInterstitialAd();
                   
-                  // Ad has completed - audio recovery for both platforms
+                  // Ad has completed - minimal audio recovery
                   console.log('PvPGameScreen: First solver ad completed, recovering audio...');
                   
-                  // Wait for ad framework to fully release audio
-                  await new Promise(resolve => setTimeout(resolve, 500));
+                  // Brief delay for audio recovery
+                  await new Promise(resolve => setTimeout(resolve, 300));
                   
                   // Reconfigure audio session
                   const { reconfigureAudio } = require('./soundsUtil');
                   await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                  
-                  // Additional delay to ensure audio session is ready
-                  await new Promise(resolve => setTimeout(resolve, 200));
                   
                   playSound('chime').catch(() => {});
                   navigation.navigate('MainTabs');
