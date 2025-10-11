@@ -714,6 +714,7 @@ export const easyWordList = [
   'hank',
   'hard',
   'hare',
+  'hark',
   'harm',
   'harp',
   'hart',

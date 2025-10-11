@@ -6,12 +6,15 @@ import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, collection, query, where, updateDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
+import { useTheme } from './ThemeContext';
+import friendRecordsService from './friendRecordsService';
 
 const CreateChallengeScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const [friends, setFriends] = useState([]);
-
+  const [friendRecords, setFriendRecords] = useState({});
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
@@ -104,6 +107,13 @@ const CreateChallengeScreen = () => {
       }
 
       setFriends(friendsData);
+      
+      // Load friend records for all friends
+      if (friendsData.length > 0) {
+        const friendIds = friendsData.map(f => f.uid);
+        const records = await friendRecordsService.getBatchFriendRecords(userId, friendIds);
+        setFriendRecords(records);
+      }
     } catch (error) {
       console.error('Failed to load friends:', error);
       Alert.alert('Error', 'Failed to load friends list. Please try again.');
@@ -218,22 +228,37 @@ const CreateChallengeScreen = () => {
 
             
             <View style={styles.friendsContainer}>
-              {friends.map((friend, index) => (
-                <View key={friend.uid} style={[styles.friendItem, index === friends.length - 1 && styles.lastFriendItem]}>
-                  <View style={styles.friendInfo}>
-                    <Text style={styles.friendUsername}>{friend.username}</Text>
+              {friends.map((friend, index) => {
+                const record = friendRecords[friend.uid];
+                const formattedRecord = friendRecordsService.formatRecord(record);
+                const hasPlayedGames = record && record.totalGames > 0;
+                
+                return (
+                  <View key={friend.uid} style={[styles.friendItem, index === friends.length - 1 && styles.lastFriendItem]}>
+                    <View style={styles.friendInfo}>
+                      <Text style={styles.friendUsername}>{friend.username}</Text>
+                      {hasPlayedGames ? (
+                        <Text style={[styles.friendRecord, { color: colors.textSecondary }]}>
+                          {formattedRecord} (W-L-T)
+                        </Text>
+                      ) : (
+                        <Text style={[styles.friendRecord, { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' }]}>
+                          No games yet
+                        </Text>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.challengeButton}
+                      onPress={() => {
+                        playSound('chime');
+                        challengeFriend(friend);
+                      }}
+                    >
+                      <Text style={styles.challengeButtonText}>Challenge</Text>
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    style={styles.challengeButton}
-                    onPress={() => {
-                      playSound('chime');
-                      challengeFriend(friend);
-                    }}
-                  >
-                    <Text style={styles.challengeButtonText}>Challenge</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </>
                  )}

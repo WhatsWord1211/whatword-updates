@@ -322,5 +322,18 @@ service cloud.firestore {
       allow read, write: if request.auth != null && 
         request.auth.uid == userId;
     }
+    
+    // User subcollections - friend records (head-to-head PvP stats)
+    match /users/{userId}/friendRecords/{friendId} {
+      // Owner can read/write their own records
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // The friend can WRITE to update the record after a game completes
+      // (when player completes a game, they update both their record AND opponent's record)
+      allow write: if request.auth != null && request.auth.uid == friendId;
+      
+      // Friends can read records about themselves (for display purposes)
+      allow read: if request.auth != null && request.auth.uid == friendId;
+    }
   }
 }

@@ -23,7 +23,6 @@ const SetWordGameScreen = () => {
   const [difficulty, setDifficulty] = useState(null);
   const [showDifficultySelection, setShowDifficultySelection] = useState(true);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
-  const [showGameStartedPopup, setShowGameStartedPopup] = useState(false);
   const [showChallengeSentPopup, setShowChallengeSentPopup] = useState(false);
   const [createdGameId, setCreatedGameId] = useState(null);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
@@ -75,7 +74,7 @@ const SetWordGameScreen = () => {
     if (updateNavigationBar) {
       updateNavigationBar();
     }
-  }, [showChallengeSentPopup, showGameStartedPopup, showMenuPopup, updateNavigationBar]);
+  }, [showChallengeSentPopup, showMenuPopup, updateNavigationBar]);
 
   // If accepting a challenge, use the challenge's difficulty and skip selection
   useEffect(() => {
@@ -306,8 +305,10 @@ const SetWordGameScreen = () => {
         }
 
         setCreatedGameId(gameRef.id);
-        setShowGameStartedPopup(true);
-        playSound('chime');
+        // Skip "Game Started" popup - go directly to PvPGame screen
+        // "The Battle Has Begun!" popup will show in PvPGameScreen instead
+        playSound('chime').catch(() => {});
+        navigation.navigate('PvPGame', { gameId: gameRef.id });
       } else {
         // Player 1 is creating the challenge
         const challengeData = {
@@ -642,30 +643,6 @@ const SetWordGameScreen = () => {
              onPress={() => setShowMenuPopup(false)}
            >
              <Text style={styles.buttonText}>Cancel</Text>
-           </TouchableOpacity>
-         </View>
-       </View>
-     </Modal>
-     
-     {/* Game Started Popup Modal */}
-     <Modal visible={showGameStartedPopup} transparent animationType="fade">
-       <View style={styles.modalOverlay}>
-         <View style={[styles.winPopup, styles.modalShadow]}>
-           <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>
-             Game Started!
-           </Text>
-           <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>
-             Both players can now play at their own pace!
-           </Text>
-           <TouchableOpacity
-             style={styles.winButtonContainer}
-             onPress={() => {
-               setShowGameStartedPopup(false);
-               playSound('chime').catch(() => {});
-               navigation.navigate('PvPGame', { gameId: createdGameId });
-             }}
-           >
-             <Text style={styles.buttonText}>OK</Text>
            </TouchableOpacity>
          </View>
        </View>

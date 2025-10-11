@@ -2790,8 +2790,15 @@ export default StyleSheet.create({
     fontWeight: '600',
     color: '#E5E7EB',
     fontFamily: 'Roboto-Bold',
-    marginBottom: 0, // Removed bottom margin since no email below
+    marginBottom: 4,
     flex: 1, // Allow username to take available space
+  },
+  friendRecord: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#9CA3AF',
+    fontFamily: 'Roboto-Regular',
+    marginTop: 2,
   },
   removeButton: {
     paddingVertical: 8,

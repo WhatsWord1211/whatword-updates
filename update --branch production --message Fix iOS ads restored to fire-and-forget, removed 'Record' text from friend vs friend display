@@ -1,0 +1,56 @@
+warning: in the working copy of 'src/adService.js', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/adService.js b/src/adService.js[m
+[1mindex 5c5fda3..30951e1 100644[m
+[1m--- a/src/adService.js[m
+[1m+++ b/src/adService.js[m
+[36m@@ -264,12 +264,22 @@[m [mclass AdService {[m
+       if (Platform.OS === 'ios') {[m
+         console.log('AdService: iOS - Showing ad with fire-and-forget (non-blocking)');[m
+         try {[m
+[31m-          // Fire-and-forget: Don't await, just trigger the ad[m
+[31m-          this.interstitialAd.show();[m
+[31m-          console.log('AdService: iOS - Ad show triggered, continuing immediately');[m
+[32m+[m[32m          // Mark as no longer loaded immediately to prevent double-show[m
+[32m+[m[32m          this.isAdLoaded = false;[m
+[32m+[m[41m          [m
+[32m+[m[32m          // Fire-and-forget: Trigger the ad and immediately return[m
+[32m+[m[32m          // The ad will show on top of the app without blocking[m
+[32m+[m[32m          this.interstitialAd.show().catch(err => {[m
+[32m+[m[32m            console.error('AdService: iOS - Ad show promise rejected:', err);[m
+[32m+[m[32m            // Reload for next time[m
+[32m+[m[32m            this.loadInterstitialAd();[m
+[32m+[m[32m          });[m
+[32m+[m[41m          [m
+[32m+[m[32m          console.log('AdService: iOS - Ad show() called, continuing without waiting');[m
+           return true;[m
+         } catch (showError) {[m
+           console.error('AdService: iOS - Failed to trigger ad:', showError);[m
+[32m+[m[32m          this.loadInterstitialAd(); // Reload for next time[m
+           return true;[m
+         }[m
+       } else {[m
+[36m@@ -361,12 +371,21 @@[m [mclass AdService {[m
+       if (Platform.OS === 'ios') {[m
+         console.log('AdService: iOS Hint - Showing ad with fire-and-forget (non-blocking)');[m
+         try {[m
+[31m-          // Fire-and-forget: Don't await, just trigger the ad[m
+[31m-          this.interstitialAd.show();[m
+[31m-          console.log('AdService: iOS Hint - Ad show triggered, continuing immediately');[m
+[32m+[m[32m          // Mark as no longer loaded immediately to prevent double-show[m
+[32m+[m[32m          this.isAdLoaded = false;[m
+[32m+[m[41m          [m
+[32m+[m[32m          // Fire-and-forget: Trigger the ad and immediately return[m
+[32m+[m[32m          this.interstitialAd.show().catch(err => {[m
+[32m+[m[32m            console.error('AdService: iOS Hint - Ad show promise rejected:', err);[m
+[32m+[m[32m            // Reload for next time[m
+[32m+[m[32m            this.loadInterstitialAd();[m
+[32m+[m[32m          });[m
+[32m+[m[41m          [m
+[32m+[m[32m          console.log('AdService: iOS Hint - Ad show() called, continuing without waiting');[m
+           return true;[m
+         } catch (showError) {[m
+           console.error('AdService: iOS Hint - Failed to trigger ad:', showError);[m
+[32m+[m[32m          this.loadInterstitialAd(); // Reload for next time[m
+           return true;[m
+         }[m
+       } else {[m
