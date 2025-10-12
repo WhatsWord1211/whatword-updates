@@ -37,46 +37,54 @@ export async function initializeConsentAndAds() {
     console.log('ConsentManager: MaxAdContentRating available:', !!MaxAdContentRating);
     console.log('ConsentManager: AdsConsent available:', !!AdsConsent);
 
-    // iOS ATT prompt (required for personalized ads)
+    // iOS ATT prompt (required for personalized ads - MUST be done before SDK init)
     if (Platform.OS === 'ios') {
       try {
         console.log('ConsentManager: Requesting iOS tracking permissions...');
-        await requestTrackingPermissionsAsync();
-        console.log('ConsentManager: iOS tracking permissions completed');
+        const { status } = await requestTrackingPermissionsAsync();
+        console.log('ConsentManager: iOS tracking permissions result:', status);
+        
+        if (status === 'denied') {
+          console.warn('ConsentManager: ATT denied by user - ads will be non-personalized');
+          console.warn('ConsentManager: User can enable in Settings > Privacy > Tracking');
+        } else if (status === 'granted') {
+          console.log('ConsentManager: ATT granted - personalized ads enabled');
+        }
       } catch (error) {
         console.error('ConsentManager: iOS tracking permissions error:', error);
       }
     }
 
-    // UMP disabled for now
-
-    // After consent, set request configuration
-    if (mobileAds && MaxAdContentRating) {
-      try {
-        console.log('ConsentManager: Setting AdMob request configuration...');
-        await mobileAds().setRequestConfiguration({
-          maxAdContentRating: MaxAdContentRating.T,
-          // tagForUnderAgeOfConsent: false, // add if needed
-          // tagForChildDirectedTreatment: false, // add if needed
-        });
-      } catch (configError) {
-        console.warn('ConsentManager: Failed to set request configuration:', configError);
-      }
-    }
-
-    // Initialize the SDK (prepares ads per adService logic)
+    // Initialize the SDK ONCE here (not in adService)
     try {
       if (mobileAds) {
+        console.log('ConsentManager: Initializing AdMob SDK...');
         await mobileAds().initialize();
         console.log('ConsentManager: AdMob SDK initialized successfully');
         
-        // Now initialize the ad service
+        // Set request configuration AFTER initialization
+        if (MaxAdContentRating) {
+          try {
+            console.log('ConsentManager: Setting AdMob request configuration...');
+            await mobileAds().setRequestConfiguration({
+              maxAdContentRating: MaxAdContentRating.T,
+              // tagForUnderAgeOfConsent: false,
+              // tagForChildDirectedTreatment: false,
+            });
+            console.log('ConsentManager: Request configuration set successfully');
+          } catch (configError) {
+            console.warn('ConsentManager: Failed to set request configuration:', configError);
+          }
+        }
+        
+        // Now initialize the ad service (which will load the first ad)
         const adService = require('./adService').default;
         await adService.initialize();
         console.log('ConsentManager: AdService initialized successfully');
       }
     } catch (initError) {
-      console.warn('ConsentManager: Failed to initialize AdMob SDK:', initError);
+      console.error('ConsentManager: Failed to initialize AdMob SDK:', initError);
+      console.error('ConsentManager: Error details:', initError.message);
     }
 
     // Determine personalization status for callers

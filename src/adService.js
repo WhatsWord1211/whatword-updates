@@ -52,16 +52,10 @@ class AdService {
 
   async initialize() {
     try {
-      console.log('AdService: Initializing...');
+      console.log('AdService: Initializing (called from consentManager after SDK init)...');
       console.log('AdService: Platform:', Platform?.OS || 'unknown');
       console.log('AdService: Constants.appOwnership:', Constants?.appOwnership);
       console.log('AdService: __DEV__:', __DEV__);
-      
-      // iOS-specific: Add delay before AdMob initialization
-      if (Platform.OS === 'ios') {
-        console.log('AdService: iOS detected, adding initialization delay...');
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
       
       // Check if AdMob is available
       if (!mobileAds || !InterstitialAd) {
@@ -72,58 +66,35 @@ class AdService {
         return;
       }
 
-      // iOS App Tracking Transparency (ATT)
+      // ATT status will be set by consentManager, but we can check it here
       if (Platform.OS === 'ios') {
         try {
-          const { requestTrackingPermission } = require('expo-tracking-transparency');
-          const status = await requestTrackingPermission();
+          const { getTrackingPermissionsAsync } = require('expo-tracking-transparency');
+          const { status } = await getTrackingPermissionsAsync();
           this.attStatus = status; // Store for ad request configuration
           console.log('AdService: ATT status:', status);
           
           if (status === 'denied') {
-            console.warn('AdService: ATT denied - this may prevent ads from loading on iOS');
-            console.warn('AdService: Users can enable tracking in Settings > Privacy > Tracking');
-            console.warn('AdService: Will request non-personalized ads only');
-            // Continue anyway - we'll try non-personalized ads
-          } else if (status === 'authorized') {
-            console.log('AdService: ATT authorized - personalized ads available for better fill rates');
+            console.warn('AdService: ATT denied - will use non-personalized ads only');
+          } else if (status === 'granted') {
+            console.log('AdService: ATT granted - personalized ads available for better fill rates');
           }
         } catch (attError) {
-          console.log('AdService: ATT not available or failed:', attError);
+          console.log('AdService: Could not get ATT status:', attError);
           this.attStatus = 'unavailable';
-          // ATT not available, continue without it
         }
       }
 
-      // Retry logic with exponential backoff - Grok's suggestion
-      let retries = 3;
-      while (retries > 0) {
-        try {
-          console.log(`AdService: Initializing mobile ads SDK (attempt ${4 - retries}/3)...`);
-          await mobileAds().initialize();
-          this.isInitialized = true;
-          
-          console.log('AdService: Mobile ads SDK initialized, loading interstitial ad...');
-          // Pre-load ads
-          this.loadInterstitialAd();
-          console.log('AdService: Successfully initialized with AdMob');
-          return; // Success, exit loop
-        } catch (error) {
-          console.error(`AdService: Init failed (attempt ${4 - retries}/3):`, error);
-          retries--;
-          if (retries > 0) {
-            const delay = 2000 * (3 - retries); // 2s, 4s, 6s
-            console.log(`AdService: Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-      }
+      // SDK is already initialized by consentManager, just mark as ready
+      this.isInitialized = true;
+      console.log('AdService: Marked as initialized, loading first ad...');
       
-      // Final failure after all retries
-      console.error('AdService: Failed to initialize after 3 attempts');
-      this.isInitialized = false;
+      // Pre-load first ad immediately
+      this.loadInterstitialAd();
+      
+      console.log('AdService: Successfully initialized');
     } catch (error) {
-      console.error('AdService: Failed to initialize AdMob:', error);
+      console.error('AdService: Failed to initialize:', error);
       console.error('AdService: Error details:', error.message, error.stack);
       this.isInitialized = false;
     }
@@ -167,14 +138,15 @@ class AdService {
       console.log('AdService: Creating interstitial ad with ID:', AD_UNIT_IDS.INTERSTITIAL);
       
       // Configure ad request based on ATT status
-      // If ATT authorized on iOS, allow personalized ads for better fill rates (~80% vs ~30%)
-      // If denied or Android, use non-personalized ads
-      const requestNonPersonalized = Platform.OS === 'ios' ? this.attStatus !== 'authorized' : true;
-      console.log('AdService: Request non-personalized ads:', requestNonPersonalized, '(ATT status:', this.attStatus, ')');
+      // If ATT granted on iOS, allow personalized ads for better fill rates
+      // Otherwise use non-personalized ads (works on both iOS and Android)
+      const requestNonPersonalized = Platform.OS === 'ios' ? this.attStatus !== 'granted' : true;
+      console.log('AdService: Creating ad with requestNonPersonalizedAdsOnly:', requestNonPersonalized);
+      console.log('AdService: ATT status:', this.attStatus, 'Platform:', Platform.OS);
       
       this.interstitialAd = InterstitialAd.createForAdRequest(AD_UNIT_IDS.INTERSTITIAL, {
         requestNonPersonalizedAdsOnly: requestNonPersonalized,
-        keywords: ['word game', 'puzzle', 'brain game'],
+        keywords: ['word games', 'puzzle games', 'brain games', 'word puzzle'],
       });
 
       this.interstitialAd.addAdEventListener('loaded', () => {

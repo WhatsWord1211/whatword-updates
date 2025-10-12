@@ -766,6 +766,9 @@ const GameScreen = () => {
 
   const handleDifficultySelect = async (diff) => {
     try {
+      console.log('GameScreen: handleDifficultySelect called with:', diff);
+      console.log('GameScreen: Current isLoading state:', isLoading);
+      
       // Prevent double-clicks
       if (isLoading) {
         console.log('GameScreen: Already loading, ignoring duplicate difficulty selection');
@@ -790,35 +793,48 @@ const GameScreen = () => {
 
       const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
       
+      console.log('GameScreen: Setting isLoading to true, selecting word with length:', length);
       setIsLoading(true);
+      
       try {
         await playSound('chime').catch(() => {});
-        setGameState('playing');
-        setDifficulty(diff);
-        setHintCount(0);
-        setUsedHintLetters([]);
         
+        console.log('GameScreen: Selecting random word...');
         const word = await selectRandomWord(length);
         if (!word) {
           throw new Error('Failed to select random word');
         }
         const upperWord = word.toUpperCase();
+        console.log('GameScreen: Word selected successfully, updating state...');
+        
         setTargetWord(upperWord);
+        setGameState('playing');
+        setDifficulty(diff);
+        setHintCount(0);
+        setUsedHintLetters([]);
         navigation.setParams({ wordLength: length, showDifficulty: false });
+        
+        console.log('GameScreen: Difficulty selection complete');
       } catch (error) {
-        console.error('GameScreen: Failed to select random word', error);
+        console.error('GameScreen: Failed to select random word:', error);
         // Fallback: use a default word to prevent game from crashing
         const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
         setTargetWord(fallbackWord);
+        setGameState('playing');
+        setDifficulty(diff);
+        setHintCount(0);
+        setUsedHintLetters([]);
         navigation.setParams({ wordLength: length, showDifficulty: false });
+        
         Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
       } finally {
+        console.log('GameScreen: Resetting isLoading to false');
         setIsLoading(false);
       }
     } catch (error) {
       console.error('GameScreen: Error in handleDifficultySelect:', error);
+      Alert.alert('Error', `Failed to select difficulty: ${error.message}`);
       setIsLoading(false); // Ensure loading state is cleared
-      Alert.alert('Error', 'Failed to select difficulty. Please try again.');
     }
   };
 
@@ -866,12 +882,10 @@ const GameScreen = () => {
           )}
           
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, isLoading && styles.disabledButton]}
             onPress={() => {
               console.log('GameScreen: Easy difficulty button pressed');
-              handleDifficultySelect('easy').catch(error => {
-                console.error('Failed to select easy difficulty:', error);
-              });
+              handleDifficultySelect('easy');
             }}
             disabled={isLoading}
             activeOpacity={0.7}
@@ -879,12 +893,10 @@ const GameScreen = () => {
             <Text style={styles.buttonText}>Easy (4 Letters)</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, isLoading && styles.disabledButton]}
             onPress={() => {
               console.log('GameScreen: Regular difficulty button pressed');
-              handleDifficultySelect('regular').catch(error => {
-                console.error('Failed to select regular difficulty:', error);
-              });
+              handleDifficultySelect('regular');
             }}
             disabled={isLoading}
             activeOpacity={0.7}
@@ -894,14 +906,13 @@ const GameScreen = () => {
           <TouchableOpacity
             style={[
               styles.button, 
-              !hardModeUnlocked && styles.lockedButton
+              !hardModeUnlocked && styles.lockedButton,
+              isLoading && styles.disabledButton
             ]}
             onPress={() => {
-              console.log('GameScreen: Hard difficulty button pressed');
+              console.log('GameScreen: Hard difficulty button pressed, hardModeUnlocked:', hardModeUnlocked);
               if (hardModeUnlocked) {
-                handleDifficultySelect('hard').catch(error => {
-                  console.error('Failed to select hard difficulty:', error);
-                });
+                handleDifficultySelect('hard');
               } else {
                 // Show unlock popup for locked hard mode
                 Alert.alert(
@@ -914,7 +925,7 @@ const GameScreen = () => {
                 );
               }
             }}
-            disabled={!hardModeUnlocked && false || isLoading}
+            disabled={isLoading || (!hardModeUnlocked && false)}
             activeOpacity={0.7}
           >
             <Text style={[
