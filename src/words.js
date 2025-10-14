@@ -627,6 +627,7 @@ export const wordList = [
   'cords',
   'corer',
   'cores',
+  'corks',
   'corny',
   'corps',
   'cosmo',

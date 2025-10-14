@@ -4,7 +4,7 @@
     "slug": "whatword",
     "scheme": "whatword",
     "owner": "wilderbssmstr",
-    "version": "1.2.4",
+    "version": "1.2.5",
     "orientation": "portrait",
     "icon": "./assets/images/WhatWord-Icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
     "android": {
       "package": "com.whatword.app",
       "googleServicesFile": "./firebase/google-services.json",
-      "versionCode": 40,
+      "versionCode": 41,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/WhatWord-Icon.png",
         "backgroundColor": "#FFFFFF"
@@ -80,9 +80,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.whatword.app",
       "googleServicesFile": "./firebase/GoogleService-Info.plist",
-      "buildNumber": "40",
+      "buildNumber": "41",
       "infoPlist": {
-        "NSUserTrackingUsageDescription": "Your data will be used to deliver personalized ads and to measure ad performance.",
+        "NSUserTrackingUsageDescription": "This app uses advertising to support free gameplay. Your data will be used to show you relevant ads and measure their performance. You can still use the app if you decline.",
         "NSUserNotificationsUsageDescription": "Allow notifications to alert you about new challenges, friend requests, and game updates.",
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -148,7 +148,7 @@
       ],
       "expo-tracking-transparency"
     ],
-    "runtimeVersion": "1.2.3",
+    "runtimeVersion": "1.2.5",
     "updates": {
       "url": "https://u.expo.dev/b189d504-5441-4ee4-977f-2ad58d77659d"
     }

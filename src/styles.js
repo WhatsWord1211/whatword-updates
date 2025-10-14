@@ -1,4 +1,10 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Dimensions, Platform } from 'react-native';
+import { isTablet, responsiveWidth, responsiveFontSize, responsiveSpacing, getContentWidth } from './responsive';
+
+// Helper to get responsive values
+const rw = responsiveWidth;
+const rf = responsiveFontSize;
+const rs = responsiveSpacing;
 
 export default StyleSheet.create({
   container: {
@@ -10,30 +16,30 @@ export default StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: rs(20, 30),
   },
 
   title: {
-    fontSize: 48,
+    fontSize: rf(48, 64),
     fontWeight: 'bold',
     color: '#F59E0B',
-    marginBottom: 10,
+    marginBottom: rs(10, 15),
     textAlign: 'center',
     fontFamily: 'Roboto-Regular',
   },
 
   subtitle: {
-    fontSize: 18,
+    fontSize: rf(18, 22),
     color: '#E5E7EB',
-    marginBottom: 40,
+    marginBottom: rs(40, 50),
     textAlign: 'center',
     fontFamily: 'Roboto-Regular',
   },
 
   form: {
     width: '100%',
-    maxWidth: 300,
-    marginBottom: 30,
+    maxWidth: rw(300, 500),
+    marginBottom: rs(30, 40),
   },
 
   input: {
@@ -98,10 +104,10 @@ export default StyleSheet.create({
   },
   imageHeader: {
     width: '80%',
-    maxWidth: 360,
-    height: 90,
-    marginTop: 80,
-    marginBottom: 40,
+    maxWidth: rw(360, 550),
+    height: rf(90, 120),
+    marginTop: rs(80, 100),
+    marginBottom: rs(40, 60),
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
@@ -129,13 +135,13 @@ export default StyleSheet.create({
   },
   button: {
     backgroundColor: '#F59E0B',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginVertical: 8,
+    paddingVertical: rs(12, 16),
+    paddingHorizontal: rs(24, 32),
+    borderRadius: rs(8, 10),
+    marginVertical: rs(8, 12),
     width: '90%',
-    maxWidth: 320,
-    minWidth: 280,
+    maxWidth: rw(320, 500),
+    minWidth: rw(280, 400),
     alignItems: 'center',
     alignSelf: 'center',
     // 3D bevel + stronger shadow
@@ -167,13 +173,13 @@ export default StyleSheet.create({
 
   difficultyButton: {
     backgroundColor: '#F59E0B',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginVertical: 8,
+    paddingVertical: rs(12, 18),
+    paddingHorizontal: rs(20, 32),
+    borderRadius: rs(8, 12),
+    marginVertical: rs(8, 12),
     width: '95%',
-    maxWidth: 350,
-    minWidth: 300,
+    maxWidth: rw(350, 550),
+    minWidth: rw(300, 450),
     alignItems: 'center',
     alignSelf: 'center',
     borderTopWidth: 1,
@@ -663,10 +669,11 @@ export default StyleSheet.create({
   },
   modalContainer: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   modalShadow: {
     shadowColor: '#000',
@@ -764,10 +771,11 @@ export default StyleSheet.create({
   },
   invalidGuessPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   invalidGuessTitle: {
     fontSize: 22,
@@ -805,10 +813,11 @@ export default StyleSheet.create({
   },
   congratsPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   congratsTitle: {
     fontSize: 22,
@@ -846,10 +855,11 @@ export default StyleSheet.create({
   },
   winPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   winTitle: {
     fontSize: 22,
@@ -895,10 +905,11 @@ export default StyleSheet.create({
   },
   losePopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   loseTitle: {
     fontSize: 22,
@@ -936,10 +947,11 @@ export default StyleSheet.create({
   },
   opponentGuessesPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   opponentGuessesTitle: {
     fontSize: 22,
@@ -969,10 +981,11 @@ export default StyleSheet.create({
   },
   opponentSolvedPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   opponentSolvedTitle: {
     fontSize: 22,
@@ -990,10 +1003,11 @@ export default StyleSheet.create({
   },
   maxGuessesPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   maxGuessesTitle: {
     fontSize: 22,
@@ -1023,10 +1037,11 @@ export default StyleSheet.create({
   },
   tiePopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   tieTitle: {
     fontSize: 22,
@@ -1056,10 +1071,11 @@ export default StyleSheet.create({
   },
   menuPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   menuTitle: {
     fontSize: 22,
@@ -1092,10 +1108,11 @@ export default StyleSheet.create({
   },
   quitConfirmPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   quitConfirmTitle: {
     fontSize: 22,
@@ -1125,10 +1142,11 @@ export default StyleSheet.create({
   },
   wordRevealPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   wordRevealTitle: {
     fontSize: 22,
@@ -1158,10 +1176,11 @@ export default StyleSheet.create({
   },
   hintPopup: {
     backgroundColor: '#374151',
-    padding: 24,
-    borderRadius: 12,
+    padding: rs(24, 32),
+    borderRadius: rs(12, 16),
     alignItems: 'center',
-    width: '85%',
+    width: isTablet() ? '60%' : '85%',
+    maxWidth: rw(500, 700),
   },
   hintTitle: {
     fontSize: 22,
@@ -1213,10 +1232,11 @@ export default StyleSheet.create({
   // Rank-up popup styles
   rankUpPopup: {
     backgroundColor: '#1F2937',
-    padding: 32,
-    borderRadius: 16,
+    padding: rs(32, 40),
+    borderRadius: rs(16, 20),
     alignItems: 'center',
-    width: '90%',
+    width: isTablet() ? '65%' : '90%',
+    maxWidth: rw(550, 750),
     borderWidth: 3,
     borderColor: '#F59E0B',
   },
@@ -4193,11 +4213,11 @@ export default StyleSheet.create({
   // Notification Permission Popup Styles
   notificationPermissionPopup: {
     backgroundColor: '#374151',
-    padding: 32,
-    borderRadius: 16,
+    padding: rs(32, 40),
+    borderRadius: rs(16, 20),
     alignItems: 'center',
-    width: '90%',
-    maxWidth: 400,
+    width: isTablet() ? '65%' : '90%',
+    maxWidth: rw(400, 600),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

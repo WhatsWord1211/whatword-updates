@@ -1,9 +1,53 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
+import { requestTrackingPermissionsAsync, getTrackingPermissionsAsync } from 'expo-tracking-transparency';
 
 export async function initializeConsentAndAds() {
   try {
+    // iOS ATT prompt MUST be requested FIRST before any tracking/ad initialization
+    // This is required by Apple App Store guidelines
+    if (Platform.OS === 'ios') {
+      try {
+        console.log('ConsentManager: [iOS ATT] Starting App Tracking Transparency flow...');
+        
+        // First check current status
+        const currentStatus = await getTrackingPermissionsAsync();
+        console.log('ConsentManager: [iOS ATT] Current permission status:', currentStatus.status);
+        
+        // If not determined yet, request permission (this shows the system prompt)
+        if (currentStatus.status === 'undetermined') {
+          console.log('ConsentManager: [iOS ATT] Status is undetermined, requesting permission...');
+          const { status } = await requestTrackingPermissionsAsync();
+          console.log('ConsentManager: [iOS ATT] Permission request result:', status);
+          
+          if (status === 'denied') {
+            console.warn('ConsentManager: [iOS ATT] User denied tracking permission - ads will be non-personalized');
+            console.warn('ConsentManager: [iOS ATT] User can enable in Settings > Privacy & Security > Tracking');
+          } else if (status === 'granted') {
+            console.log('ConsentManager: [iOS ATT] User granted tracking permission - personalized ads enabled');
+          } else if (status === 'restricted') {
+            console.warn('ConsentManager: [iOS ATT] Tracking is restricted (parental controls or MDM)');
+          }
+        } else {
+          // Status was already determined (granted, denied, or restricted)
+          console.log('ConsentManager: [iOS ATT] Permission was previously determined:', currentStatus.status);
+          
+          if (currentStatus.status === 'denied') {
+            console.warn('ConsentManager: [iOS ATT] User previously denied tracking - ads will be non-personalized');
+            console.warn('ConsentManager: [iOS ATT] To enable, go to Settings > Privacy & Security > Tracking > WhatWord');
+          } else if (currentStatus.status === 'granted') {
+            console.log('ConsentManager: [iOS ATT] User previously granted tracking - personalized ads enabled');
+          } else if (currentStatus.status === 'restricted') {
+            console.warn('ConsentManager: [iOS ATT] Tracking is restricted by device settings');
+          }
+        }
+      } catch (error) {
+        console.error('ConsentManager: [iOS ATT] Error during tracking permission flow:', error);
+        console.error('ConsentManager: [iOS ATT] Error details:', error.message, error.stack);
+      }
+    }
+
+    // NOW initialize ad modules AFTER ATT has been handled
     // Lazy-load Google Mobile Ads so Expo Go doesn't crash (native module not present)
     let adModule = null;
     const isExpoGo = Constants?.appOwnership === 'expo' && __DEV__;
@@ -36,24 +80,6 @@ export async function initializeConsentAndAds() {
     console.log('ConsentManager: mobileAds available:', !!mobileAds);
     console.log('ConsentManager: MaxAdContentRating available:', !!MaxAdContentRating);
     console.log('ConsentManager: AdsConsent available:', !!AdsConsent);
-
-    // iOS ATT prompt (required for personalized ads - MUST be done before SDK init)
-    if (Platform.OS === 'ios') {
-      try {
-        console.log('ConsentManager: Requesting iOS tracking permissions...');
-        const { status } = await requestTrackingPermissionsAsync();
-        console.log('ConsentManager: iOS tracking permissions result:', status);
-        
-        if (status === 'denied') {
-          console.warn('ConsentManager: ATT denied by user - ads will be non-personalized');
-          console.warn('ConsentManager: User can enable in Settings > Privacy > Tracking');
-        } else if (status === 'granted') {
-          console.log('ConsentManager: ATT granted - personalized ads enabled');
-        }
-      } catch (error) {
-        console.error('ConsentManager: iOS tracking permissions error:', error);
-      }
-    }
 
     // Initialize the SDK ONCE here (not in adService)
     try {

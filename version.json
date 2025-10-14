@@ -1,9 +1,9 @@
 {
-  "latestBuildNumber": 38,
-  "versionCode": 38,
-  "versionName": "1.2.3",
-  "releaseDate": "2025-10-11",
-  "updateMessage": "iOS ad fix complete: removed timing delays causing ad expiration, added ATT status tracking for better diagnostics, optimized ad requests based on tracking permission, removed duplicate 'Game Started' popup, enhanced error logging for ad failures"
+  "latestBuildNumber": 41,
+  "versionCode": 41,
+  "versionName": "1.2.5",
+  "releaseDate": "2025-10-14",
+  "updateMessage": "Fixed ATT prompt display on iPadOS 26+, implemented responsive UI for iPad with proper spacing and sizing, includes all previous friend system fixes from OTA updates"
 }
 
 
