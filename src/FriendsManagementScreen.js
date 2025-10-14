@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, FlatList, Alert, TextInput, Modal, Scroll
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, getDocs, addDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, getDocs, addDoc, getDoc, setDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
 import logger from './logger';
@@ -405,7 +405,8 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
     } catch (error) {
       console.error('❌ [FriendsManagementScreen] Failed to send friend request:', error);
       logger.error('Failed to send friend request:', error);
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      logger.error('❌ [FriendsManagementScreen] Error details:', error.message, error.code, error.stack);
+      Alert.alert('Error', `Failed to send friend request: ${error.message || 'Unknown error'}`);
     }
   };
 

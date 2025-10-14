@@ -126,17 +126,17 @@ const AddFriendsScreen = () => {
 
   const sendFriendRequest = async (user) => {
     try {
-      // Industry standard: Ask for notification permissions at relevant moment
-      const currentUserId = auth.currentUser?.uid;
-      if (currentUserId) {
-        await notificationPermissionHelper.requestAtContext('friend_request', currentUserId);
-      }
+      logger.debug('🔍 [AddFriendsScreen] sendFriendRequest called for user:', user);
       
-      // Proceed with friend request regardless of permission result
-      proceedWithFriendRequest(user);
+      // Skip notification permission for now to isolate the issue
+      // Will re-enable after friend requests are working
+      
+      // Proceed with friend request
+      await proceedWithFriendRequest(user);
     } catch (error) {
       logger.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      logger.error('❌ [AddFriendsScreen] Error details:', error.message, error.code, error.stack);
+      Alert.alert('Error', `Failed to send friend request: ${error.message}`);
     }
   };
 
@@ -193,7 +193,8 @@ const AddFriendsScreen = () => {
       Keyboard.dismiss();
     } catch (error) {
       logger.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      logger.error('❌ [AddFriendsScreen] Error details:', error.message, error.code, error.stack);
+      Alert.alert('Error', `Failed to send friend request: ${error.message || 'Unknown error'}`);
     }
   };
 

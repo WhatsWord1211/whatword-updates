@@ -1,8 +1,33 @@
 // AdMob imports - load in production builds
 import Constants from 'expo-constants';
-import { Platform, InteractionManager } from 'react-native';
+import { Platform, InteractionManager, Alert } from 'react-native';
 
 let mobileAds, InterstitialAd;
+
+// ============================================================================
+// iOS AD DEBUGGING CONFIGURATION
+// ============================================================================
+// Set to true to enable iOS-specific debug alerts (DISABLE BEFORE PRODUCTION!)
+const IOS_DEBUG_ADS = false;
+
+// Set to true to use Google's test ad units for iOS (for testing propagation issues)
+const IOS_USE_TEST_ADS = false;
+
+// iOS Test Ad Unit ID (always works immediately)
+const IOS_TEST_AD_UNIT = 'ca-app-pub-3940256099942544/4411468910';
+
+// iOS Production Ad Unit ID (requires 24-48h propagation after AdMob setup)
+const IOS_PROD_AD_UNIT = 'ca-app-pub-8036041739101786/9274366810';
+
+function iosDebugLog(message, showAlert = false) {
+  if (Platform.OS === 'ios') {
+    console.log(`[iOS AD DEBUG] ${message}`);
+    if (IOS_DEBUG_ADS && showAlert) {
+      Alert.alert('iOS Ad Debug', message, [{ text: 'OK' }], { cancelable: true });
+    }
+  }
+}
+// ============================================================================
 
 // Always try to load AdMob in production builds
 // Only skip in development with Expo Go
@@ -30,8 +55,8 @@ if (isExpoGo) {
 // Interstitial Ad Unit IDs
 const AD_UNIT_IDS = {
   INTERSTITIAL: Platform.OS === 'ios'
-    ? 'ca-app-pub-8036041739101786/9274366810' // iOS production interstitial
-    : 'ca-app-pub-8036041739101786/1836533025' // Android production interstitial
+    ? (IOS_USE_TEST_ADS ? IOS_TEST_AD_UNIT : IOS_PROD_AD_UNIT)
+    : 'ca-app-pub-8036041739101786/1836533025' // Android production interstitial (UNCHANGED)
 };
 
 class AdService {
@@ -57,11 +82,19 @@ class AdService {
       console.log('AdService: Constants.appOwnership:', Constants?.appOwnership);
       console.log('AdService: __DEV__:', __DEV__);
       
+      // iOS-specific debug info
+      if (Platform.OS === 'ios') {
+        iosDebugLog(`iOS Ad Mode: ${IOS_USE_TEST_ADS ? 'TEST ADS' : 'PRODUCTION ADS'}`, true);
+        iosDebugLog(`iOS Ad Unit ID: ${AD_UNIT_IDS.INTERSTITIAL}`);
+        iosDebugLog('iOS Debug Alerts: ' + (IOS_DEBUG_ADS ? 'ENABLED' : 'DISABLED'));
+      }
+      
       // Check if AdMob is available
       if (!mobileAds || !InterstitialAd) {
         console.log('AdService: AdMob not available, running in fallback mode');
         console.log('AdService: mobileAds available:', !!mobileAds);
         console.log('AdService: InterstitialAd available:', !!InterstitialAd);
+        iosDebugLog('AdMob module NOT AVAILABLE - ads will not work', true);
         this.isInitialized = false;
         return;
       }
@@ -76,12 +109,17 @@ class AdService {
           
           if (status === 'denied') {
             console.warn('AdService: ATT denied - will use non-personalized ads only');
+            iosDebugLog('ATT Status: DENIED - Non-personalized ads only (20-50% fill rate)', true);
           } else if (status === 'granted') {
             console.log('AdService: ATT granted - personalized ads available for better fill rates');
+            iosDebugLog('ATT Status: GRANTED - Personalized ads enabled (80% fill rate)', true);
+          } else {
+            iosDebugLog(`ATT Status: ${status} - Using non-personalized ads`, true);
           }
         } catch (attError) {
           console.log('AdService: Could not get ATT status:', attError);
           this.attStatus = 'unavailable';
+          iosDebugLog('ATT Status: UNAVAILABLE - Error checking permissions', true);
         }
       }
 
@@ -154,6 +192,7 @@ class AdService {
         this.isAdLoaded = true;
         this.isLoadingAd = false;
         this.loadRetries = 0;
+        iosDebugLog('Ad LOADED successfully! Ready to show.', true);
       });
 
       this.interstitialAd.addAdEventListener('closed', () => {
@@ -182,14 +221,27 @@ class AdService {
         console.error('AdService: Ad error:', error.code, error.message);
         
         // Log detailed error information for diagnosis
+        let errorMessage = `Ad Load ERROR!\nCode: ${error.code}\nMessage: ${error.message}`;
+        
         if (error.code === 1) {
           console.error('AdService: Error code 1 (No fill) - often caused by ATT denial on iOS');
+          errorMessage += '\n\nCause: NO FILL';
           if (Platform.OS === 'ios' && this.attStatus === 'denied') {
             console.error('AdService: ATT is denied - this is likely preventing ad fill');
+            errorMessage += '\nATT is DENIED - enable in Settings > Privacy > Tracking';
+          } else if (Platform.OS === 'ios') {
+            errorMessage += '\nPossible causes:\n- New Ad Unit ID (wait 48h)\n- Low inventory\n- Network issue';
           }
         } else if (error.code === 3) {
           console.error('AdService: Error code 3 (No ad config) - check AdMob setup or ATT status');
+          errorMessage += '\n\nCause: NO AD CONFIG\nPossible causes:\n- Bundle ID mismatch in AdMob\n- Ad Unit not linked to app\n- AdMob app not verified';
+        } else if (error.code === 2) {
+          errorMessage += '\n\nCause: NETWORK ERROR\nCheck internet connection';
+        } else {
+          errorMessage += '\n\nUnknown error - check AdMob console';
         }
+        
+        iosDebugLog(errorMessage, true);
         
         // Call completion callback FIRST if one is waiting (ad failed, continue game flow)
         if (this.showCompletionCallback) {
@@ -206,6 +258,7 @@ class AdService {
         // Retry with exponential backoff
         const retryDelay = 5000 * Math.pow(2, Math.min(this.loadRetries || 0, 2));
         this.loadRetries = (this.loadRetries || 0) + 1;
+        iosDebugLog(`Will retry loading ad in ${retryDelay/1000}s (attempt ${this.loadRetries})`);
         setTimeout(() => {
           if (!this.isLoadingAd) {
             this.loadInterstitialAd();
@@ -214,6 +267,7 @@ class AdService {
       });
 
       console.log('AdService: Starting to load interstitial ad...');
+      iosDebugLog('Starting ad load request...', false);
       this.interstitialAd.load();
       
     } catch (error) {
@@ -231,14 +285,18 @@ class AdService {
       console.log('AdService: interstitialAd exists:', !!this.interstitialAd);
       console.log('AdService: isAdLoaded:', this.isAdLoaded);
       
+      iosDebugLog('showInterstitialAd() called - attempting to show ad', true);
+      
       // Check if AdMob is available first
       if (!InterstitialAd || !this.interstitialAd) {
         console.log('AdService: AdMob not available, skipping ad');
+        iosDebugLog('SKIPPED: AdMob not available', true);
         return true;
       }
 
       if (!this.isInitialized) {
         console.log('AdService: AdMob not initialized, skipping ad');
+        iosDebugLog('SKIPPED: AdService not initialized', true);
         return true;
       }
 
@@ -247,6 +305,7 @@ class AdService {
       // Ensure ad is loaded before attempting to show
       if (!this.isAdLoaded || !this.interstitialAd) {
         console.log('AdService: Ad not loaded or ad instance missing, skipping');
+        iosDebugLog('SKIPPED: Ad not loaded yet (still loading or failed to load)', true);
         if (!this.isLoadingAd) {
           this.loadInterstitialAd();
         }
@@ -256,11 +315,13 @@ class AdService {
       // iOS CRITICAL: Show ad IMMEDIATELY without delays
       // Delays cause ads to expire on iOS
       console.log('AdService: Showing ad immediately (no delays)');
+      iosDebugLog('Ad is loaded! Attempting to show now...', true);
       
       return new Promise((resolve) => {
         // Set up timeout
         const timeout = setTimeout(() => {
           console.log('AdService: Ad show timeout (15s), continuing');
+          iosDebugLog('Ad show TIMEOUT (15s) - ad may have failed to display', true);
           this.showCompletionCallback = null;
           resolve(true);
         }, 15000);
@@ -269,6 +330,7 @@ class AdService {
         this.showCompletionCallback = () => {
           clearTimeout(timeout);
           console.log('AdService: Ad show completed via listener callback');
+          iosDebugLog('Ad closed successfully!', false);
           resolve(true);
         };
         
@@ -277,8 +339,10 @@ class AdService {
           console.log('AdService: Calling show() on interstitialAd');
           this.interstitialAd.show();
           console.log('AdService: show() called successfully');
+          iosDebugLog('show() called - ad should appear now!', false);
         } catch (showError) {
           console.error('AdService: Exception calling show():', showError);
+          iosDebugLog(`EXCEPTION calling show(): ${showError.message}`, true);
           clearTimeout(timeout);
           this.showCompletionCallback = null;
           resolve(true);
@@ -395,9 +459,9 @@ class AdService {
         this.loadInterstitialAd();
       }
       
-      // Wait for ad to load - iOS can take 3-5s (Grok's suggestion)
+      // Wait for ad to load - iOS can take 3-10s (Grok's recommendation)
       let attempts = 0;
-      const maxAttempts = 50; // 5 seconds max (increased from 1.5s)
+      const maxAttempts = 100; // 10 seconds max (increased from 5s for iOS)
       const checkInterval = 100; // 100ms intervals
       
       while (!this.isAdLoaded && attempts < maxAttempts) {
