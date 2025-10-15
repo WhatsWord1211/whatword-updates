@@ -51,23 +51,40 @@ const AddFriendsScreen = () => {
       logger.debug('🔍 [AddFriendsScreen] Current user ID:', auth.currentUser?.uid);
       
       const requestsQuery = query(
-        collection(db, 'friendRequests'),
-        where('toUid', '==', auth.currentUser.uid),
+        collection(db, 'users', auth.currentUser.uid, 'friends'),
         where('status', '==', 'pending')
       );
 
-      logger.debug('🔍 [AddFriendsScreen] Querying OLD friendRequests collection for user:', auth.currentUser?.uid);
-      logger.debug('🔍 [AddFriendsScreen] Query: where("toUid", "==", "' + auth.currentUser.uid + '") AND where("status", "==", "pending")');
+      logger.debug('🔍 [AddFriendsScreen] Querying NEW subcollection system for user:', auth.currentUser?.uid);
 
-      const unsubscribe = onSnapshot(requestsQuery, (snapshot) => {
+      const unsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
         logger.debug('🔍 [AddFriendsScreen] Friend request listener triggered');
         logger.debug('🔍 [AddFriendsScreen] Snapshot size:', snapshot.docs.length);
         logger.debug('🔍 [AddFriendsScreen] Snapshot docs:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         
-        const requests = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const requests = [];
+        for (const requestDocSnapshot of snapshot.docs) {
+          const requestData = requestDocSnapshot.data();
+          logger.debug('🔍 [AddFriendsScreen] Processing request from:', requestDocSnapshot.id, 'with data:', requestData);
+          
+          // Get the sender's user profile
+          const userDocRef = await getDoc(doc(db, 'users', requestDocSnapshot.id));
+          if (userDocRef.exists()) {
+            const userData = userDocRef.data();
+            logger.debug('🔍 [AddFriendsScreen] Found user profile for:', requestDocSnapshot.id, userData);
+            
+            requests.push({
+              id: requestDocSnapshot.id,
+              fromUid: requestDocSnapshot.id,
+              fromUsername: requestData.senderUsername || userData.username,
+              username: userData.username,
+              displayName: userData.displayName,
+              status: requestData.status,
+              createdAt: requestData.createdAt
+            });
+          }
+        }
+        
         logger.debug('🔍 [AddFriendsScreen] Processed requests:', requests);
         setPendingRequests(requests);
       }, (error) => {
@@ -202,43 +219,40 @@ const AddFriendsScreen = () => {
     try {
       logger.debug('🔍 [AddFriendsScreen] Accepting friend request from:', request.fromUid);
       
-      // Update request status
-      await updateDoc(doc(db, 'friendRequests', request.id), {
+      // Update request status in current user's friends subcollection
+      await updateDoc(doc(db, 'users', auth.currentUser.uid, 'friends', request.fromUid), {
         status: 'accepted',
-        acceptedAt: new Date()
+        acceptedAt: new Date().toISOString()
       });
       logger.debug('🔍 [AddFriendsScreen] Updated request status to accepted');
 
       // Clear any redundant friend requests between these two users
       logger.debug('🔍 [AddFriendsScreen] Clearing redundant friend requests...');
-      const redundantRequestsQuery = query(
-        collection(db, 'friendRequests'),
-        where('fromUid', '==', auth.currentUser.uid),
-        where('toUid', '==', request.fromUid),
-        where('status', '==', 'pending')
-      );
       
-      const redundantSnapshot = await getDocs(redundantRequestsQuery);
-      logger.debug('🔍 [AddFriendsScreen] Found', redundantSnapshot.docs.length, 'redundant requests to clear');
+      // Check for redundant requests from current user to the sender
+      const redundantRequestDoc = doc(db, 'users', request.fromUid, 'friends', auth.currentUser.uid);
+      const redundantRequestSnapshot = await getDoc(redundantRequestDoc);
       
-      // Delete all redundant requests
-      const deletePromises = redundantSnapshot.docs.map(doc => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-      logger.debug('🔍 [AddFriendsScreen] Cleared', redundantSnapshot.docs.length, 'redundant requests');
+      if (redundantRequestSnapshot.exists()) {
+        const redundantData = redundantRequestSnapshot.data();
+        if (redundantData.status === 'pending') {
+          logger.debug('🔍 [AddFriendsScreen] Found redundant request to clear');
+          await deleteDoc(redundantRequestDoc);
+          logger.debug('🔍 [AddFriendsScreen] Cleared redundant request');
+        }
+      }
 
-      // Update current user's friends list
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-        friends: arrayUnion(request.fromUid)
+      // Create mutual friendship in sender's friends subcollection
+      await setDoc(doc(db, 'users', request.fromUid, 'friends', auth.currentUser.uid), {
+        status: 'accepted',
+        createdAt: request.createdAt || new Date().toISOString(),
+        acceptedAt: new Date().toISOString(),
+        senderUsername: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'Unknown',
+        senderId: auth.currentUser.uid
       });
-      logger.debug('🔍 [AddFriendsScreen] Updated current user friends list');
+      logger.debug('🔍 [AddFriendsScreen] Created mutual friendship');
 
-      // Also update the other user's friends list for mutual friendship
-      await updateDoc(doc(db, 'users', request.fromUid), {
-        friends: arrayUnion(auth.currentUser.uid)
-      });
-      logger.debug('🔍 [AddFriendsScreen] Updated other user friends list');
-
-      Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
+      Alert.alert('Success', `You are now friends with ${request.fromUsername || request.username}!`);
       playSound('chime');
     } catch (error) {
       logger.error('❌ [AddFriendsScreen] Failed to accept friend request:', error);
@@ -248,7 +262,7 @@ const AddFriendsScreen = () => {
 
   const declineFriendRequest = async (request) => {
     try {
-      await deleteDoc(doc(db, 'friendRequests', request.id));
+      await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'friends', request.fromUid));
       Alert.alert('Declined', 'Friend request declined.');
       playSound('chime');
     } catch (error) {

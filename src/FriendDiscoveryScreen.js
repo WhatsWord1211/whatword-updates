@@ -2,12 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, FlatList, Alert, ActivityIndicator, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { collection, query, where, getDocs, orderBy, limit, startAfter, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit, startAfter, addDoc, setDoc, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { playSound } from './soundsUtil';
 import settingsService from './settingsService';
 import { getThemeColors } from './theme';
 import styles from './styles';
+
+// ✅ CONSISTENT SYSTEM ⚠️
+// This file uses the NEW subcollection system (users/{userId}/friends/{friendId})
+// All files now use the same NEW subcollection system for consistency
+console.log('✅ [FriendDiscoveryScreen] Using NEW subcollection system - consistent with all screens');
 
 const FriendDiscoveryScreen = () => {
   const navigation = useNavigation();
@@ -142,16 +147,18 @@ const FriendDiscoveryScreen = () => {
 
   const sendFriendRequest = async (targetUserId, username) => {
     try {
-      // Check if already friends or request pending
-      const existingQuery = query(
-        collection(db, 'friends'),
-        where('userId', '==', auth.currentUser.uid),
-        where('friendId', '==', targetUserId)
-      );
-      const existingSnapshot = await getDocs(existingQuery);
+      console.log('🔍 [FriendDiscoveryScreen] Sending friend request to:', targetUserId);
       
-      if (!existingSnapshot.empty) {
-        const existing = existingSnapshot.docs[0].data();
+      // Check if already friends or request pending using NEW subcollection system
+      const existingRequestDoc = await getDocs(query(
+        collection(db, 'users', targetUserId, 'friends'),
+        where('senderId', '==', auth.currentUser.uid)
+      ));
+      
+      if (!existingRequestDoc.empty) {
+        const existing = existingRequestDoc.docs[0].data();
+        console.log('🔍 [FriendDiscoveryScreen] Existing request found:', existing);
+        
         if (existing.status === 'accepted') {
           Alert.alert('Already Friends', `You are already friends with ${username}!`);
           return;
@@ -161,16 +168,28 @@ const FriendDiscoveryScreen = () => {
         }
       }
       
-      // Send friend request
+      // Get current user data
+      const userQuery = query(
+        collection(db, 'users'),
+        where('uid', '==', auth.currentUser.uid)
+      );
+      const userSnapshot = await getDocs(userQuery);
+      const currentUsername = userSnapshot.empty ? 'Unknown User' : userSnapshot.docs[0].data().username;
+      
+      // Send friend request using NEW subcollection system
       const requestData = {
-        fromUid: auth.currentUser.uid,
-        toUid: targetUserId,
         status: 'pending',
-        createdAt: new Date(),
-        fromUsername: auth.currentUser.displayName || 'Unknown User'
+        createdAt: new Date().toISOString(),
+        senderUsername: currentUsername,
+        senderId: auth.currentUser.uid
       };
       
-      await addDoc(collection(db, 'challenges'), requestData);
+      console.log('🔍 [FriendDiscoveryScreen] Saving to NEW subcollection: users/', targetUserId, '/friends/', auth.currentUser.uid);
+      
+      // Import setDoc and doc at the top of the file - they should already be there
+      await setDoc(doc(db, 'users', targetUserId, 'friends', auth.currentUser.uid), requestData);
+      
+      console.log('🔍 [FriendDiscoveryScreen] Friend request saved successfully');
       
       Alert.alert('Request Sent', `Friend request sent to ${username}!`);
       playSound('chime');
@@ -178,7 +197,7 @@ const FriendDiscoveryScreen = () => {
       // Refresh suggestions
       loadSuggestedUsers();
     } catch (error) {
-      console.error('Failed to send friend request:', error);
+      console.error('❌ [FriendDiscoveryScreen] Failed to send friend request:', error);
       Alert.alert('Error', 'Failed to send friend request. Please try again.');
     }
   };

@@ -1,0 +1,47 @@
+# Documentation
+*.md
+docs/
+
+# Log files
+*.log
+crash.log
+whatword_ads_debug.log
+whatword_ads.log
+
+# Build artifacts
+dist/
+android/app/build/
+android/build/
+ios/build/
+
+# Temporary files
+temp_base.apk
+temp_base.zip
+tatus
+eas
+et --hard HEAD
+update --branch production --message*
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+
+# Backup files
+App-full-backup.js
+App-minimal.js
+
+# JSON service account files (already in firebase/)
+whatword-a3f4b-f454de64b671.json
+whatword-a3f4b-firebase-adminsdk-fbsvc-8e663dc72c.json
+
+# HTML files (not needed for mobile build)
+*.html
+
+# Scripts (not needed for build)
+scripts/
+
+# Functions (cloud functions, not needed for app build)
+functions/
+
