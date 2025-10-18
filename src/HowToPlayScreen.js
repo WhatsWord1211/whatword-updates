@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, Dimensions, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -10,6 +10,7 @@ import ThreeDGreenDot from './ThreeDGreenDot';
 
 const HowToPlayScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [showVideo, setShowVideo] = useState(false);
   
@@ -209,7 +210,7 @@ const HowToPlayScreen = () => {
   // Debug logging
 
   return (
-    <SafeAreaView style={[styles.screenContainer, { padding: 0 }]}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { padding: 0, paddingTop: insets.top }]}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,

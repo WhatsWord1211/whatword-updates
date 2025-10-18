@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Modal, Alert, ScrollView, Switch, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
@@ -13,6 +13,7 @@ import { validateUsernameContent, validateDisplayNameContent } from './profanity
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -416,14 +417,14 @@ const ProfileScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading profile...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView style={{ flex: 1, width: '100%' }}>
         {/* Rank Display */}

@@ -107,18 +107,21 @@ const PvPGameScreen = () => {
   
   // Calculate optimal sizing for alphabet grid to use full width
   const windowWidth = Dimensions.get('window').width;
-  const availableWidth = windowWidth - 20; // Minimal padding for screen edges
+  const isIPad = Platform.OS === 'ios' && windowWidth >= 768;
+  const availableWidth = isIPad ? Math.min(windowWidth * 0.7, 600) : windowWidth - 20;
   
   // Calculate optimal letter size and spacing to maximize usage
   const getOptimalSizing = () => {
     const longestRow = 10; // QWERTY top row has 10 letters
-    const minSpacing = 2; // Minimal spacing between letters
-    const totalSpacing = (longestRow - 1) * minSpacing; // Total spacing needed
+    const minSpacing = isIPad ? 3 : 2;
+    const totalSpacing = (longestRow - 1) * minSpacing;
     const availableForLetters = availableWidth - totalSpacing;
     const letterSize = Math.floor(availableForLetters / longestRow);
     
-    // Use larger letters - be more aggressive with sizing
-    const finalLetterSize = Math.max(Math.min(letterSize, 50), 28); // Increased max to 50, min to 28
+    // Adjust sizing for iPad vs iPhone
+    const maxSize = isIPad ? 55 : 50;
+    const minSize = isIPad ? 32 : 28;
+    const finalLetterSize = Math.max(Math.min(letterSize, maxSize), minSize);
     const actualSpacing = Math.max((availableWidth - (longestRow * finalLetterSize)) / (longestRow - 1), 1);
     
     // Make buttons taller by increasing height by 20%
@@ -352,51 +355,74 @@ const PvPGameScreen = () => {
   // Determine final game result when both players have finished
   const determineGameResult = async (gameData, currentUserId) => {
     try {
-      const currentPlayerData = getMyPlayerData(gameData);
-      const opponentPlayerData = getOpponentPlayerData(gameData);
+      // CRITICAL: Always fetch fresh game data to get accurate attempt counts
+      const gameRef = doc(db, 'games', gameId);
+      const freshGameDoc = await getDoc(gameRef);
+      if (!freshGameDoc.exists()) {
+        console.error('determineGameResult: Game not found');
+        return;
+      }
+      const freshGameData = freshGameDoc.data();
+      
+      const currentPlayerData = getMyPlayerData(freshGameData);
+      const opponentPlayerData = getOpponentPlayerData(freshGameData);
       
       // Safety checks for player data
       if (!currentPlayerData || !opponentPlayerData) {
         console.error('determineGameResult: Missing player data', { 
           currentPlayerData, 
           opponentPlayerData,
-          gameData: {
-            hasPlayer1: !!gameData.player1,
-            hasPlayer2: !!gameData.player2,
-            player1Solved: gameData.player1?.solved,
-            player2Solved: gameData.player2?.solved,
+          freshGameData: {
+            hasPlayer1: !!freshGameData.player1,
+            hasPlayer2: !!freshGameData.player2,
+            player1Solved: freshGameData.player1?.solved,
+            player2Solved: freshGameData.player2?.solved,
+            player1Attempts: freshGameData.player1?.attempts,
+            player2Attempts: freshGameData.player2?.attempts,
             currentUserId: currentUser?.uid
           }
         });
         return;
       }
       
+      console.log('determineGameResult: Player data:', {
+        currentPlayer: { uid: currentPlayerData.uid, attempts: currentPlayerData.attempts, solved: currentPlayerData.solved },
+        opponent: { uid: opponentPlayerData.uid, attempts: opponentPlayerData.attempts, solved: opponentPlayerData.solved }
+      });
+      
       let winnerId = null;
       let tie = false;
       
       if (currentPlayerData.solved && opponentPlayerData.solved) {
-        // Both solved - determine winner by attempts
+        // Both solved - LOWER attempts wins
+        console.log('determineGameResult: Both solved, comparing attempts:', currentPlayerData.attempts, 'vs', opponentPlayerData.attempts);
         if (currentPlayerData.attempts < opponentPlayerData.attempts) {
           winnerId = currentUserId;
+          console.log('determineGameResult: Current player wins with fewer attempts');
         } else if (opponentPlayerData.attempts < currentPlayerData.attempts) {
           winnerId = opponentPlayerData.uid;
+          console.log('determineGameResult: Opponent wins with fewer attempts');
         } else {
           tie = true;
+          console.log('determineGameResult: Tie - same attempts');
         }
       } else if (currentPlayerData.solved && !opponentPlayerData.solved) {
         // Only current player solved
         winnerId = currentUserId;
+        console.log('determineGameResult: Current player wins - only solver');
       } else if (!currentPlayerData.solved && opponentPlayerData.solved) {
         // Only opponent solved
         winnerId = opponentPlayerData.uid;
+        console.log('determineGameResult: Opponent wins - only solver');
       } else {
         // Neither solved - tie
         tie = true;
+        console.log('determineGameResult: Tie - neither solved');
       }
       
-      // Determine second finisher
-      const secondFinisherId = (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) > new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
-                              : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
+      // Determine second finisher using fresh data
+      const secondFinisherId = (freshGameData.player1?.solveTime && freshGameData.player2?.solveTime && (new Date(freshGameData.player1.solveTime) > new Date(freshGameData.player2.solveTime))) ? freshGameData.player1?.uid
+                              : (freshGameData.player1?.solveTime && freshGameData.player2?.solveTime) ? freshGameData.player2?.uid
                               : null;
       
       // Update game status and track results visibility
@@ -408,18 +434,20 @@ const PvPGameScreen = () => {
         tie: tie,
         resultsSeenBy: secondFinisherId ? [secondFinisherId] : [],
         // Mark first and second finisher for precise badge logic on Home
-        firstFinisherId: (gameData.player1?.solved && !gameData.player2?.solved) ? gameData.player1?.uid
-                         : (!gameData.player1?.solved && gameData.player2?.solved) ? gameData.player2?.uid
-                         : (gameData.player1?.solveTime && gameData.player2?.solveTime && (new Date(gameData.player1.solveTime) < new Date(gameData.player2.solveTime))) ? gameData.player1?.uid
-                         : (gameData.player1?.solveTime && gameData.player2?.solveTime) ? gameData.player2?.uid
+        firstFinisherId: (freshGameData.player1?.solved && !freshGameData.player2?.solved) ? freshGameData.player1?.uid
+                         : (!freshGameData.player1?.solved && freshGameData.player2?.solved) ? freshGameData.player2?.uid
+                         : (freshGameData.player1?.solveTime && freshGameData.player2?.solveTime && (new Date(freshGameData.player1.solveTime) < new Date(freshGameData.player2.solveTime))) ? freshGameData.player1?.uid
+                         : (freshGameData.player1?.solveTime && freshGameData.player2?.solveTime) ? freshGameData.player2?.uid
                          : null,
         secondFinisherId: secondFinisherId
       });
       
+      console.log('determineGameResult: Final result set - winnerId:', winnerId, 'tie:', tie);
+      
       // Remove game from both players' activeGames arrays since game is now completed
       try {
-        const player1Uid = gameData.player1?.uid;
-        const player2Uid = gameData.player2?.uid;
+        const player1Uid = freshGameData.player1?.uid;
+        const player2Uid = freshGameData.player2?.uid;
         
         if (player1Uid) {
           await updateDoc(doc(db, 'users', player1Uid), {
@@ -440,7 +468,7 @@ const PvPGameScreen = () => {
       await updateUserStats(currentUserId, winnerId === currentUserId);
       
       // Update PvP rolling averages for both players
-      const gameDifficulty = gameData.difficulty || 'regular';
+      const gameDifficulty = freshGameData.difficulty || 'regular';
       const currentUserWin = winnerId === currentUserId;
       const opponentWin = winnerId === opponentPlayerData.uid;
       
@@ -452,8 +480,8 @@ const PvPGameScreen = () => {
 
       // Update friend vs friend records
       try {
-        const player1Uid = gameData.player1?.uid;
-        const player2Uid = gameData.player2?.uid;
+        const player1Uid = freshGameData.player1?.uid;
+        const player2Uid = freshGameData.player2?.uid;
         
         console.log('PvPGameScreen: Updating friend records', { player1Uid, player2Uid, winnerId, tie });
         
@@ -470,7 +498,7 @@ const PvPGameScreen = () => {
 
       // Save stats immediately for leaderboard (do not wait for archival)
       try {
-        const playersArray = gameData.playerIds || gameData.players || [gameData.player1?.uid, gameData.player2?.uid].filter(Boolean);
+        const playersArray = freshGameData.playerIds || freshGameData.players || [freshGameData.player1?.uid, freshGameData.player2?.uid].filter(Boolean);
         const statsDoc = {
           gameId: gameId,
           players: playersArray,
@@ -478,18 +506,18 @@ const PvPGameScreen = () => {
           winnerId: winnerId,
           tie: !!tie,
           type: 'pvp',
-          wordLength: gameData.wordLength,
+          wordLength: freshGameData.wordLength,
           difficulty: gameDifficulty,
           playerStats: {
-            [gameData.player1?.uid || playersArray?.[0]]: {
-              attempts: gameData.player1?.attempts ?? 0,
-              solved: !!gameData.player1?.solved,
-              solveTime: gameData.player1?.solveTime || null
+            [freshGameData.player1?.uid || playersArray?.[0]]: {
+              attempts: freshGameData.player1?.attempts ?? 0,
+              solved: !!freshGameData.player1?.solved,
+              solveTime: freshGameData.player1?.solveTime || null
             },
-            [gameData.player2?.uid || playersArray?.[1]]: {
-              attempts: gameData.player2?.attempts ?? 0,
-              solved: !!gameData.player2?.solved,
-              solveTime: gameData.player2?.solveTime || null
+            [freshGameData.player2?.uid || playersArray?.[1]]: {
+              attempts: freshGameData.player2?.attempts ?? 0,
+              solved: !!freshGameData.player2?.solved,
+              solveTime: freshGameData.player2?.solveTime || null
             }
           }
         };
@@ -507,8 +535,8 @@ const PvPGameScreen = () => {
         if (!fresh.notificationsSent) {
           const { getNotificationService } = require('./notificationService');
           const notificationService = getNotificationService();
-          const player1Uid = gameData.player1?.uid;
-          const player2Uid = gameData.player2?.uid;
+          const player1Uid = freshGameData.player1?.uid;
+          const player2Uid = freshGameData.player2?.uid;
           const messageFor = (uid) => {
             if (tie) return "It's a tie! Both players finished.";
             return winnerId === uid ? 'Congratulations! You won!' : 'Game over! Your opponent won.';
@@ -525,8 +553,8 @@ const PvPGameScreen = () => {
               
               // Send push notification - no results shared
               const opponentUsername = firstFinisher === player1Uid 
-                ? gameData.player2?.username || 'your opponent'
-                : gameData.player1?.username || 'your opponent';
+                ? freshGameData.player2?.username || 'your opponent'
+                : freshGameData.player1?.username || 'your opponent';
               
               await notificationService.sendPushNotification(
                 firstFinisher, 
@@ -545,7 +573,7 @@ const PvPGameScreen = () => {
             
             // Send push notification to first finisher - no results shared
             const opponentUid = firstFinisher === player1Uid ? player2Uid : player1Uid;
-            const opponentUsername = firstFinisher === player1Uid ? gameData.player2?.username : gameData.player1?.username;
+            const opponentUsername = firstFinisher === player1Uid ? freshGameData.player2?.username : freshGameData.player1?.username;
             
             // Send push notification to first finisher
             await notificationService.sendPushNotification(
@@ -805,15 +833,25 @@ const PvPGameScreen = () => {
                };
              });
 
-           if (myGuesses && Array.isArray(myGuesses)) {
-             setGuesses(myGuesses);
-             
-             // Auto-scroll to show the latest guess when guesses are updated from game data
-             if (myGuesses.length > 0) {
-               scrollToBottom(300, true);
-             }
-           }
+          if (myGuesses && Array.isArray(myGuesses)) {
+            setGuesses(myGuesses);
+            
+            // Auto-scroll to show the latest guess when guesses are updated from game data
+            if (myGuesses.length > 0) {
+              scrollToBottom(300, true);
+            }
+          }
           
+          // Load alphabet toggle state for current player
+          if (gameData.player1 && gameData.player2 && currentUser) {
+            const isPlayer1 = gameData.player1.uid === currentUser.uid;
+            const savedAlphabetState = isPlayer1 ? gameData.player1.alphabetState : gameData.player2.alphabetState;
+            
+            if (savedAlphabetState && Array.isArray(savedAlphabetState) && savedAlphabetState.length === 26) {
+              console.log('PvPGameScreen: Restoring alphabet state for', isPlayer1 ? 'player1' : 'player2');
+              setAlphabet(savedAlphabetState);
+            }
+          }
 
         }
       } else {
@@ -1090,26 +1128,30 @@ const PvPGameScreen = () => {
          }
        }
        
-       // Update player's solved status for new structure (player1/player2)
-       if (game.player1 && game.player2 && game.player1.uid && game.player2.uid && currentUser && currentUser.uid) {
-         const isPlayer1 = game.player1.uid === currentUser.uid;
-         if (isCorrect) {
-           if (isPlayer1) {
-             updateData['player1.solved'] = true;
-           } else {
-             updateData['player2.solved'] = true;
-           }
-         }
-         
-         // Also update attempts count and last activity
-         if (isPlayer1) {
-           updateData['player1.attempts'] = increment(1);
-           updateData['player1.lastGuess'] = new Date().toISOString();
-         } else {
-           updateData['player2.attempts'] = increment(1);
-           updateData['player2.lastGuess'] = new Date().toISOString();
-         }
-       }
+      // Update player's solved status for new structure (player1/player2)
+      if (game.player1 && game.player2 && game.player1.uid && game.player2.uid && currentUser && currentUser.uid) {
+        const isPlayer1 = game.player1.uid === currentUser.uid;
+        if (isCorrect) {
+          if (isPlayer1) {
+            updateData['player1.solved'] = true;
+          } else {
+            updateData['player2.solved'] = true;
+          }
+        }
+        
+        // Also update attempts count and last activity
+        if (isPlayer1) {
+          updateData['player1.attempts'] = increment(1);
+          updateData['player1.lastGuess'] = new Date().toISOString();
+          // Save alphabet toggle state for player1
+          updateData['player1.alphabetState'] = alphabet;
+        } else {
+          updateData['player2.attempts'] = increment(1);
+          updateData['player2.lastGuess'] = new Date().toISOString();
+          // Save alphabet toggle state for player2
+          updateData['player2.alphabetState'] = alphabet;
+        }
+      }
 
       // Add lastActivity update
       updateData.lastActivity = new Date().toISOString();
@@ -1377,12 +1419,30 @@ const PvPGameScreen = () => {
       
       <View style={styles.inputDisplay}>
         {[...Array(game.wordLength)].map((_, idx) => (
-          <Text
+          <View
             key={`input-${idx}`}
-            style={[styles.inputLetter, inputWord[idx] ? styles.filledLetter : styles.emptyLetter]}
+            style={{
+              width: isIPad ? 60 : 44,
+              height: isIPad ? 60 : 44,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 6,
+              backgroundColor: inputWord[idx] ? colors.surface : colors.surfaceLight,
+              marginHorizontal: isIPad ? 8 : 6,
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}
           >
-            {inputWord[idx] || ''}
-          </Text>
+            <Text style={{
+              color: colors.textPrimary,
+              fontSize: isIPad ? 32 : 24,
+              fontFamily: 'Roboto-Regular',
+              textAlign: 'center',
+              includeFontPadding: false
+            }}>
+              {inputWord[idx] || ''}
+            </Text>
+          </View>
         ))}
       </View>
       
@@ -1412,21 +1472,22 @@ const PvPGameScreen = () => {
                       marginHorizontal: spacing / 2,
                       marginVertical: 2,
                       justifyContent: 'center',
-                      alignItems: 'center'
+                      alignItems: 'center',
+                      backgroundColor: alphabet[index] === 'absent' ? '#6B7280' : 
+                                     alphabet[index] === 'present' ? '#10B981' : colors.surface,
+                      borderWidth: 2,
+                      borderColor: colors.border,
+                      borderRadius: 6
                     }}
                   >
                     <Text
-                      style={[
-                        styles.letter,
-                        { 
-                          width: letterSize - 4, // Account for border
-                          height: letterSize - 4,
-                          fontSize: (letterSize * 0.6) + 1, // Responsive font size + 1
-                          lineHeight: letterSize - 4
-                        },
-                        alphabet[index] === 'absent' && styles.eliminatedLetter,
-                        alphabet[index] === 'present' && styles.presentLetter
-                      ]}
+                      style={{ 
+                        color: colors.textPrimary,
+                        fontSize: Math.floor(letterSize * 0.55),
+                        fontFamily: 'Roboto-Bold',
+                        textAlign: 'center',
+                        includeFontPadding: false
+                      }}
                     >
                       {letter}
                     </Text>
@@ -1475,23 +1536,40 @@ const PvPGameScreen = () => {
       >
         <Text style={styles.sectionTitle}>Your Guesses</Text>
         {guesses.map((g, idx) => (
-          <View key={`guess-${idx}`} style={styles.guessRow}>
-            <View style={styles.guessWord}>
+          <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 50 : 38, paddingVertical: isIPad ? 2 : 1, marginBottom: isIPad ? 3 : 2 }]}>
+            <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 50 : 38 }]}>
               {g.word.split('').map((letter, i) => (
-                <Text
+                <View
                   key={`letter-${idx}-${i}`}
-                  style={[styles.guessLetter, { fontSize: 24 }]}
+                  style={{
+                    width: isIPad ? 46 : 28,
+                    height: isIPad ? 60 : 44,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginHorizontal: isIPad ? 2 : 0,
+                    overflow: 'visible'
+                  }}
                 >
-                  {letter}
-                </Text>
+                  <Text
+                    style={{
+                      fontSize: isIPad ? 24 : 20,
+                      color: colors.textPrimary,
+                      fontFamily: 'Roboto-Regular',
+                      textAlign: 'center',
+                      includeFontPadding: false
+                    }}
+                  >
+                    {letter}
+                  </Text>
+                </View>
               ))}
             </View>
                          <View style={styles.feedbackContainer}>
               {[...Array(isNaN(g.circles) ? 0 : g.circles || 0)].map((_, i) => (
-               <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={15} ringWidth={2} style={{ marginRight: 6 }} />
+               <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={isIPad ? 20 : 15} ringWidth={2} style={{ marginRight: isIPad ? 8 : 6 }} />
               ))}
               {[...Array(isNaN(g.dots) ? 0 : g.dots || 0)].map((_, i) => (
-                <ThreeDGreenDot key={`dot-${idx}-${i}`} size={15} style={{ marginRight: 6 }} />
+                <ThreeDGreenDot key={`dot-${idx}-${i}`} size={isIPad ? 20 : 15} style={{ marginRight: isIPad ? 8 : 6 }} />
               ))}
             </View>
           </View>
@@ -1514,8 +1592,29 @@ const PvPGameScreen = () => {
             
             <TouchableOpacity
               style={styles.button}
-              onPress={() => {
+              onPress={async () => {
                 setShowMenuPopup(false);
+                
+                // Save current alphabet toggle state before exiting
+                if (game && game.player1 && game.player2 && currentUser) {
+                  try {
+                    const isPlayer1 = game.player1.uid === currentUser.uid;
+                    const updateData = {};
+                    
+                    if (isPlayer1) {
+                      updateData['player1.alphabetState'] = alphabet;
+                    } else {
+                      updateData['player2.alphabetState'] = alphabet;
+                    }
+                    
+                    await updateDoc(doc(db, 'games', gameId), updateData);
+                    console.log('PvPGameScreen: Saved alphabet state before exit');
+                  } catch (error) {
+                    console.error('PvPGameScreen: Failed to save alphabet state:', error);
+                    // Continue navigating even if save fails
+                  }
+                }
+                
                 navigation.navigate('MainTabs');
               }}
             >
@@ -1697,12 +1796,34 @@ const PvPGameScreen = () => {
                 const myAttempts = isPlayer1 ? (game?.player1?.attempts || 0) : (game?.player2?.attempts || 0);
                 const opponentAttempts = isPlayer1 ? (game?.player2?.attempts || 0) : (game?.player1?.attempts || 0);
                 
+                const mySolved = isPlayer1 ? (game?.player1?.solved || false) : (game?.player2?.solved || false);
+                const opponentSolved = isPlayer1 ? (game?.player2?.solved || false) : (game?.player1?.solved || false);
+                
                 if (gameOverData?.tie) {
-                  return `It's a Tie! You both solved each other's words in ${myAttempts} attempts`;
+                  // Tie scenario
+                  if (mySolved && opponentSolved) {
+                    return `You both solved each other's words in ${myAttempts} attempts!`;
+                  } else {
+                    return `Neither player solved the word. It's a tie!`;
+                  }
                 } else if (gameOverData?.winnerId === currentUser?.uid) {
-                  return `You Won! You solved ${opponentUsername}'s word in ${myAttempts} attempts and they solved yours in ${opponentAttempts}`;
+                  // You won
+                  if (mySolved && opponentSolved) {
+                    return `You solved ${opponentUsername}'s word in ${myAttempts} attempts. They solved yours in ${opponentAttempts} attempts.`;
+                  } else if (mySolved && !opponentSolved) {
+                    return `You solved ${opponentUsername}'s word in ${myAttempts} attempts. They didn't solve yours!`;
+                  } else {
+                    return `${opponentUsername} didn't solve your word, but you didn't solve theirs either!`;
+                  }
                 } else {
-                  return `You Lost! You solved ${opponentUsername}'s word in ${myAttempts} attempts, but they solved yours in ${opponentAttempts}`;
+                  // You lost
+                  if (mySolved && opponentSolved) {
+                    return `You solved ${opponentUsername}'s word in ${myAttempts} attempts. They solved yours in ${opponentAttempts} attempts.`;
+                  } else if (!mySolved && opponentSolved) {
+                    return `${opponentUsername} solved your word in ${opponentAttempts} attempts. You didn't solve theirs.`;
+                  } else {
+                    return `You didn't solve ${opponentUsername}'s word.`;
+                  }
                 }
               })()}
             </Text>

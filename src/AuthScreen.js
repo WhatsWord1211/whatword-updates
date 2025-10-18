@@ -5,7 +5,8 @@
 // - No guest mode - clean authentication flow
 // - Email/password authentication only for simplicity
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, SafeAreaView, Image, Pressable, ScrollView, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from "react-native";
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Alert, Image, Pressable, ScrollView, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
@@ -17,6 +18,7 @@ import { checkUsernameAvailability, generateUsernameFromEmail } from './username
 
 const AuthScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -202,7 +204,7 @@ const AuthScreen = () => {
 
   if (showEmailForm) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView 
             style={styles.keyboardAvoidingView}

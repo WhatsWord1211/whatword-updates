@@ -29,12 +29,14 @@ const CreateChallengeScreen = () => {
       // Small delay to ensure sound starts playing before share dialog opens
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
-      const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      // App Store links
+      const androidUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      const iosUrl = "https://apps.apple.com/app/whatword/id6752830019";
+      
+      const shareMessage = "Let's play WhatWord! - the ultimate word guessing game.\n\nGuess my word before I guess yours!\n\n📱 Download now:\n\niPhone: " + iosUrl + "\n\nAndroid: " + androidUrl;
       
       await Share.share({
-        message: `${shareMessage}\n\n${shareUrl}`,
-        url: shareUrl,
+        message: shareMessage,
         title: 'WhatWord - Word Game'
       });
     } catch (error) {
@@ -71,41 +73,55 @@ const CreateChallengeScreen = () => {
     try {
       setLoading(true);
       
-      // Get user's friends list
-      const userDoc = await getDoc(doc(db, 'users', userId));
-      if (!userDoc.exists()) {
+      console.log('🔍 [CreateChallengeScreen] Loading friends using NEW subcollection system');
+      
+      // Use NEW subcollection system
+      const friendsRef = collection(db, 'users', userId, 'friends');
+      const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+      const friendsSnapshot = await getDocs(friendsQuery);
+      
+      console.log('🔍 [CreateChallengeScreen] Found', friendsSnapshot.docs.length, 'friends');
+
+      if (friendsSnapshot.docs.length === 0) {
         setFriends([]);
         setLoading(false);
         return;
       }
 
-      const userData = userDoc.data();
-      const friendsList = userData.friends || [];
-
-      if (friendsList.length === 0) {
-        setFriends([]);
-        setLoading(false);
-        return;
-      }
-
-      // Get friend details
+      // Get friend details from subcollection (already has username!)
       const friendsData = [];
       
-      for (const friendId of friendsList) {
+      for (const friendDoc of friendsSnapshot.docs) {
         try {
-          const friendDoc = await getDoc(doc(db, 'users', friendId));
-          if (friendDoc.exists()) {
-            const friendData = friendDoc.data();
-            friendsData.push({
-              uid: friendId,
-              username: friendData.username || friendData.displayName || 'Unknown Player'
-            });
+          const friendId = friendDoc.id;
+          const friendData = friendDoc.data();
+          
+          // Use friendUsername from subcollection, or fetch from user doc as fallback
+          let username = friendData.friendUsername;
+          
+          if (!username) {
+            console.log('🔍 [CreateChallengeScreen] No username in subcollection, fetching user doc:', friendId);
+            const userDoc = await getDoc(doc(db, 'users', friendId));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              username = userData.username || userData.displayName || 'Unknown Player';
+            } else {
+              username = 'Unknown Player';
+            }
           }
+          
+          const friendObj = {
+            uid: friendId,
+            username: username
+          };
+          console.log('🔍 [CreateChallengeScreen] Loaded friend:', friendObj);
+          friendsData.push(friendObj);
         } catch (error) {
-          console.error('Failed to load friend data:', error);
+          console.error('❌ [CreateChallengeScreen] Failed to load friend data:', error);
         }
       }
 
+      console.log('🔍 [CreateChallengeScreen] Total friends loaded:', friendsData.length);
       setFriends(friendsData);
       
       // Load friend records for all friends
@@ -125,20 +141,36 @@ const CreateChallengeScreen = () => {
 
 
   const challengeFriend = (friend) => {
+    console.log('🔍 [CreateChallengeScreen] Challenging friend:', friend);
     
     try {
+      // Validate friend object
+      if (!friend || !friend.uid) {
+        console.error('❌ [CreateChallengeScreen] Invalid friend object:', friend);
+        Alert.alert('Error', 'Unable to challenge this friend. Please try again.');
+        return;
+      }
+      
+      if (!friend.username) {
+        console.warn('⚠️ [CreateChallengeScreen] Friend missing username, using fallback');
+      }
+      
+      const challengeData = {
+        from: user.uid,
+        to: friend.uid,
+        fromUsername: user.displayName || user.email?.split('@')[0] || 'You',
+        toUsername: friend.username || 'Opponent'
+      };
+      
+      console.log('🔍 [CreateChallengeScreen] Challenge data:', challengeData);
+      
       // Navigate to SetWordGameScreen to create the challenge
       navigation.navigate('SetWordGame', {
-        challenge: {
-          from: user.uid,
-          to: friend.uid,
-          fromUsername: user.displayName || user.email?.split('@')[0] || 'You',
-          toUsername: friend.username
-        },
+        challenge: challengeData,
         isAccepting: false
       });
     } catch (error) {
-      console.error('Navigation error:', error);
+      console.error('❌ [CreateChallengeScreen] Navigation error:', error);
       Alert.alert('Navigation Error', 'Failed to navigate to challenge screen. Please try again.');
     }
   };
@@ -149,14 +181,14 @@ const CreateChallengeScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
         <Text style={styles.loadingText}>Loading...</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
       {/* Friends FAB - Positioned in top right corner */}
       <TouchableOpacity
         style={[styles.fabTopHomeScreen, { top: insets.top + 5 }]}

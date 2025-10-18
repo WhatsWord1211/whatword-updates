@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, Share, Linking, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, where, orderBy, limit, getDocs, addDoc, onSnapshot, updateDoc, doc, arrayUnion, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
@@ -19,6 +19,7 @@ logger.debug('✅ [AddFriendsScreen] Using NEW subcollection system - consistent
 const AddFriendsScreen = () => {
   logger.debug('🔍 [AddFriendsScreen] Component rendering');
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('add'); // 'add' or 'requests'
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -28,12 +29,14 @@ const AddFriendsScreen = () => {
   // Share app link function
   const shareAppLink = async () => {
     try {
-      const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
-      const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      // App Store links
+      const androidUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      const iosUrl = "https://apps.apple.com/app/whatword/id6752830019";
+      
+      const shareMessage = "Let's play WhatWord! - the ultimate word guessing game.\n\nGuess my word before I guess yours!\n\n📱 Download now:\n\niPhone: " + iosUrl + "\n\nAndroid: " + androidUrl;
       
       await Share.share({
-        message: `${shareMessage}\n\n${shareUrl}`,
-        url: shareUrl,
+        message: shareMessage,
         title: 'WhatWord - Word Game'
       });
       
@@ -316,7 +319,7 @@ const AddFriendsScreen = () => {
   );
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <Text style={styles.header}>Friends & Challenges</Text>
       

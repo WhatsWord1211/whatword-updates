@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, getDoc, setDoc } from 'firebase/firestore';
@@ -14,6 +14,7 @@ console.log('✅ [FriendRequestsScreen] Using NEW subcollection system - consist
 
 const FriendRequestsScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -159,7 +160,7 @@ const FriendRequestsScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
         <Text style={styles.loadingText}>Loading...</Text>
       </SafeAreaView>
     );

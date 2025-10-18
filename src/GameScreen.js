@@ -113,18 +113,21 @@ const GameScreen = () => {
 
   // Calculate optimal sizing for alphabet grid to use full width
   const windowWidth = Dimensions.get('window').width;
-  const availableWidth = windowWidth - 20; // Minimal padding for screen edges
+  const isIPad = Platform.OS === 'ios' && windowWidth >= 768;
+  const availableWidth = isIPad ? Math.min(windowWidth * 0.7, 600) : windowWidth - 20;
   
   // Calculate optimal letter size and spacing to maximize usage
   const getOptimalSizing = () => {
     const longestRow = 10; // QWERTY top row has 10 letters
-    const minSpacing = 2; // Minimal spacing between letters
-    const totalSpacing = (longestRow - 1) * minSpacing; // Total spacing needed
+    const minSpacing = isIPad ? 3 : 2;
+    const totalSpacing = (longestRow - 1) * minSpacing;
     const availableForLetters = availableWidth - totalSpacing;
     const letterSize = Math.floor(availableForLetters / longestRow);
     
-    // Use larger letters - be more aggressive with sizing
-    const finalLetterSize = Math.max(Math.min(letterSize, 50), 28); // Increased max to 50, min to 28
+    // Adjust sizing for iPad vs iPhone
+    const maxSize = isIPad ? 55 : 50;
+    const minSize = isIPad ? 32 : 28;
+    const finalLetterSize = Math.max(Math.min(letterSize, maxSize), minSize);
     const actualSpacing = Math.max((availableWidth - (longestRow * finalLetterSize)) / (longestRow - 1), 1);
     
     // Make buttons taller by increasing height by 20%
@@ -412,13 +415,16 @@ const GameScreen = () => {
     };
 
     loadSavedGameState();
-  }, [gameMode, gameId, initialGameId, navigation]);
+  }, [gameMode, gameId, initialGameId, resumeGame, navigation]);
 
 
-  // Preload game completion ad when game starts
+  // Preload game completion ad when game starts (non-blocking)
   useEffect(() => {
     if (gameState === 'playing') {
-      preloadGameAd();
+      // Use setTimeout to prevent blocking the UI
+      setTimeout(() => {
+        preloadGameAd().catch(err => console.log('Ad preload failed (non-critical):', err));
+      }, 1000); // Delay ad preload by 1 second to let game render first
     }
   }, [gameState, preloadGameAd]);
 
@@ -456,6 +462,7 @@ const GameScreen = () => {
           usedHintLetters,
           difficulty: difficulty || (wordLength === 4 ? 'easy' : wordLength === 6 ? 'hard' : 'regular'),
           timestamp: new Date().toISOString(),
+          playerId: auth.currentUser?.uid
         };
         let games = [];
         const savedGames = await AsyncStorage.getItem('savedGames');
@@ -793,44 +800,40 @@ const GameScreen = () => {
 
       const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
       
-      console.log('GameScreen: Setting isLoading to true, selecting word with length:', length);
+      console.log('GameScreen: Selecting word with length:', length);
       setIsLoading(true);
       
-      try {
-        await playSound('chime').catch(() => {});
-        
-        console.log('GameScreen: Selecting random word...');
-        const word = await selectRandomWord(length);
-        if (!word) {
-          throw new Error('Failed to select random word');
+      // Use setTimeout to ensure loading UI renders before heavy operations
+      setTimeout(async () => {
+        try {
+          playSound('chime').catch(() => {}); // Fire and forget
+          
+          const word = await selectRandomWord(length);
+          const upperWord = word ? word.toUpperCase() : (diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS');
+          
+          // Batch state updates
+          setTargetWord(upperWord);
+          setDifficulty(diff);
+          setHintCount(0);
+          setUsedHintLetters([]);
+          setGameState('playing');
+          navigation.setParams({ wordLength: length, showDifficulty: false });
+          
+          console.log('GameScreen: Game ready');
+          setIsLoading(false);
+        } catch (error) {
+          console.error('GameScreen: Error selecting word:', error);
+          // Use fallback
+          const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
+          setTargetWord(fallbackWord);
+          setDifficulty(diff);
+          setHintCount(0);
+          setUsedHintLetters([]);
+          setGameState('playing');
+          navigation.setParams({ wordLength: length, showDifficulty: false });
+          setIsLoading(false);
         }
-        const upperWord = word.toUpperCase();
-        console.log('GameScreen: Word selected successfully, updating state...');
-        
-        setTargetWord(upperWord);
-        setGameState('playing');
-        setDifficulty(diff);
-        setHintCount(0);
-        setUsedHintLetters([]);
-        navigation.setParams({ wordLength: length, showDifficulty: false });
-        
-        console.log('GameScreen: Difficulty selection complete');
-      } catch (error) {
-        console.error('GameScreen: Failed to select random word:', error);
-        // Fallback: use a default word to prevent game from crashing
-        const fallbackWord = diff === 'easy' ? 'TEST' : diff === 'hard' ? 'TESTER' : 'TESTS';
-        setTargetWord(fallbackWord);
-        setGameState('playing');
-        setDifficulty(diff);
-        setHintCount(0);
-        setUsedHintLetters([]);
-        navigation.setParams({ wordLength: length, showDifficulty: false });
-        
-        Alert.alert('Warning', 'Failed to load word list. Using fallback word.');
-      } finally {
-        console.log('GameScreen: Resetting isLoading to false');
-        setIsLoading(false);
-      }
+      }, 50);
     } catch (error) {
       console.error('GameScreen: Error in handleDifficultySelect:', error);
       Alert.alert('Error', `Failed to select difficulty: ${error.message}`);
@@ -851,20 +854,22 @@ const GameScreen = () => {
       {/* Immersive mode - hide status bar during gameplay ONLY, not during difficulty selection */}
       <StatusBar hidden={gameState !== 'selectDifficulty'} />
       
+      {/* Global loading overlay that persists across state transitions */}
       {isLoading && (
-        <View style={styles.loadingOverlay}>
+        <View style={[styles.loadingOverlay, { zIndex: 9999 }]}>
           <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading...</Text>
         </View>
       )}
+      
       {gameState === 'selectDifficulty' ? (
         <View style={styles.difficultyContainer}>
           {/* Back Button */}
           <TouchableOpacity
             style={[styles.backButton, { 
               position: 'absolute',
-              top: 10,
+              top: insets.top + 10,
               left: 20,
-              zIndex: 1
+              zIndex: 1000
             }]}
             onPress={() => {
               playSound('backspace');
@@ -874,7 +879,7 @@ const GameScreen = () => {
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
           
-          <Text style={[styles.header, { color: colors.textPrimary }]}>Select Difficulty</Text>
+          <Text style={[styles.header, { color: colors.textPrimary, marginTop: insets.top + 60 }]}>Select Difficulty</Text>
           {gameMode === 'pvp' && (
             <Text style={{ fontSize: 18, color: colors.primary, textAlign: 'center', marginBottom: 15 }}>
               PvP Game Setup
@@ -882,7 +887,7 @@ const GameScreen = () => {
           )}
           
           <TouchableOpacity
-            style={[styles.button, isLoading && styles.disabledButton]}
+            style={[styles.button, isLoading && styles.disabledButton, { zIndex: 100 }]}
             onPress={() => {
               console.log('GameScreen: Easy difficulty button pressed');
               handleDifficultySelect('easy');
@@ -893,7 +898,7 @@ const GameScreen = () => {
             <Text style={styles.buttonText}>Easy (4 Letters)</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.button, isLoading && styles.disabledButton]}
+            style={[styles.button, isLoading && styles.disabledButton, { zIndex: 100 }]}
             onPress={() => {
               console.log('GameScreen: Regular difficulty button pressed');
               handleDifficultySelect('regular');
@@ -907,7 +912,8 @@ const GameScreen = () => {
             style={[
               styles.button, 
               !hardModeUnlocked && styles.lockedButton,
-              isLoading && styles.disabledButton
+              isLoading && styles.disabledButton,
+              { zIndex: 100 }
             ]}
             onPress={() => {
               console.log('GameScreen: Hard difficulty button pressed, hardModeUnlocked:', hardModeUnlocked);
@@ -977,19 +983,30 @@ const GameScreen = () => {
           </Text>
           <View style={styles.inputDisplay}>
             {[...Array(wordLength || 5)].map((_, idx) => (
-              <Text
+              <View
                 key={`input-${idx}`}
-                style={[
-                  styles.inputLetter, 
-                  { 
-                    color: colors.textPrimary,
-                    backgroundColor: inputWord[idx] ? colors.surface : colors.surfaceLight,
-                    borderColor: colors.border
-                  }
-                ]}
+                style={{
+                  width: isIPad ? 60 : 44,
+                  height: isIPad ? 60 : 44,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 6,
+                  backgroundColor: inputWord[idx] ? colors.surface : colors.surfaceLight,
+                  marginHorizontal: isIPad ? 8 : 6,
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
               >
-                {inputWord[idx] || ''}
-              </Text>
+                <Text style={{
+                  color: colors.textPrimary,
+                  fontSize: isIPad ? 32 : 24,
+                  fontFamily: 'Roboto-Regular',
+                  textAlign: 'center',
+                  includeFontPadding: false
+                }}>
+                  {inputWord[idx] || ''}
+                </Text>
+              </View>
             ))}
           </View>
           <View style={styles.alphabetContainer}>
@@ -1018,24 +1035,22 @@ const GameScreen = () => {
                           marginHorizontal: spacing / 2,
                           marginVertical: 2,
                           justifyContent: 'center',
-                          alignItems: 'center'
+                          alignItems: 'center',
+                          backgroundColor: alphabet[index] === 'absent' ? '#6B7280' : 
+                                         alphabet[index] === 'present' ? '#10B981' : colors.surface,
+                          borderWidth: 2,
+                          borderColor: colors.border,
+                          borderRadius: 6
                         }}
                       >
                         <Text
-                          style={[
-                            styles.letter,
-                            { 
-                              color: colors.textPrimary,
-                              backgroundColor: colors.surface,
-                              borderColor: colors.border,
-                              width: letterSize - 4, // Account for border
-                              height: letterSize - 4,
-                              fontSize: (letterSize * 0.6) + 1, // Responsive font size + 1
-                              lineHeight: letterSize - 4
-                            },
-                            alphabet[index] === 'absent' && styles.eliminatedLetter,
-                            alphabet[index] === 'present' && styles.presentLetter
-                          ]}
+                          style={{ 
+                            color: colors.textPrimary,
+                            fontSize: Math.floor(letterSize * 0.55),
+                            fontFamily: 'Roboto-Bold',
+                            textAlign: 'center',
+                            includeFontPadding: false
+                          }}
                         >
                           {letter}
                         </Text>
@@ -1098,44 +1113,47 @@ const GameScreen = () => {
             })()}
             <View style={styles.guessGrid}>
               {guesses.map((g, idx) => (
-                <View key={`guess-${idx}`} style={styles.guessRow}>
-                  <View style={styles.guessWord}>
+                <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 50 : 38, paddingVertical: isIPad ? 2 : 1, marginBottom: isIPad ? 3 : 2 }]}>
+                  <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 50 : 38 }]}>
                     {g.isHint ? (
-                      <Text style={[styles.guessLetter, { fontSize: 24, color: colors.textPrimary }]}>HINT</Text>
+                      <View style={{ justifyContent: 'center', alignItems: 'center', height: isIPad ? 60 : 44 }}>
+                        <Text style={{ fontSize: isIPad ? 28 : 22, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>HINT</Text>
+                      </View>
                     ) : (
                       g.word.split('').map((letter, i) => (
-                        <Text
+                        <View
                           key={`letter-${idx}-${i}`}
-                          style={[styles.guessLetter, { fontSize: 24, color: colors.textPrimary }]}
+                          style={{
+                            width: isIPad ? 46 : 28,
+                            height: isIPad ? 60 : 44,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginHorizontal: isIPad ? 2 : 0,
+                            overflow: 'visible'
+                          }}
                         >
-                          {letter}
-                        </Text>
+                          <Text
+                            style={{
+                              fontSize: isIPad ? 24 : 20,
+                              color: colors.textPrimary,
+                              fontFamily: 'Roboto-Regular',
+                              textAlign: 'center',
+                              includeFontPadding: false
+                            }}
+                          >
+                            {letter}
+                          </Text>
+                        </View>
                       ))
                     )}
                   </View>
                   {!g.isHint && (
                     <View style={styles.feedbackContainer}>
-                      {(() => {
-                        const circles = guaranteeCircles(g.circles);
-                        const dots = guaranteeCircles(g.dots);
-                        // Debug logging for feedback display issues
-                        if (circles === 0 && dots === 0 && g.word && g.word !== 'HINT') {
-                          console.warn('GameScreen: No feedback indicators for guess:', { 
-                            word: g.word, 
-                            originalCircles: g.circles, 
-                            originalDots: g.dots,
-                            processedCircles: circles,
-                            processedDots: dots,
-                            guessIndex: idx
-                          });
-                        }
-                        return null;
-                      })()}
                       {[...Array(guaranteeCircles(g.circles))].map((_, i) => (
-                        <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={15} ringWidth={2} style={{ marginRight: 6 }} />
+                        <ThreeDPurpleRing key={`circle-${idx}-${i}`} size={isIPad ? 20 : 15} ringWidth={2} style={{ marginRight: isIPad ? 8 : 6 }} />
                       ))}
                       {[...Array(guaranteeCircles(g.dots))].map((_, i) => (
-                        <ThreeDGreenDot key={`dot-${idx}-${i}`} size={15} style={{ marginRight: 6 }} />
+                        <ThreeDGreenDot key={`dot-${idx}-${i}`} size={isIPad ? 20 : 15} style={{ marginRight: isIPad ? 8 : 6 }} />
                       ))}
                     </View>
                   )}
@@ -1144,11 +1162,12 @@ const GameScreen = () => {
             </View>
           </ScrollView>
           <TouchableOpacity 
-            style={[styles.fabTop, { top: insets.top + 10 }]} 
+            style={[styles.fabTop, { top: insets.top + 10, zIndex: 1000 }]} 
             onPress={() => setShowMenuPopup(true)}
           >
             <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>
           </TouchableOpacity>
+          
           <Modal visible={!!showInvalidPopup} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>

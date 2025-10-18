@@ -130,7 +130,7 @@ const SetWordScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[styles.screenContainer, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       {/* Back Button - styled like other back buttons in the app */}
       <TouchableOpacity
         style={[styles.backButton, { 

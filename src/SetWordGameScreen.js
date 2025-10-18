@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions, BackHandler } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Modal, Dimensions, BackHandler, Platform } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db, auth } from './firebase';
@@ -16,7 +16,7 @@ const SetWordGameScreen = () => {
   const route = useRoute();
   const { challenge, isAccepting } = route.params;
   const insets = useSafeAreaInsets();
-  const { updateNavigationBar } = useTheme();
+  const { updateNavigationBar, colors } = useTheme();
   
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,18 +30,21 @@ const SetWordGameScreen = () => {
 
   // Calculate optimal sizing for alphabet grid to use full width
   const windowWidth = Dimensions.get('window').width;
-  const availableWidth = windowWidth - 20; // Minimal padding for screen edges
+  const isIPad = Platform.OS === 'ios' && windowWidth >= 768;
+  const availableWidth = isIPad ? Math.min(windowWidth * 0.7, 600) : windowWidth - 20;
   
   // Calculate optimal letter size and spacing to maximize usage
   const getOptimalSizing = () => {
     const longestRow = 10; // QWERTY top row has 10 letters
-    const minSpacing = 2; // Minimal spacing between letters
+    const minSpacing = isIPad ? 3 : 2;
     const totalSpacing = (longestRow - 1) * minSpacing; // Total spacing needed
     const availableForLetters = availableWidth - totalSpacing;
     const letterSize = Math.floor(availableForLetters / longestRow);
     
-    // Use larger letters - be more aggressive with sizing
-    const finalLetterSize = Math.max(Math.min(letterSize, 50), 28); // Increased max to 50, min to 28
+    // Adjust sizing for iPad vs iPhone
+    const maxSize = isIPad ? 55 : 50;
+    const minSize = isIPad ? 32 : 28;
+    const finalLetterSize = Math.max(Math.min(letterSize, maxSize), minSize);
     const actualSpacing = Math.max((availableWidth - (longestRow * finalLetterSize)) / (longestRow - 1), 1);
     
     // Make buttons taller by increasing height by 20%
@@ -404,7 +407,7 @@ const SetWordGameScreen = () => {
 
   if (showDifficultySelection) {
     return (
-      <SafeAreaView style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
         {/* Back Button - safe area aware and always visible */}
         <TouchableOpacity
           style={{
@@ -438,14 +441,14 @@ const SetWordGameScreen = () => {
           </Text>
           
           <TouchableOpacity
-            style={styles.difficultyButton}
+            style={[styles.difficultyButton, { zIndex: 100 }]}
             onPress={() => selectDifficulty('easy')}
           >
             <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Easy (4 letters)</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={styles.difficultyButton}
+            style={[styles.difficultyButton, { zIndex: 100 }]}
             onPress={() => selectDifficulty('regular')}
           >
             <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Regular (5 letters)</Text>
@@ -454,7 +457,8 @@ const SetWordGameScreen = () => {
           <TouchableOpacity
             style={[
               styles.difficultyButton, 
-              (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButton
+              (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButton,
+              { zIndex: 100 }
             ]}
             onPress={() => {
               if (hardModeUnlocked && opponentHardModeUnlocked) {
@@ -516,7 +520,7 @@ const SetWordGameScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
 
       
 
@@ -581,19 +585,21 @@ const SetWordGameScreen = () => {
                            marginHorizontal: spacing / 2,
                            marginVertical: 2,
                            justifyContent: 'center',
-                           alignItems: 'center'
+                           alignItems: 'center',
+                           backgroundColor: colors.surface,
+                           borderWidth: 2,
+                           borderColor: colors.border,
+                           borderRadius: 6
                          }}
                          onPress={() => addLetter(letter)}
                        >
-                         <Text style={[
-                           styles.letter,
-                           { 
-                             width: letterSize - 4, // Account for border
-                             height: letterSize - 4,
-                             fontSize: (letterSize * 0.6) + 1, // Responsive font size + 1
-                             lineHeight: letterSize - 4
-                           }
-                         ]}>
+                         <Text style={{ 
+                           color: colors.textPrimary,
+                           fontSize: Math.floor(letterSize * 0.55),
+                           fontFamily: 'Roboto-Bold',
+                           textAlign: 'center',
+                           includeFontPadding: false
+                         }}>
                            {letter}
                          </Text>
                        </TouchableOpacity>

@@ -225,16 +225,20 @@ const CustomTabNavigator = () => {
     React.useCallback(() => {
       console.log('🔍 [CustomTabNavigator] Component focused - refreshing friend requests');
       if (auth.currentUser) {
-        // Manually check for friend requests
+        // Use NEW subcollection system
         const requestsQuery = query(
-          collection(db, 'friendRequests'),
-          where('toUid', '==', auth.currentUser.uid),
+          collection(db, 'users', auth.currentUser.uid, 'friends'),
           where('status', '==', 'pending')
         );
         
         getDocs(requestsQuery).then((snapshot) => {
           console.log('🔍 [CustomTabNavigator] Manual refresh - Found', snapshot.docs.length, 'friend requests');
-          const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Document IDs are sender UIDs
+          const requests = snapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            fromUid: doc.id,
+            ...doc.data() 
+          }));
           setPendingRequests(requests);
           
           if (requests.length > 0) {
@@ -371,7 +375,17 @@ const CustomTabNavigator = () => {
 
   const renderTabIcon = (icon, color, size, hasNotifications = false) => (
     <View style={styles.tabIconContainer}>
-      <Text style={{ color, fontSize: size, fontWeight: "bold" }}>{icon}</Text>
+      <View style={{ width: size + 4, height: size + 4, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ 
+          color, 
+          fontSize: size * 0.9,
+          fontWeight: "bold",
+          includeFontPadding: false,
+          textAlign: 'center'
+        }}>
+          {icon}
+        </Text>
+      </View>
       {hasNotifications && (
         <Animated.View style={[styles.notificationBadge, { transform: [{ scale: badgeScale }] }]}>
           <Text style={styles.notificationText}>
@@ -390,6 +404,8 @@ const CustomTabNavigator = () => {
           backgroundColor: "#1F2937",
           borderTopColor: "#374151",
           borderTopWidth: 1,
+          paddingTop: 5, // Small padding for icons
+          paddingBottom: 5,
         },
         tabBarActiveTintColor: "#F59E0B",
         tabBarInactiveTintColor: "#9CA3AF",
@@ -401,7 +417,9 @@ const CustomTabNavigator = () => {
         options={{
           title: "",
           tabBarIcon: ({ color, size }) => (
-            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏠</Text>
+            <View style={{ width: size + 4, height: size + 4, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ color, fontSize: size * 0.9, fontWeight: "bold", includeFontPadding: false, textAlign: 'center' }}>🏠</Text>
+            </View>
           ),
         }}
         listeners={{
@@ -432,7 +450,9 @@ const CustomTabNavigator = () => {
         options={{
           title: "Leaderboard",
           tabBarIcon: ({ color, size }) => (
-            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>🏆</Text>
+            <View style={{ width: size + 4, height: size + 4, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ color, fontSize: size * 0.9, fontWeight: "bold", includeFontPadding: false, textAlign: 'center' }}>🏆</Text>
+            </View>
           ),
         }}
         listeners={{
@@ -445,7 +465,9 @@ const CustomTabNavigator = () => {
         options={{
           title: "Profile",
           tabBarIcon: ({ color, size }) => (
-            <Text style={{ color, fontSize: size, fontWeight: "bold" }}>👤</Text>
+            <View style={{ width: size + 4, height: size + 4, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ color, fontSize: size * 0.9, fontWeight: "bold", includeFontPadding: false, textAlign: 'center' }}>👤</Text>
+            </View>
           ),
         }}
         listeners={{

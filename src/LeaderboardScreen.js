@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ScrollView, RefreshControl, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc, onSnapshot } from 'firebase/firestore';
@@ -9,6 +9,7 @@ import styles from './styles';
 
 const LeaderboardScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [soloLeaderboard, setSoloLeaderboard] = useState([]);
   const [pvpLeaderboard, setPvpLeaderboard] = useState([]);
   const [userSoloRank, setUserSoloRank] = useState(null);
@@ -130,17 +131,14 @@ const LeaderboardScreen = () => {
   const loadUserFriends = async (currentUser) => {
     try {
       setIsLoading(true);
-      // Get user's friends from the main user document
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (!userDoc.exists()) {
-        setUserFriends([]);
-        setIsLoading(false);
-        return;
-      }
+      console.log('🔍 [LeaderboardScreen] Loading friends using NEW subcollection system');
       
-      const userData = userDoc.data();
-      const friendIds = userData.friends || [];
+      // Use NEW subcollection system
+      const friendsRef = collection(db, 'users', currentUser.uid, 'friends');
+      const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+      const friendsSnapshot = await getDocs(friendsQuery);
       
+      console.log('🔍 [LeaderboardScreen] Found', friendsSnapshot.docs.length, 'friends');
       
       const friends = [];
       
@@ -153,8 +151,10 @@ const LeaderboardScreen = () => {
         });
       }
       
-      for (const friendId of friendIds) {
+      // Add all friends
+      for (const friendDoc of friendsSnapshot.docs) {
         try {
+          const friendId = friendDoc.id;
           const friendUserDoc = await getDoc(doc(db, 'users', friendId));
           if (friendUserDoc.exists()) {
             friends.push({
@@ -163,14 +163,13 @@ const LeaderboardScreen = () => {
             });
           }
         } catch (error) {
-          console.error('LeaderboardScreen: Failed to load friend:', friendId, error);
+          console.error('LeaderboardScreen: Failed to load friend:', friendDoc.id, error);
         }
       }
       
-      
       setUserFriends(friends);
     } catch (error) {
-      console.error('Failed to load user friends:', error);
+      console.error('❌ [LeaderboardScreen] Failed to load user friends:', error);
       setIsLoading(false);
     }
   };
@@ -493,7 +492,7 @@ const LeaderboardScreen = () => {
   };
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top']} style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
       <ScrollView 
         style={{ flex: 1, width: '100%' }} 
         showsVerticalScrollIndicator={true}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert, FlatList, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, onSnapshot, collection, query, where, updateDoc, addDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
@@ -13,6 +13,7 @@ import { useTheme } from './ThemeContext';
 
 const ResumeGamesScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [user, setUser] = useState(null);
   const [soloGames, setSoloGames] = useState([]);
@@ -848,7 +849,7 @@ const ResumeGamesScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
         <View style={styles.headerContainer}>
           <TouchableOpacity
             style={styles.resumeBackButton}
@@ -873,7 +874,7 @@ const ResumeGamesScreen = () => {
                    completedUnseenGames.length > 0;
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top', 'bottom']} style={styles.screenContainer}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.resumeBackButton}

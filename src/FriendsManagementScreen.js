@@ -59,12 +59,14 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       // Small delay to ensure sound starts playing before share dialog opens
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      const shareMessage = "Let's play WhatWord! - it's the ultimate word guessing game.\n\nGuess my word before I guess yours.\n\nYou can download it here: (Google link) (iOS coming soon to the App Store!)";
-      const shareUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      // App Store links
+      const androidUrl = "https://play.google.com/store/apps/details?id=com.whatword.app";
+      const iosUrl = "https://apps.apple.com/app/whatword/id6752830019";
+      
+      const shareMessage = "Let's play WhatWord! - the ultimate word guessing game.\n\nGuess my word before I guess yours!\n\n📱 Download now:\n\niPhone: " + iosUrl + "\n\nAndroid: " + androidUrl;
       
       await Share.share({
-        message: `${shareMessage}\n\n${shareUrl}`,
-        url: shareUrl,
+        message: shareMessage,
         title: 'WhatWord - Word Game'
       });
     } catch (error) {
@@ -148,30 +150,33 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
     try {
       setLoadingFriends(true);
       
-      // Get friends from user's friends array
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const friendIds = userData.friends || [];
+      console.log('🔍 [FriendsManagementScreen] Loading friends using NEW subcollection system');
+      
+      // Get friends from NEW subcollection system
+      const friendsRef = collection(db, 'users', auth.currentUser.uid, 'friends');
+      const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+      const friendsSnapshot = await getDocs(friendsQuery);
+      
+      console.log('🔍 [FriendsManagementScreen] Found', friendsSnapshot.docs.length, 'accepted friendships');
+      
+      if (friendsSnapshot.docs.length > 0) {
+        // Get friend profiles
+        const friendPromises = friendsSnapshot.docs.map(friendDoc => 
+          getDoc(doc(db, 'users', friendDoc.id))
+        );
+        const friendDocs = await Promise.all(friendPromises);
         
-        if (friendIds.length > 0) {
-          // Get friend profiles
-          const friendPromises = friendIds.map(friendId => 
-            getDoc(doc(db, 'users', friendId))
-          );
-          const friendDocs = await Promise.all(friendPromises);
-          
-          const friendsList = friendDocs
-            .filter(doc => doc.exists())
-            .map(doc => ({
-              id: doc.id,
-              ...doc.data()
-            }));
-          
-          setFriends(friendsList);
-        } else {
-          setFriends([]);
-        }
+        const friendsList = friendDocs
+          .filter(doc => doc.exists())
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+        
+        console.log('🔍 [FriendsManagementScreen] Loaded', friendsList.length, 'friend profiles');
+        setFriends(friendsList);
+      } else {
+        setFriends([]);
       }
     } catch (error) {
       logger.error('Failed to load friends:', error);
@@ -193,40 +198,52 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       
       setLoadingRequests(true);
       
-      // Load incoming requests with real-time listener
+      // Load incoming requests with real-time listener using NEW subcollection system
       const incomingQuery = query(
-        collection(db, 'friendRequests'),
-        where('toUid', '==', auth.currentUser.uid),
+        collection(db, 'users', auth.currentUser.uid, 'friends'),
         where('status', '==', 'pending')
       );
       
-      // Load outgoing requests with real-time listener
-      const outgoingQuery = query(
-        collection(db, 'friendRequests'),
-        where('fromUid', '==', auth.currentUser.uid),
-        where('status', '==', 'pending')
-      );
+      // For outgoing requests, we need to check all users' friend subcollections where we sent requests
+      // This is handled differently - we'll track outgoing in a separate collection or query
+      // For now, let's focus on incoming requests which is the critical path
       
       // Set up real-time listeners
       const unsubscribeIncoming = onSnapshot(incomingQuery, async (snapshot) => {
         // Check if user is still authenticated before processing
         if (!auth.currentUser) return;
         
-        const incoming = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log('🔍 [FriendsManagementScreen] Incoming requests snapshot size:', snapshot.docs.length);
+        
+        // In NEW subcollection system, the document ID IS the sender's UID
+        const incoming = snapshot.docs.map(doc => ({ 
+          id: doc.id, // This is the sender's UID
+          fromUid: doc.id, // Map document ID to fromUid for compatibility
+          ...doc.data() 
+        }));
+        
+        console.log('🔍 [FriendsManagementScreen] Incoming requests data:', incoming);
         
         // Fetch usernames for incoming requests
         const requestsWithUsernames = await Promise.all(
           incoming.map(async (request) => {
             try {
-              const userDoc = await getDoc(doc(db, 'users', request.fromUid));
+              // Use senderId if available (from new system), otherwise use fromUid (document ID)
+              const senderUid = request.senderId || request.fromUid || request.id;
+              console.log('🔍 [FriendsManagementScreen] Fetching user data for:', senderUid);
+              
+              const userDoc = await getDoc(doc(db, 'users', senderUid));
               if (userDoc.exists()) {
                 const userData = userDoc.data();
-                return {
+                const result = {
                   ...request,
-                  fromUsername: userData.username || userData.displayName || 'Unknown User'
+                  fromUid: senderUid,
+                  fromUsername: request.senderUsername || userData.username || userData.displayName || 'Unknown User'
                 };
+                console.log('🔍 [FriendsManagementScreen] Processed request:', result);
+                return result;
               }
-              return { ...request, fromUsername: 'Unknown User' };
+              return { ...request, fromUid: senderUid, fromUsername: 'Unknown User' };
             } catch (error) {
               logger.error('Failed to fetch username for request:', error);
               return { ...request, fromUsername: 'Unknown User' };
@@ -234,6 +251,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
           })
         );
         
+        console.log('🔍 [FriendsManagementScreen] Final processed requests:', requestsWithUsernames);
         setPendingRequests(requestsWithUsernames);
         setLoadingRequests(false);
         
@@ -250,46 +268,15 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         setLoadingRequests(false);
       });
       
-      const unsubscribeOutgoing = onSnapshot(outgoingQuery, async (snapshot) => {
-        // Check if user is still authenticated before processing
-        if (!auth.currentUser) return;
-        
-        const outgoing = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // Fetch usernames for outgoing requests
-        const requestsWithUsernames = await Promise.all(
-          outgoing.map(async (request) => {
-            try {
-              const userDoc = await getDoc(doc(db, 'users', request.toUid));
-              if (userDoc.exists()) {
-                const userData = userDoc.data();
-                return {
-                  ...request,
-                  toUsername: userData.username || userData.displayName || 'Unknown User'
-                };
-              }
-              return { ...request, toUsername: 'Unknown User' };
-            } catch (error) {
-              logger.error('Failed to fetch username for outgoing request:', error);
-              return { ...request, toUsername: 'Unknown User' };
-            }
-          })
-        );
-        
-        setSentRequests(requestsWithUsernames);
-        setLoadingRequests(false);
-      }, (error) => {
-        // Only log error if user is still authenticated
-        if (auth.currentUser) {
-          logger.error('Failed to load outgoing friend requests:', error);
-        }
-        setLoadingRequests(false);
-      });
+      // Outgoing requests are harder to track in the NEW subcollection system
+      // because they're stored in other users' subcollections
+      // For now, we'll just show incoming requests (which is the critical path)
+      // TODO: Consider storing outgoing requests in a separate tracking collection
+      setSentRequests([]);
       
       // Store unsubscribe functions for cleanup
       return () => {
         unsubscribeIncoming();
-        unsubscribeOutgoing();
       };
     } catch (error) {
       logger.error('Failed to set up friend requests listeners:', error);
@@ -414,37 +401,12 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
     try {
       console.log('🔍 [FriendsManagementScreen] Accepting friend request from:', request.fromUid || request.from);
       
-      // Update both users' friends lists
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-        friends: arrayUnion(request.fromUid || request.from)
-      });
-      console.log('🔍 [FriendsManagementScreen] Updated current user friends list');
-      
-      await updateDoc(doc(db, 'users', request.fromUid || request.from), {
-        friends: arrayUnion(auth.currentUser.uid)
-      });
-      console.log('🔍 [FriendsManagementScreen] Updated other user friends list');
+      // Use friendsService which handles the NEW subcollection system correctly
+      await friendsService.acceptFriendRequest(request.fromUid || request.from);
+      console.log('🔍 [FriendsManagementScreen] Friend request accepted via friendsService');
 
-      // Clear any redundant friend requests between these two users
-      console.log('🔍 [FriendsManagementScreen] Clearing redundant friend requests...');
-      const redundantRequestsQuery = query(
-        collection(db, 'friendRequests'),
-        where('fromUid', '==', auth.currentUser.uid),
-        where('toUid', '==', request.fromUid || request.from),
-        where('status', '==', 'pending')
-      );
-      
-      const redundantSnapshot = await getDocs(redundantRequestsQuery);
-      console.log('🔍 [FriendsManagementScreen] Found', redundantSnapshot.docs.length, 'redundant requests to clear');
-      
-      // Delete all redundant requests
-      const deletePromises = redundantSnapshot.docs.map(doc => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-      console.log('🔍 [FriendsManagementScreen] Cleared', redundantSnapshot.docs.length, 'redundant requests');
-
-      // Delete the friend request since it's now accepted
-      await deleteDoc(doc(db, 'friendRequests', request.id));
-      console.log('🔍 [FriendsManagementScreen] Deleted accepted request');
+      // friendsService already handles updating both users' friend subcollections
+      // No need to delete from old system - it doesn't exist there
 
       Alert.alert('Success', `You are now friends with ${request.fromUsername}!`);
       playSound('chime');
@@ -454,8 +416,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         onClearNotifications();
       }
       
-      // Reload requests
+      // Reload requests and friends to reflect the change
       loadFriendRequests();
+      loadFriends();
     } catch (error) {
       console.error('❌ [FriendsManagementScreen] Failed to accept friend request:', error);
       logger.error('Failed to accept friend request:', error);
@@ -465,7 +428,11 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
 
   const declineFriendRequest = async (request) => {
     try {
-      await deleteDoc(doc(db, 'friendRequests', request.id));
+      console.log('🔍 [FriendsManagementScreen] Declining friend request from:', request.fromUid || request.from);
+      
+      // Use friendsService which handles the NEW subcollection system correctly
+      await friendsService.declineFriendRequest(request.fromUid || request.from);
+      
       Alert.alert('Declined', 'Friend request declined.');
       playSound('chime');
       
@@ -484,13 +451,19 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
 
   const cancelFriendRequest = async (request) => {
     try {
-      await deleteDoc(doc(db, 'friendRequests', request.id));
+      console.log('🔍 [FriendsManagementScreen] Canceling outgoing friend request to:', request.toUid);
+      
+      // Delete from NEW subcollection system (the request is in the recipient's subcollection)
+      await deleteDoc(doc(db, 'users', request.toUid, 'friends', auth.currentUser.uid));
+      console.log('🔍 [FriendsManagementScreen] Outgoing request cancelled');
+      
       Alert.alert('Cancelled', 'Friend request cancelled.');
       playSound('chime');
       
       // Reload requests
       loadFriendRequests();
     } catch (error) {
+      console.error('❌ [FriendsManagementScreen] Failed to cancel friend request:', error);
       logger.error('Failed to cancel friend request:', error);
       Alert.alert('Error', 'Failed to cancel friend request. Please try again.');
     }
@@ -507,21 +480,19 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Remove from both users' friends lists
-              await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-                friends: arrayRemove(friend.id)
-              });
+              console.log('🔍 [FriendsManagementScreen] Removing friend:', friend.id, friend.username);
               
-              await updateDoc(doc(db, 'users', friend.id), {
-                friends: arrayRemove(auth.currentUser.uid)
-              });
+              // Use friendsService to remove from NEW subcollection system
+              await friendsService.removeFriend(friend.id);
+              console.log('🔍 [FriendsManagementScreen] Friend removed via friendsService');
 
               Alert.alert('Removed', `${friend.username || friend.displayName} has been removed from your friends list.`);
               playSound('chime');
               
-              // Reload friends
+              // Reload friends to update UI
               loadFriends();
             } catch (error) {
+              console.error('❌ [FriendsManagementScreen] Failed to remove friend:', error);
               logger.error('Failed to remove friend:', error);
               Alert.alert('Error', 'Failed to remove friend. Please try again.');
             }
@@ -637,7 +608,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
   };
 
   return (
-    <SafeAreaView edges={['left', 'right', 'top']} style={[styles.screenContainer, { backgroundColor: colors.background }]}> 
+    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <View style={{ flex: 1 }}>
         {/* Tab Navigation */}
         <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
@@ -788,7 +759,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
                 borderRadius: 6,
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 120,
+                minWidth: 140,
               }}
               onPress={() => {
                 playSound('guess');
@@ -796,7 +767,12 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
               }}
               disabled={searching}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+              <Text style={{ 
+                color: '#FFFFFF', 
+                fontSize: 16, 
+                fontWeight: '600',
+                numberOfLines: 1
+              }}>
                 {searching ? 'Searching...' : 'Search'}
               </Text>
             </TouchableOpacity>

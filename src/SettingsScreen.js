@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput, StatusBar, Keyboard, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { playSound } from './soundsUtil';
 import settingsService from './settingsService';
@@ -14,6 +14,7 @@ import { auth } from './firebase';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [cacheSize, setCacheSize] = useState(0);
@@ -278,7 +279,7 @@ const SettingsScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.screenContainer, { backgroundColor: theme.background }]}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: theme.background, paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
           <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading settings...</Text>
         </View>
@@ -287,7 +288,7 @@ const SettingsScreen = () => {
   }
 
   return (
-    <SafeAreaView style={[styles.screenContainer, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: theme.background, paddingTop: insets.top }]}>
       {/* Show status bar on menu screens */}
       <StatusBar hidden={false} barStyle="light-content" />
   

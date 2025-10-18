@@ -802,7 +802,7 @@ const HomeScreen = () => {
         <Text style={styles.fabText}>☰</Text>
       </TouchableOpacity>
       
-      <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView edges={['left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top + 55 }]}>
         {/* Fixed Header Image - Outside ScrollView */}
         <View style={{ alignItems: 'center', width: '100%' }}>
