@@ -153,28 +153,7 @@ class GameService {
           firstPlayerId = gameData.creatorId;
         }
         
-        if (firstPlayerId) {
-          try {
-            const currentUserDoc = await getDoc(doc(db, 'users', currentUserId));
-            const currentUserData = currentUserDoc.data();
-            
-            await getNotificationService().sendPushNotification(
-              firstPlayerId,
-              'Game Started',
-              `Your battle with ${currentUserData.username || currentUserData.displayName || 'your opponent'} has begun`,
-              {
-                type: 'game_started',
-                gameId,
-                opponentName: currentUserData.username || currentUserData.displayName || 'your opponent',
-                wordLength: gameData.wordLength || 5,
-                timestamp: new Date().toISOString()
-              }
-            );
-          } catch (notificationError) {
-            console.error('GameService: Failed to send game started notification:', notificationError);
-            // Don't throw error - word setting should still succeed even if notification fails
-          }
-        }
+        // Push notification for game started is sent from SetWordGameScreen.js instead
       }
       
       return true;

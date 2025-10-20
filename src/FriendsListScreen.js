@@ -152,7 +152,7 @@ const FriendsListScreen = () => {
       )}
 
       {/* Friend Options Modal */}
-      <Modal visible={showFriendOptionsModal} transparent animationType="fade">
+      <Modal visible={showFriendOptionsModal} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow]}>
             <Text style={styles.header}>Remove Friend</Text>

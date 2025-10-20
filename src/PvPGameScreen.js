@@ -767,15 +767,30 @@ const PvPGameScreen = () => {
           setGame(gameData);
           
           // Show "The Battle Has Begun!" popup when game becomes active (both words are set)
-          // Only show once per session (using ref to track)
-          if (gameData.status === 'active' && !hasShownStartGamePopupRef.current && !showResults) {
+          // Only show once per game per player (stored in Firestore)
+          if (gameData.status === 'active' && !showResults && currentUser) {
             const hasWords = (gameData.player1?.word && gameData.player2?.word) || (gameData.playerWord && gameData.opponentWord);
             
             if (hasWords) {
-              console.log('PvPGameScreen: Game is active with both words set, showing start game popup');
-              setShowStartGamePopup(true);
-              playSound('startGame').catch(() => {});
-              hasShownStartGamePopupRef.current = true;
+              // Check if current player has already seen the popup
+              const isPlayer1 = gameData.player1?.uid === currentUser.uid;
+              const hasSeenPopup = isPlayer1 ? gameData.player1?.seenStartPopup : gameData.player2?.seenStartPopup;
+              
+              if (!hasSeenPopup && !hasShownStartGamePopupRef.current) {
+                console.log('PvPGameScreen: Game is active with both words set, showing start game popup');
+                setShowStartGamePopup(true);
+                playSound('startGame').catch(() => {});
+                hasShownStartGamePopupRef.current = true;
+                
+                // Mark that this player has seen the popup in Firestore
+                const gameRef = doc(db, 'games', gameId);
+                const updateField = isPlayer1 ? 'player1.seenStartPopup' : 'player2.seenStartPopup';
+                updateDoc(gameRef, {
+                  [updateField]: true
+                }).catch((error) => {
+                  console.error('Failed to mark start popup as seen:', error);
+                });
+              }
             }
           }
           
@@ -1532,18 +1547,18 @@ const PvPGameScreen = () => {
       <ScrollView 
         ref={scrollViewRef} 
         style={styles.scroll} 
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 10 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 5 }}
       >
         <Text style={styles.sectionTitle}>Your Guesses</Text>
         {guesses.map((g, idx) => (
-          <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 50 : 38, paddingVertical: isIPad ? 2 : 1, marginBottom: isIPad ? 3 : 2 }]}>
-            <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 50 : 38 }]}>
+          <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 40 : 32, paddingVertical: 0, marginBottom: isIPad ? 2 : 1 }]}>
+            <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 40 : 32 }]}>
               {g.word.split('').map((letter, i) => (
                 <View
                   key={`letter-${idx}-${i}`}
                   style={{
                     width: isIPad ? 46 : 28,
-                    height: isIPad ? 60 : 44,
+                    height: isIPad ? 40 : 32,
                     justifyContent: 'center',
                     alignItems: 'center',
                     marginHorizontal: isIPad ? 2 : 0,
@@ -1576,6 +1591,11 @@ const PvPGameScreen = () => {
         ))}
       </ScrollView>
       
+      {/* Guess Counter - Top Left */}
+      <View style={[styles.fabTop, { top: (styles.fabTop?.top || 0) + (insets?.top || 0) + 4, left: 20, right: 'auto' }]}>
+        <Text style={styles.fabText}>{guesses.length}</Text>
+      </View>
+
       {/* FAB - respect safe area so it doesn't overlap status bar */}
       <TouchableOpacity 
         style={[styles.fabTop, { top: (styles.fabTop?.top || 0) + (insets?.top || 0) + 4 }]} 
@@ -1585,7 +1605,7 @@ const PvPGameScreen = () => {
       </TouchableOpacity>
       
       {/* Menu Popup Modal */}
-      <Modal visible={showMenuPopup} transparent animationType="fade">
+      <Modal visible={showMenuPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.header, { color: colors.textPrimary }]}>Game Menu</Text>
@@ -1642,7 +1662,7 @@ const PvPGameScreen = () => {
       </Modal>
       
       {/* Invalid Word Popup */}
-      <Modal visible={showInvalidPopup} transparent animationType="fade">
+      <Modal visible={showInvalidPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Invalid Word</Text>
@@ -1660,7 +1680,7 @@ const PvPGameScreen = () => {
       </Modal>
 
       {/* Start Game Popup - "The Battle Has Begun!" */}
-      <Modal visible={showStartGamePopup} transparent animationType="fade">
+      <Modal visible={showStartGamePopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>The Battle Has Begun!</Text>
@@ -1681,7 +1701,7 @@ const PvPGameScreen = () => {
       </Modal>
 
       {/* Congratulations Popup - Individual Word Solved */}
-      <Modal visible={showCongratulationsPopup} transparent animationType="fade">
+      <Modal visible={showCongratulationsPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
@@ -1783,7 +1803,7 @@ const PvPGameScreen = () => {
       </Modal>
 
       {/* Game Over Popup - Final Result (Win/Lose/Tie) */}
-      <Modal visible={showGameOverPopup} transparent animationType="fade">
+      <Modal visible={showGameOverPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>
@@ -1873,7 +1893,7 @@ const PvPGameScreen = () => {
 
       
       {/* Max Guesses Popup */}
-      <Modal visible={showMaxGuessesPopup} transparent animationType="fade">
+      <Modal visible={showMaxGuessesPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.maxGuessesPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>
@@ -1912,7 +1932,7 @@ const PvPGameScreen = () => {
 
 
       {/* Quit Confirmation Modal */}
-      <Modal visible={showQuitConfirmPopup} transparent animationType="fade">
+      <Modal visible={showQuitConfirmPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.header, { color: colors.textPrimary }]}>Quit Game?</Text>

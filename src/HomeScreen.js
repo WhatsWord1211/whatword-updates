@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Image, StatusBar } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { generateUsernameFromEmail } from './usernameValidation';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,10 +20,7 @@ import * as Notifications from 'expo-notifications';
 const HomeScreen = () => {
   const navigation = useNavigation();
   const { colors } = useTheme();
-  const route = useRoute();
   const insets = useSafeAreaInsets();
-
-  const [navigationReady, setNavigationReady] = useState(false);
 
   const [showInvalidPopup, setShowInvalidPopup] = useState(false);
   const [isFirstLaunch, setIsFirstLaunch] = useState(false);
@@ -41,7 +38,8 @@ const HomeScreen = () => {
   const [notifications, setNotifications] = useState([]);
   const [startedGameCount, setStartedGameCount] = useState(0);
   const startedGameIdsRef = useRef(new Set());
-  const [showRankModal, setShowRankModal] = useState(false);
+  // const [showRankModal, setShowRankModal] = useState(false); // OLD RANK SYSTEM - KEPT FOR FUTURE USE
+  const [easyModeRank, setEasyModeRank] = useState(null);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
 
@@ -91,6 +89,79 @@ const HomeScreen = () => {
       }
     } catch (error) {
       console.error('HomeScreen: Failed to refresh user profile:', error);
+    }
+  };
+
+  // Load user's Easy Mode Solo leaderboard rank (same logic as LeaderboardScreen)
+  const loadEasyModeRank = async (currentUser) => {
+    try {
+      // Load friends using same logic as LeaderboardScreen
+      const friendsRef = collection(db, 'users', currentUser.uid, 'friends');
+      const friendsQuery = query(friendsRef, where('status', '==', 'accepted'));
+      const friendsSnapshot = await getDocs(friendsQuery);
+      
+      const friends = [];
+      
+      // Always include current user
+      const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (currentUserDoc.exists()) {
+        friends.push({
+          uid: currentUser.uid,
+          ...currentUserDoc.data()
+        });
+      }
+      
+      // Add all friends
+      for (const friendDoc of friendsSnapshot.docs) {
+        const friendUid = friendDoc.id;
+        const friendUserDoc = await getDoc(doc(db, 'users', friendUid));
+        if (friendUserDoc.exists()) {
+          friends.push({
+            uid: friendUid,
+            ...friendUserDoc.data()
+          });
+        }
+      }
+      
+      // Build leaderboard data for Easy mode (same logic as LeaderboardScreen)
+      const leaderboardData = [];
+      
+      for (const friend of friends) {
+        const runningAverage = friend.easyAverageScore || 0;
+        const gamesCount = friend.easyGamesCount || 0;
+        
+        // Include players who have played games OR show current user even with 0 games
+        if (runningAverage > 0 || friend.uid === currentUser.uid) {
+          leaderboardData.push({
+            uid: friend.uid,
+            username: friend.username || friend.displayName || 'Unknown Player',
+            displayName: friend.displayName || friend.username || 'Unknown Player',
+            runningAverage: runningAverage,
+            gamesCount: gamesCount,
+            totalGames: friend.gamesPlayed || 0
+          });
+        }
+      }
+      
+      // Sort by running average (lowest is best) - same as LeaderboardScreen
+      leaderboardData.sort((a, b) => a.runningAverage - b.runningAverage);
+      
+      // Add ranks - same as LeaderboardScreen
+      const rankedData = leaderboardData.map((player, index) => ({
+        ...player,
+        rank: index + 1
+      }));
+      
+      // Find current user's rank - same as LeaderboardScreen
+      const userRank = rankedData.find(player => player.uid === currentUser.uid);
+      if (userRank) {
+        setEasyModeRank(userRank.rank);
+      } else {
+        setEasyModeRank(null);
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to load easy mode rank:', error);
+      setEasyModeRank(null);
     }
   };
 
@@ -353,7 +424,6 @@ const HomeScreen = () => {
                 }
                 
                 let newCount = 0;
-                const notificationService = getNotificationService();
                 const newSeenChallenges = new Set(seenChallenges);
                 
                 // Only process challenges that were accepted recently (within last 24 hours)
@@ -373,19 +443,11 @@ const HomeScreen = () => {
                     return; // Skip old challenges
                   }
                   
-                  // Only show notification if we haven't seen this challenge before
+                  // Track unseen challenges for badge count only (no notification on app open)
+                  // Real-time push notifications are sent when events occur via gameService
                   if (!seenChallenges.has(challengeId)) {
                     newSeenChallenges.add(challengeId);
                     newCount++;
-                    // Fire a local notification so P1 gets an immediate alert in Expo Go
-                    notificationService.showLocalNotification({
-                      title: 'Game Started',
-                      body: `${data.toUsername || 'Your opponent'} set their word. Let the game begin!`,
-                      data: { type: 'challenge_accepted', challengeId, gameId: data.gameId || null },
-                      sound: true,
-                      priority: 'high',
-                    }).catch(() => {});
-                    // Chime removed to prevent multiple sounds during sign-in
                   }
                 });
                 
@@ -506,6 +568,7 @@ const HomeScreen = () => {
             // Load profile and other data in background
             Promise.all([
               loadUserProfile(currentUser),
+              loadEasyModeRank(currentUser),
               Promise.resolve().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
               clearStuckGameState(), // Clear any stuck game state
@@ -532,6 +595,7 @@ const HomeScreen = () => {
               // Load profile and other data in background
               Promise.all([
                 loadUserProfile(currentUser),
+                loadEasyModeRank(currentUser),
                 Promise.resolve(),
                 checkFirstLaunch(),
                 clearStuckGameState(), // Clear any stuck game state
@@ -615,6 +679,7 @@ const HomeScreen = () => {
     React.useCallback(() => {
       if (user && !isAuthenticating) {
         refreshUserProfile(user);
+        loadEasyModeRank(user);
       }
     }, [user, isAuthenticating])
   );
@@ -723,7 +788,7 @@ const HomeScreen = () => {
   };
 
 
-  // Function to get player rank
+  // Function to get player rank (KEPT FOR FUTURE USE)
   const getPlayerRank = () => {
     if (!userProfile) return 'Unranked';
     
@@ -744,6 +809,14 @@ const HomeScreen = () => {
     if (easyAvg > 0 && easyAvg <= 20) return 'Rookie';
     
     return 'Unranked';
+  };
+
+  // Format rank with ordinal suffix (1st, 2nd, 3rd, etc.)
+  const formatRankOrdinal = (rank) => {
+    if (!rank) return '---';
+    const suffix = ['th', 'st', 'nd', 'rd'];
+    const value = rank % 100;
+    return rank + (suffix[(value - 20) % 10] || suffix[value] || suffix[0]) + ' Place';
   };
 
   const handleButtonPress = (screen, params) => {
@@ -819,17 +892,17 @@ const HomeScreen = () => {
       >
         <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
         
-        {/* Player Rank Display - Clickable to show rank ladder */}
+        {/* Easy Mode Leaderboard Position - Clickable to go to Leaderboard */}
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => {
             playSound('rank');
-            setShowRankModal(true);
+            navigation.navigate('Leaderboard', { initialTab: 'solo', initialDifficulty: 'easy' });
           }}
           style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}
         >
           <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Rank:</Text>
-          <Text style={[styles.rankValue, { color: colors.primary }]}>{getPlayerRank()}</Text>
+          <Text style={[styles.rankValue, { color: colors.primary }]}>{formatRankOrdinal(easyModeRank)}</Text>
         </TouchableOpacity>
         
 
@@ -965,7 +1038,7 @@ const HomeScreen = () => {
       </View>
       </View>
       
-      <Modal visible={showMenuModal} transparent animationType="fade">
+      <Modal visible={showMenuModal} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.header, { color: colors.textPrimary }]}>Menu</Text>
@@ -995,8 +1068,9 @@ const HomeScreen = () => {
         </View>
       </Modal>
       
-      {/* Rank Ladder Modal */}
-      <Modal visible={showRankModal} transparent animationType="fade">
+      {/* OLD RANK LADDER MODAL - KEPT FOR FUTURE USE BUT DISABLED */}
+      {/* 
+      <Modal visible={showRankModal} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.header, { color: colors.textPrimary }]}>Rank Ladder</Text>
@@ -1079,8 +1153,9 @@ const HomeScreen = () => {
           </View>
         </View>
       </Modal>
+      */}
 
-      <Modal visible={showInvalidPopup} transparent animationType="fade">
+      <Modal visible={showInvalidPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Error</Text>

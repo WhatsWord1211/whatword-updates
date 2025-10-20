@@ -1098,7 +1098,7 @@ const GameScreen = () => {
           <ScrollView 
             ref={scrollViewRef} 
             style={styles.scroll} 
-            contentContainerStyle={{ flexGrow: 1 }}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 5 }}
           >
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Your Guesses</Text>
             {(() => {
@@ -1113,11 +1113,11 @@ const GameScreen = () => {
             })()}
             <View style={styles.guessGrid}>
               {guesses.map((g, idx) => (
-                <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 50 : 38, paddingVertical: isIPad ? 2 : 1, marginBottom: isIPad ? 3 : 2 }]}>
-                  <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 50 : 38 }]}>
+                <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 40 : 32, paddingVertical: 0, marginBottom: isIPad ? 2 : 1 }]}>
+                  <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 40 : 32 }]}>
                     {g.isHint ? (
-                      <View style={{ justifyContent: 'center', alignItems: 'center', height: isIPad ? 60 : 44 }}>
-                        <Text style={{ fontSize: isIPad ? 28 : 22, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>HINT</Text>
+                      <View style={{ justifyContent: 'center', alignItems: 'center', height: isIPad ? 40 : 32 }}>
+                        <Text style={{ fontSize: isIPad ? 22 : 18, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>HINT</Text>
                       </View>
                     ) : (
                       g.word.split('').map((letter, i) => (
@@ -1125,7 +1125,7 @@ const GameScreen = () => {
                           key={`letter-${idx}-${i}`}
                           style={{
                             width: isIPad ? 46 : 28,
-                            height: isIPad ? 60 : 44,
+                            height: isIPad ? 40 : 32,
                             justifyContent: 'center',
                             alignItems: 'center',
                             marginHorizontal: isIPad ? 2 : 0,
@@ -1161,6 +1161,14 @@ const GameScreen = () => {
               ))}
             </View>
           </ScrollView>
+          
+          {/* Guess Counter - Top Left */}
+          <View style={[styles.fabTop, { top: insets.top + 10, left: 20, right: 'auto', zIndex: 1000 }]}>
+            <Text style={[styles.fabText, { color: colors.textPrimary }]}>
+              {guesses.filter(g => !g.isHint).length}
+            </Text>
+          </View>
+
           <TouchableOpacity 
             style={[styles.fabTop, { top: insets.top + 10, zIndex: 1000 }]} 
             onPress={() => setShowMenuPopup(true)}
@@ -1168,7 +1176,7 @@ const GameScreen = () => {
             <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>
           </TouchableOpacity>
           
-          <Modal visible={!!showInvalidPopup} transparent animationType="fade">
+          <Modal visible={!!showInvalidPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Invalid Word</Text>
@@ -1184,7 +1192,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showWinPopup} transparent animationType="fade">
+          <Modal visible={!!showWinPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>
@@ -1249,7 +1257,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showMenuPopup} transparent animationType="fade">
+          <Modal visible={!!showMenuPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.header, { color: colors.textPrimary }]}>Game Menu</Text>
@@ -1277,7 +1285,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showQuitConfirmPopup} transparent animationType="fade">
+          <Modal visible={!!showQuitConfirmPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.quitConfirmPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.quitConfirmTitle, { color: colors.textPrimary }]}>Quit Game?</Text>
@@ -1302,7 +1310,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showWordRevealPopup} transparent animationType="fade">
+          <Modal visible={!!showWordRevealPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.wordRevealPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.wordRevealTitle, { color: colors.textPrimary }]}>Game Over</Text>
@@ -1327,7 +1335,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showHintPopup} transparent animationType="fade">
+          <Modal visible={!!showHintPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.hintPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>Hint</Text>
@@ -1346,7 +1354,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showHintLimitPopup} transparent animationType="fade">
+          <Modal visible={!!showHintLimitPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.hintPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>No Hints Left!</Text>
@@ -1365,7 +1373,7 @@ const GameScreen = () => {
               </View>
             </View>
           </Modal>
-          <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade">
+          <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade" statusBarTranslucent={false}>
             <View style={styles.modalOverlay}>
               <View style={[styles.maxGuessesPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
                 <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Max Guesses Reached!</Text>

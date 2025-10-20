@@ -297,7 +297,7 @@ const CreateChallengeScreen = () => {
        </ScrollView>
 
        {/* Menu Popup Modal */}
-       <Modal visible={showMenuPopup} transparent animationType="fade">
+       <Modal visible={showMenuPopup} transparent animationType="fade" statusBarTranslucent={false}>
          <View style={styles.modalOverlay}>
            <View style={[styles.modalContainer, styles.modalShadow]}>
              <Text style={styles.header}>Game Menu</Text>

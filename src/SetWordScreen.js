@@ -219,7 +219,7 @@ const SetWordScreen = () => {
       </View>
       
       {/* Game Started Popup Modal */}
-      <Modal visible={showGameStartedPopup} transparent animationType="fade">
+      <Modal visible={showGameStartedPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow]}>
             <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>

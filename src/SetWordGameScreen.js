@@ -333,18 +333,7 @@ const SetWordGameScreen = () => {
         
         const challengeRef = await addDoc(collection(db, 'challenges'), challengeData);
         
-        // Send push notification for game challenge
-        try {
-          const wordLength = difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5;
-          await getNotificationService().sendChallengeNotification(
-            challenge.to,
-            challenge.fromUsername,
-            challengeRef.id,
-            wordLength
-          );
-        } catch (notificationError) {
-          console.error('Failed to send game challenge push notification:', notificationError);
-        }
+        // Push notification sent from friendsService.sendGameChallenge() instead
         
         playSound('chime');
         
@@ -623,7 +612,7 @@ const SetWordGameScreen = () => {
        </TouchableOpacity>
 
      {/* Menu Popup Modal */}
-     <Modal visible={showMenuPopup} transparent animationType="fade">
+     <Modal visible={showMenuPopup} transparent animationType="fade" statusBarTranslucent={false}>
        <View style={styles.modalOverlay}>
          <View style={[styles.modalContainer, styles.modalShadow]}>
            <Text style={styles.header}>Game Menu</Text>
@@ -655,7 +644,7 @@ const SetWordGameScreen = () => {
      </Modal>
      
      {/* Challenge Sent Popup Modal */}
-     <Modal visible={showChallengeSentPopup} transparent animationType="fade">
+     <Modal visible={showChallengeSentPopup} transparent animationType="fade" statusBarTranslucent={false}>
        <View style={styles.modalOverlay}>
          <View style={[styles.winPopup, styles.modalShadow]}>
            <Text style={[styles.winMessage, { color: '#E5E7EB' }]}>

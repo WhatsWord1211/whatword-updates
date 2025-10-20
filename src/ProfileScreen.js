@@ -584,7 +584,7 @@ const ProfileScreen = () => {
       </TouchableWithoutFeedback>
 
       {/* Rank-Up Popup Modal */}
-      <Modal visible={showRankUpPopup} transparent animationType="fade">
+      <Modal visible={showRankUpPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.rankUpPopup, styles.modalShadow]}>
             <Text style={styles.rankUpTitle}>🎉 RANK UP! 🎉</Text>
@@ -605,7 +605,7 @@ const ProfileScreen = () => {
       </Modal>
 
       {/* Delete Account Modal */}
-      <Modal visible={showDeleteModal} transparent animationType="fade">
+      <Modal visible={showDeleteModal} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow]}>
             <Text style={styles.header}>Delete Account</Text>

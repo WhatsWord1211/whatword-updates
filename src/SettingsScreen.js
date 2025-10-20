@@ -725,7 +725,7 @@ const SettingsScreen = () => {
       </TouchableWithoutFeedback>
 
       {/* Time Picker Modal */}
-      <Modal visible={showTimePicker} transparent animationType="fade">
+      <Modal visible={showTimePicker} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
           <View style={[styles.modalContainer, { backgroundColor: theme.surface }]}>
             <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>

@@ -468,7 +468,7 @@ class FriendsService {
       await getNotificationService().sendPushNotification(
         friendUserId,
         'Game Challenge',
-        `${userData.username || 'Someone'} challenged you to a game!`,
+        `${userData.username || 'Someone'} challenged you to a battle!`,
         { 
           type: 'challenge', 
           challengeId, 

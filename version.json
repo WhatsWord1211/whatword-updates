@@ -1,9 +1,9 @@
 {
-  "latestBuildNumber": 41,
-  "versionCode": 41,
-  "versionName": "1.2.5",
-  "releaseDate": "2025-10-14",
-  "updateMessage": "Fixed ATT prompt display on iPadOS 26+, implemented responsive UI for iPad with proper spacing and sizing, includes all previous friend system fixes from OTA updates"
+  "latestBuildNumber": 42,
+  "versionCode": 42,
+  "versionName": "1.2.6",
+  "releaseDate": "2025-10-19",
+  "updateMessage": "Battle Has Begun popup one-time display, navigation bar color fix for all popups, notification system cleanup, Easy Mode leaderboard rank on HomeScreen, guess counter, reduced guess spacing, Your Word display on Resume screen"
 }
 
 

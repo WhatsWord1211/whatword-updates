@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ScrollView, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc, onSnapshot } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
@@ -9,15 +9,17 @@ import styles from './styles';
 
 const LeaderboardScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const insets = useSafeAreaInsets();
+  const { initialTab, initialDifficulty } = route.params || {};
   const [soloLeaderboard, setSoloLeaderboard] = useState([]);
   const [pvpLeaderboard, setPvpLeaderboard] = useState([]);
   const [userSoloRank, setUserSoloRank] = useState(null);
   const [userPvpRank, setUserPvpRank] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('solo'); // 'solo' or 'pvp'
-  const [activeDifficulty, setActiveDifficulty] = useState('regular'); // 'easy', 'regular', or 'hard'
+  const [activeTab, setActiveTab] = useState(initialTab || 'solo'); // 'solo' or 'pvp'
+  const [activeDifficulty, setActiveDifficulty] = useState(initialDifficulty || 'regular'); // 'easy', 'regular', or 'hard'
   const [userFriends, setUserFriends] = useState([]);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const [isLoading, setIsLoading] = useState(true);

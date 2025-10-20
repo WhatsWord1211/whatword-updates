@@ -54,6 +54,7 @@ const NotificationPermissionModal = ({
       visible={visible}
       transparent={true}
       animationType="fade"
+      statusBarTranslucent={false}
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>

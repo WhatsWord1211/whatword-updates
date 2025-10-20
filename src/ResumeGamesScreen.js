@@ -240,11 +240,15 @@ const ResumeGamesScreen = () => {
           const outgoing = prev.filter(c => c._source === 'outgoing');
           const merged = [...incoming, ...outgoing].map(challenge => {
             const isRecipient = (challenge.toUid === userId || challenge.to === userId);
+            // For incoming challenges, recipient hasn't set word yet (they need to accept first)
+            // For outgoing challenges, current user is sender and their word is player1Word
+            const myWord = !isRecipient && challenge.player1Word ? challenge.player1Word.toUpperCase() : null;
             return {
               ...challenge,
               fromUsername: challenge.fromUsername || 'Loading...',
               toUsername: challenge.toUsername || 'Loading...',
-              gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance'
+              gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance',
+              myWord: myWord
             };
           });
           
@@ -307,11 +311,15 @@ const ResumeGamesScreen = () => {
           const incoming = prev.filter(c => c._source === 'incoming');
           const merged = [...incoming, ...outgoing].map(challenge => {
             const isRecipient = (challenge.toUid === userId || challenge.to === userId);
+            // For incoming challenges, recipient hasn't set word yet
+            // For outgoing challenges, current user is sender and their word is player1Word
+            const myWord = !isRecipient && challenge.player1Word ? challenge.player1Word.toUpperCase() : null;
             return {
               ...challenge,
               fromUsername: challenge.fromUsername || 'Loading...',
               toUsername: challenge.toUsername || 'Loading...',
-              gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance'
+              gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance',
+              myWord: myWord
             };
           });
           
@@ -379,6 +387,7 @@ const ResumeGamesScreen = () => {
             const isPlayer1 = userId === playersArray[0];
             const currentPlayerSolved = isPlayer1 ? gameData.player1?.solved : gameData.player2?.solved;
             const opponentSolved = isPlayer1 ? gameData.player2?.solved : gameData.player1?.solved;
+            const myWord = isPlayer1 ? gameData.player1?.word : gameData.player2?.word;
 
             const base = {
               gameId: docSnap.id, // Use the document ID as gameId
@@ -391,7 +400,8 @@ const ResumeGamesScreen = () => {
               gameStatus: gameData.status,
               currentPlayerSolved: !!currentPlayerSolved,
               opponentSolved: !!opponentSolved,
-              isMyTurn: !currentPlayerSolved
+              isMyTurn: !currentPlayerSolved,
+              myWord: myWord ? myWord.toUpperCase() : null
             };
 
             if (gameData.status === 'completed') {
@@ -421,21 +431,27 @@ const ResumeGamesScreen = () => {
             }
           });
 
-          // Sort completed games chronologically with oldest first
+          // Sort completed games chronologically by creation date with oldest first
           completedPendingResults.sort((a, b) => {
             // Use createdAt for chronological ordering (when game was started)
-            // Fallback to lastActivity if createdAt is not available
-            const dateA = a.createdAt?.toDate?.() || a.createdAt || a.lastActivity?.toDate?.() || a.lastActivity || new Date(0);
-            const dateB = b.createdAt?.toDate?.() || b.createdAt || b.lastActivity?.toDate?.() || b.lastActivity || new Date(0);
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
             return dateA - dateB; // Oldest first (ascending order)
           });
 
-          // Sort active games chronologically with oldest first
+          // Sort active games chronologically by creation date with oldest first
           activeGames.sort((a, b) => {
             // Use createdAt for chronological ordering (when game was started)
-            // Fallback to lastActivity if createdAt is not available
-            const dateA = a.createdAt?.toDate?.() || a.createdAt || a.lastActivity?.toDate?.() || a.lastActivity || new Date(0);
-            const dateB = b.createdAt?.toDate?.() || b.createdAt || b.lastActivity?.toDate?.() || b.lastActivity || new Date(0);
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
+            return dateA - dateB; // Oldest first (ascending order)
+          });
+
+          // Sort waiting games chronologically by creation date with oldest first
+          waitingGames.sort((a, b) => {
+            // Use createdAt for chronological ordering (when game was started)
+            const dateA = a.createdAt?.toDate?.() || a.createdAt || new Date(0);
+            const dateB = b.createdAt?.toDate?.() || b.createdAt || new Date(0);
             return dateA - dateB; // Oldest first (ascending order)
           });
 
@@ -732,6 +748,11 @@ const ResumeGamesScreen = () => {
             <Text style={styles.awaitingAcceptanceUsername}>
               <Text style={styles.usernamePurple}>{item.toUsername || 'Unknown'}</Text>
             </Text>
+            {item.myWord && (
+              <Text style={[styles.unifiedDate, { color: colors.textSecondary, fontSize: 13, marginTop: 2 }]}>
+                Your Word: {item.myWord}
+              </Text>
+            )}
             <Text style={styles.unifiedDate}>
               Sent: {new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}
             </Text>
@@ -761,10 +782,15 @@ const ResumeGamesScreen = () => {
               {item.gameType === 'pending_challenge' ? (item.fromUsername || 'Unknown') : item.opponent}
             </Text>
           </Text>
+          {item.myWord && (
+            <Text style={[styles.unifiedDate, { color: colors.textSecondary, fontSize: 13, marginTop: 2 }]}>
+              Your Word: {item.myWord}
+            </Text>
+          )}
           <Text style={styles.unifiedDate}>
             {item.gameType === 'pending_challenge' 
               ? `Sent: ${new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}`
-              : `Last: ${new Date(item.lastActivity?.toDate?.() || item.lastActivity || Date.now()).toLocaleDateString()}`}
+              : `Started: ${new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}`}
           </Text>
         </View>
         {item.gameType === 'waiting_for_opponent' ? (
@@ -991,7 +1017,7 @@ const ResumeGamesScreen = () => {
       
       
       {/* Challenge Response Popup Modal */}
-      <Modal visible={showChallengeResponsePopup} transparent animationType="fade">
+      <Modal visible={showChallengeResponsePopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow]}>
             <Text style={[styles.winTitle, { color: '#FFFFFF' }]}>
@@ -1029,7 +1055,7 @@ const ResumeGamesScreen = () => {
       </Modal>
 
       {/* Cancel Challenge Confirmation Modal */}
-      <Modal visible={showCancelChallengeConfirm} transparent animationType="fade">
+      <Modal visible={showCancelChallengeConfirm} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.header, { color: colors.textPrimary }]}>Cancel Challenge?</Text>
@@ -1059,7 +1085,7 @@ const ResumeGamesScreen = () => {
       </Modal>
 
       {/* Challenge Canceled Success Modal */}
-      <Modal visible={showChallengeCanceledPopup} transparent animationType="fade">
+      <Modal visible={showChallengeCanceledPopup} transparent animationType="fade" statusBarTranslucent={false}>
         <View style={styles.modalOverlay}>
           <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
             <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Challenge Canceled</Text>
