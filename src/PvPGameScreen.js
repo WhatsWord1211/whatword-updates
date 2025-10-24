@@ -727,8 +727,6 @@ const PvPGameScreen = () => {
             resultSoundPlayedRef.current = true;
           }
         }
-        // Ensure UI leaves loading state immediately regardless of status
-        setGame(prev => prev && prev.id === gameData.id && prev.status === gameData.status ? prev : gameData);
         
         // Add this game to current user's activeGames array if not already there
         if (gameData.status === 'active' && currentUser?.uid) {
@@ -812,53 +810,54 @@ const PvPGameScreen = () => {
               }
             }
           }
-        }
-
-        
-                 // Update guesses from game history
-         if (gameData.gameHistory && Array.isArray(gameData.gameHistory)) {
-
-           const myGuesses = gameData.gameHistory
-             .filter(entry => entry && entry.player === currentUser.uid)
-             .map(entry => {
-
-               
-               // Use stored dots and circles values if available, otherwise fall back to parsing feedback
-               let circles = 0;
-               let dots = 0;
-               
-               if (entry.dots !== undefined && entry.circles !== undefined) {
-                 // Use the stored values (new format)
-                 circles = entry.circles;
-                 dots = entry.dots;
-
-               } else if (entry.feedback) {
-                 // Fall back to parsing feedback string (old format)
-                 const feedbackString = typeof entry.feedback === 'string' ? entry.feedback : entry.feedback.toString() || '';
-                 circles = feedbackString.split('').filter(char => char === '●').length;
-                 dots = feedbackString.split('').filter(char => char === '○').length;
-
-               }
-               
-               return {
-                 word: entry.guess || '',
-                 circles: circles,
-                 dots: dots,
-                 isCorrect: entry.isCorrect || false
-               };
-             });
-
-          if (myGuesses && Array.isArray(myGuesses)) {
-            setGuesses(myGuesses);
+          
+          // Update guesses from game history - only if the history actually changed
+          if (gameData.gameHistory && Array.isArray(gameData.gameHistory)) {
+            const currentHistoryLength = gameData.gameHistory.length;
+            const previousHistoryLength = game?.gameHistory?.length || 0;
             
-            // Auto-scroll to show the latest guess when guesses are updated from game data
-            if (myGuesses.length > 0) {
-              scrollToBottom(300, true);
+            // Only process guesses if history has changed
+            if (currentHistoryLength !== previousHistoryLength) {
+              const myGuesses = gameData.gameHistory
+                .filter(entry => entry && entry.player === currentUser.uid)
+                .map(entry => {
+                  // Use stored dots and circles values if available, otherwise fall back to parsing feedback
+                  let circles = 0;
+                  let dots = 0;
+                  
+                  if (entry.dots !== undefined && entry.circles !== undefined) {
+                    // Use the stored values (new format)
+                    circles = entry.circles;
+                    dots = entry.dots;
+                  } else if (entry.feedback) {
+                    // Fall back to parsing feedback string (old format)
+                    const feedbackString = typeof entry.feedback === 'string' ? entry.feedback : entry.feedback.toString() || '';
+                    circles = feedbackString.split('').filter(char => char === '●').length;
+                    dots = feedbackString.split('').filter(char => char === '○').length;
+                  }
+                  
+                  return {
+                    word: entry.guess || '',
+                    circles: circles,
+                    dots: dots,
+                    isCorrect: entry.isCorrect || false
+                  };
+                });
+
+              if (myGuesses && Array.isArray(myGuesses)) {
+                setGuesses(myGuesses);
+                
+                // Auto-scroll to show the latest guess when guesses are updated from game data
+                if (myGuesses.length > 0) {
+                  scrollToBottom(300, true);
+                }
+              }
             }
           }
-          
-          // Load alphabet toggle state for current player
-          if (gameData.player1 && gameData.player2 && currentUser) {
+            
+          // Load alphabet toggle state for current player - ONLY ONCE when game first loads
+          // Don't restore alphabet state on every Firestore update as it overwrites local changes
+          if (gameData.player1 && gameData.player2 && currentUser && !hasRestoredStateRef.current) {
             const isPlayer1 = gameData.player1.uid === currentUser.uid;
             const savedAlphabetState = isPlayer1 ? gameData.player1.alphabetState : gameData.player2.alphabetState;
             
@@ -867,7 +866,6 @@ const PvPGameScreen = () => {
               setAlphabet(savedAlphabetState);
             }
           }
-
         }
       } else {
         // Document doesn't exist - handle this case
@@ -1221,33 +1219,32 @@ const PvPGameScreen = () => {
                // Auto-scroll to show the latest guess when player solves the word
                scrollToBottom(100, true);
                
-                             // Mark current player as solved
-              const currentPlayerData = getMyPlayerData();
-              await updateDoc(gameRef, {
-                [`${currentPlayerData.field}.solved`]: true,
-                [`${currentPlayerData.field}.attempts`]: guesses.length + 1,
-                [`${currentPlayerData.field}.solveTime`]: new Date().toISOString()
-              });
-              
-              // Get fresh game data to check opponent status BEFORE deciding on status update
-              const freshGameDoc = await getDoc(gameRef);
-              const freshGameData = freshGameDoc.data();
-              
-              // Check if both players have finished (both solved or both reached max attempts)
-              const opponentPlayerData = getOpponentPlayerData(freshGameData);
-              
-              if (opponentPlayerData?.solved || opponentPlayerData?.attempts >= getMaxGuesses()) {
-                // Game is over - determine final result
-                await determineGameResult(freshGameData, currentUser.uid);
-              } else {
-                // Opponent hasn't finished yet - update game status to waiting_for_opponent
-                await updateDoc(gameRef, {
-                  status: 'waiting_for_opponent',
-                  waitingForPlayer: opponentPlayerData.uid,
-                  lastUpdated: new Date().toISOString()
-                });
-              }
-               // If game not over, player waits for opponent to finish
+               // Mark current player as solved
+               const currentPlayerData = getMyPlayerData();
+               await updateDoc(gameRef, {
+                 [`${currentPlayerData.field}.solved`]: true,
+                 [`${currentPlayerData.field}.attempts`]: guesses.length + 1,
+                 [`${currentPlayerData.field}.solveTime`]: new Date().toISOString()
+               });
+               
+               // Get fresh game data to check opponent status BEFORE deciding on status update
+               const freshGameDoc = await getDoc(gameRef);
+               const freshGameData = freshGameDoc.data();
+               
+               // Check if both players have finished (both solved or both reached max attempts)
+               const opponentPlayerData = getOpponentPlayerData(freshGameData);
+               
+               if (opponentPlayerData?.solved || opponentPlayerData?.attempts >= getMaxGuesses()) {
+                 // Game is over - determine final result
+                 await determineGameResult(freshGameData, currentUser.uid);
+               } else {
+                 // Opponent hasn't finished yet - update game status to waiting_for_opponent
+                 await updateDoc(gameRef, {
+                   status: 'waiting_for_opponent',
+                   waitingForPlayer: opponentPlayerData.uid,
+                   lastUpdated: new Date().toISOString()
+                 });
+               }
                // If game not over, player waits for opponent to finish
              } else if (guesses.length + 1 >= getMaxGuesses()) {
                // Reached max attempts without solving
@@ -1722,18 +1719,25 @@ const PvPGameScreen = () => {
                 setShowCongratulationsPopup(false);
                 
                 if (isSecondSolver) {
-                  // Second solver - show ad before results popup and wait for completion
-                  await adService.showInterstitialAd();
-                  
-                  // Ad has completed - minimal audio recovery
-                  console.log('PvPGameScreen: Ad completed, recovering audio...');
-                  
-                  // Brief delay for audio recovery
-                  await new Promise(resolve => setTimeout(resolve, 300));
-                  
-                  // Reconfigure audio session
-                  const { reconfigureAudio } = require('./soundsUtil');
-                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                  // Second solver - show ad before results popup
+                  if (Platform.OS === 'ios') {
+                    // iOS: Skip game completion ads due to ATT restrictions and reliability issues
+                    console.log('PvPGameScreen: iOS - skipping congratulations ad');
+                    // No ad call on iOS to prevent flashing/freezing issues
+                  } else {
+                    // Android: Wait for ad to complete
+                    await adService.showInterstitialAd();
+                    
+                    // Ad has completed - minimal audio recovery
+                    console.log('PvPGameScreen: Ad completed, recovering audio...');
+                    
+                    // Brief delay for audio recovery
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    // Reconfigure audio session
+                    const { reconfigureAudio } = require('./soundsUtil');
+                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                  }
                   
                   // Process results after ad completes
                   const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
@@ -1776,21 +1780,30 @@ const PvPGameScreen = () => {
                     playSound('chime').catch(() => {});
                   }
                 } else {
-                  // First solver - show ad before navigating and wait for completion
-                  await adService.showInterstitialAd();
-                  
-                  // Ad has completed - minimal audio recovery
-                  console.log('PvPGameScreen: First solver ad completed, recovering audio...');
-                  
-                  // Brief delay for audio recovery
-                  await new Promise(resolve => setTimeout(resolve, 300));
-                  
-                  // Reconfigure audio session
-                  const { reconfigureAudio } = require('./soundsUtil');
-                  await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                  
-                  playSound('chime').catch(() => {});
-                  navigation.navigate('MainTabs');
+                  // First solver - show ad before navigating
+                  if (Platform.OS === 'ios') {
+                    // iOS: Skip game completion ads due to ATT restrictions and reliability issues
+                    console.log('PvPGameScreen: iOS - skipping first solver ad');
+                    // No ad call on iOS to prevent flashing/freezing issues
+                    playSound('chime').catch(() => {});
+                    navigation.navigate('MainTabs');
+                  } else {
+                    // Android: Wait for ad to complete
+                    await adService.showInterstitialAd();
+                    
+                    // Ad has completed - minimal audio recovery
+                    console.log('PvPGameScreen: First solver ad completed, recovering audio...');
+                    
+                    // Brief delay for audio recovery
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    // Reconfigure audio session
+                    const { reconfigureAudio } = require('./soundsUtil');
+                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+                    
+                    playSound('chime').catch(() => {});
+                    navigation.navigate('MainTabs');
+                  }
                 }
               }}
             >
@@ -1912,10 +1925,16 @@ const PvPGameScreen = () => {
                   }
                   
                   // Show ad and wait for completion before navigating
-                  await adService.showInterstitialAd().catch(() => {});
-                  
-                  // Navigate after ad completes
-                  navigation.navigate('MainTabs');
+                  if (Platform.OS === 'ios') {
+                    // iOS: Skip game completion ads due to ATT restrictions and reliability issues
+                    console.log('PvPGameScreen: iOS - skipping max guesses ad');
+                    // No ad call on iOS to prevent flashing/freezing issues
+                    navigation.navigate('MainTabs');
+                  } else {
+                    // Android: Wait for ad to complete
+                    await adService.showInterstitialAd().catch(() => {});
+                    navigation.navigate('MainTabs');
+                  }
                   playSound('chime').catch(() => {});
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on max guesses:', markErr);
