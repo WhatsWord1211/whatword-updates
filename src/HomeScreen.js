@@ -40,6 +40,7 @@ const HomeScreen = () => {
   const startedGameIdsRef = useRef(new Set());
   // const [showRankModal, setShowRankModal] = useState(false); // OLD RANK SYSTEM - KEPT FOR FUTURE USE
   const [easyModeRank, setEasyModeRank] = useState(null);
+  const [globalEasyRank, setGlobalEasyRank] = useState(null);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
 
@@ -154,14 +155,323 @@ const HomeScreen = () => {
       
       // Find current user's rank - same as LeaderboardScreen
       const userRank = rankedData.find(player => player.uid === currentUser.uid);
-      if (userRank) {
+      if (userRank && userRank.runningAverage > 0) {
         setEasyModeRank(userRank.rank);
       } else {
-        setEasyModeRank(null);
+        setEasyModeRank(null); // N/A if no games played
       }
     } catch (error) {
       console.error('HomeScreen: Failed to load easy mode rank:', error);
       setEasyModeRank(null);
+    }
+  };
+
+  // Load user's Global Easy Mode rank
+  const loadGlobalEasyRank = async (currentUser) => {
+    try {
+      console.log('HomeScreen: Loading global EASY mode rank for user:', currentUser.uid);
+      
+      // Check if user has 15+ games in easy mode
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        console.log('HomeScreen: User document does not exist');
+        setGlobalEasyRank(null);
+        return;
+      }
+
+      const userData = userDoc.data();
+      const easyGamesCount = userData.easyGamesCount || 0;
+      const MIN_GAMES_REQUIRED = 15;
+
+      console.log(`HomeScreen: User has ${easyGamesCount} easy games (required: ${MIN_GAMES_REQUIRED})`);
+
+      // Check if user has minimum games
+      if (easyGamesCount < MIN_GAMES_REQUIRED) {
+        console.log('HomeScreen: User does not have enough easy games');
+        setGlobalEasyRank(null); // N/A - not enough games
+        return;
+      }
+
+      // Check inactivity (7 days threshold)
+      let lastSoloActivity = userData.lastSoloActivity;
+      if (!lastSoloActivity) {
+        // Fallback: use lastGamePlayed if available
+        if (userData.lastGamePlayed) {
+          lastSoloActivity = userData.lastGamePlayed;
+        }
+      }
+
+      if (lastSoloActivity) {
+        const lastActivityDate = new Date(lastSoloActivity);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        if (lastActivityDate < sevenDaysAgo) {
+          console.log('HomeScreen: User is inactive (last activity:', lastActivityDate, ')');
+          setGlobalEasyRank(null); // N/A - inactive
+          return;
+        }
+      } else {
+        // No activity data - check if they have recent EASY games
+        const recentGamesQuery = query(
+          collection(db, 'leaderboard'),
+          where('userId', '==', currentUser.uid),
+          where('mode', '==', 'solo'),
+          where('difficulty', '==', 'easy')
+        );
+        const recentGames = await getDocs(recentGamesQuery);
+        if (recentGames.empty) {
+          console.log('HomeScreen: No recent easy games found');
+          setGlobalEasyRank(null); // N/A - no games
+          return;
+        }
+        // Get most recent game
+        const allGames = recentGames.docs.map(doc => ({
+          timestamp: doc.data().timestamp
+        }));
+        const sortedGames = allGames.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        if (sortedGames.length > 0) {
+          const lastGameDate = new Date(sortedGames[0].timestamp);
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          if (lastGameDate < sevenDaysAgo) {
+            console.log('HomeScreen: User is inactive based on game timestamps');
+            setGlobalEasyRank(null); // N/A - inactive
+            return;
+          }
+        }
+      }
+
+      // Try to get rank from cached global leaderboard for EASY mode
+      const leaderboardRef = doc(db, 'globalLeaderboard', 'easy');
+      const leaderboardDoc = await getDoc(leaderboardRef);
+
+      if (leaderboardDoc.exists()) {
+        const cachedData = leaderboardDoc.data();
+        const entries = cachedData.entries || [];
+        const cachedAt = cachedData.calculatedAt?.toDate?.() || new Date(cachedData.calculatedAt || 0);
+        console.log(`HomeScreen: Found cached easy leaderboard with ${entries.length} entries, cached at: ${cachedAt}`);
+        
+        // Check if user is in top 100
+        const userEntry = entries.find(entry => entry.userId === currentUser.uid);
+        
+        if (userEntry && userEntry.rank !== undefined) {
+          console.log('HomeScreen: Found user in cached easy leaderboard, rank:', userEntry.rank, 'finalScore:', userEntry.finalScore);
+          setGlobalEasyRank(userEntry.rank);
+          return;
+        } else if (userEntry) {
+          console.log('HomeScreen: User entry found but missing rank property:', userEntry);
+          // Fall through to calculate estimated rank
+        } else {
+          console.log(`HomeScreen: User not in top ${entries.length} of cached easy leaderboard, will calculate estimated rank`);
+        }
+      } else {
+        console.log('HomeScreen: No cached easy leaderboard document found');
+      }
+
+      // If not in cached top 100, calculate estimated rank using ONLY easy games
+      // Use the same pattern as LeaderboardScreen (fetch all, filter in memory to avoid index requirement)
+      const gamesQuery = query(
+        collection(db, 'leaderboard'),
+        where('userId', '==', currentUser.uid),
+        where('mode', '==', 'solo')
+      );
+      
+      const gamesSnapshot = await getDocs(gamesQuery);
+      
+      // Filter for easy games and sort in memory (same as LeaderboardScreen)
+      const easyGames = gamesSnapshot.docs
+        .map(doc => ({
+          score: doc.data().score || doc.data().guesses || 0,
+          timestamp: doc.data().timestamp,
+          difficulty: doc.data().difficulty
+        }))
+        .filter(game => game.difficulty === 'easy')
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, MIN_GAMES_REQUIRED);
+      
+      console.log(`HomeScreen: Found ${easyGames.length} easy games for score calculation`);
+      
+      if (easyGames.length < MIN_GAMES_REQUIRED) {
+        console.log('HomeScreen: Not enough easy games for estimated rank calculation');
+        setGlobalEasyRank(null); // N/A - not enough games
+        return;
+      }
+
+      // Calculate user's score (rolling average of last 15 easy games)
+      const totalScore = easyGames.reduce((sum, game) => sum + game.score, 0);
+      const baseScore = totalScore / easyGames.length;
+      
+      console.log(`HomeScreen: Calculated base score for easy mode: ${baseScore.toFixed(2)}`);
+      
+      // Calculate activity bonuses (based on easy games only)
+      let activityBonus = 0;
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const recentGames = easyGames.filter(game => new Date(game.timestamp) >= threeDaysAgo);
+      if (recentGames.length >= 1) {
+        activityBonus -= 0.5;
+      }
+      
+      const last7DaysGames = easyGames.filter(game => new Date(game.timestamp) >= sevenDaysAgo);
+      if (last7DaysGames.length >= 10) {
+        activityBonus -= 0.5;
+      }
+      activityBonus = Math.max(activityBonus, -1.0);
+      
+      const finalScore = baseScore + activityBonus;
+      console.log(`HomeScreen: Final score for easy mode: ${finalScore.toFixed(2)} (base: ${baseScore.toFixed(2)}, bonus: ${activityBonus.toFixed(2)})`);
+
+      // Try to estimate rank from cached EASY leaderboard
+      // Use the same logic as LeaderboardScreen
+      if (leaderboardDoc.exists()) {
+        const cachedData = leaderboardDoc.data();
+        const entries = cachedData.entries || [];
+        
+        if (entries.length === 0) {
+          console.log('HomeScreen: Cached easy leaderboard exists but has no entries');
+          setGlobalEasyRank(null);
+          return;
+        }
+        
+        // Verify entries are sorted (they should be from LeaderboardScreen)
+        // Count how many have better scores (lower is better) - same as LeaderboardScreen
+        let rank = 1;
+        for (const entry of entries) {
+          // Ensure entry has finalScore (should always be the case)
+          const entryScore = entry.finalScore !== undefined ? entry.finalScore : (entry.baseScore || 0) + (entry.activityBonus || 0);
+          if (entryScore < finalScore) {
+            rank++;
+          } else {
+            // Entries are sorted, so we can break here
+            break;
+          }
+        }
+        
+        // Add the total eligible count if available (for users beyond top 100)
+        // This gives a more accurate estimate
+        const totalEligible = cachedData.totalEligible || entries.length;
+        if (rank > entries.length) {
+          // User is beyond top 100, but we know total eligible
+          // Keep the estimated rank but it's beyond top 100
+          console.log(`HomeScreen: Estimated easy mode rank: ${rank} (beyond top ${entries.length}, total eligible: ${totalEligible})`);
+        } else {
+          console.log(`HomeScreen: Estimated easy mode rank: ${rank}`);
+        }
+        
+        setGlobalEasyRank(rank);
+      } else {
+        // No cached data - calculate leaderboard on-demand (same as LeaderboardScreen)
+        // This happens when cache permissions fail or cache hasn't been created yet
+        console.log('HomeScreen: No cached easy leaderboard found - calculating on-demand');
+        
+        // Calculate a minimal leaderboard to find user's rank
+        // Get all users with 15+ easy games
+        const usersQuery = query(
+          collection(db, 'users'),
+          where('easyGamesCount', '>=', MIN_GAMES_REQUIRED)
+        );
+        
+        const usersSnapshot = await getDocs(usersQuery);
+        console.log(`HomeScreen: Found ${usersSnapshot.size} users with ${MIN_GAMES_REQUIRED}+ easy games for on-demand calculation`);
+        
+        if (usersSnapshot.empty) {
+          console.log('HomeScreen: No eligible users found');
+          setGlobalEasyRank(null);
+          return;
+        }
+        
+        const leaderboardEntries = [];
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        
+        // Process each user (similar to LeaderboardScreen but simplified)
+        for (const userDoc of usersSnapshot.docs) {
+          try {
+            const userData = userDoc.data();
+            const userId = userDoc.id;
+            
+            // Check inactivity
+            let lastSoloActivity = userData.lastSoloActivity || userData.lastGamePlayed;
+            if (lastSoloActivity) {
+              const lastActivityDate = new Date(lastSoloActivity);
+              if (lastActivityDate < sevenDaysAgo) {
+                continue; // Skip inactive users
+              }
+            }
+            
+            // Get user's easy games
+            const userGamesQuery = query(
+              collection(db, 'leaderboard'),
+              where('userId', '==', userId),
+              where('mode', '==', 'solo')
+            );
+            
+            const userGamesSnapshot = await getDocs(userGamesQuery);
+            const allUserGames = userGamesSnapshot.docs.map(doc => ({
+              score: doc.data().score || doc.data().guesses || 0,
+              timestamp: doc.data().timestamp,
+              difficulty: doc.data().difficulty
+            }));
+            
+            const easyUserGames = allUserGames
+              .filter(game => game.difficulty === 'easy')
+              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              .slice(0, MIN_GAMES_REQUIRED);
+            
+            if (easyUserGames.length < MIN_GAMES_REQUIRED) continue;
+            
+            // Calculate score
+            const totalScore = easyUserGames.reduce((sum, game) => sum + game.score, 0);
+            const baseScore = totalScore / easyUserGames.length;
+            
+            let activityBonus = 0;
+            const recentGames = easyUserGames.filter(game => new Date(game.timestamp) >= threeDaysAgo);
+            if (recentGames.length >= 1) {
+              activityBonus -= 0.5;
+            }
+            
+            const last7DaysGames = easyUserGames.filter(game => new Date(game.timestamp) >= sevenDaysAgo);
+            if (last7DaysGames.length >= 10) {
+              activityBonus -= 0.5;
+            }
+            activityBonus = Math.max(activityBonus, -1.0);
+            
+            const finalScore = baseScore + activityBonus;
+            
+            leaderboardEntries.push({
+              userId: userId,
+              finalScore: finalScore
+            });
+          } catch (error) {
+            console.error(`HomeScreen: Error processing user ${userDoc.id}:`, error);
+            continue;
+          }
+        }
+        
+        // Calculate current user's finalScore (we already calculated it above, but ensure it's available)
+        // We calculated finalScore earlier when checking cache, but if cache doesn't exist, we need to recalculate
+        const userFinalScore = finalScore; // This should be defined from the earlier calculation above
+        let rank = 1;
+        for (const entry of leaderboardEntries) {
+          if (entry.finalScore < userFinalScore) {
+            rank++;
+          } else {
+            break;
+          }
+        }
+        
+        console.log(`HomeScreen: Calculated on-demand easy mode rank: ${rank} (out of ${leaderboardEntries.length} eligible users)`);
+        setGlobalEasyRank(rank);
+      }
+    } catch (error) {
+      console.error('HomeScreen: Failed to load global easy rank:', error);
+      setGlobalEasyRank(null);
     }
   };
 
@@ -569,6 +879,7 @@ const HomeScreen = () => {
             Promise.all([
               loadUserProfile(currentUser),
               loadEasyModeRank(currentUser),
+              loadGlobalEasyRank(currentUser),
               Promise.resolve().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
               clearStuckGameState(), // Clear any stuck game state
@@ -596,6 +907,7 @@ const HomeScreen = () => {
               Promise.all([
                 loadUserProfile(currentUser),
                 loadEasyModeRank(currentUser),
+                loadGlobalEasyRank(currentUser),
                 Promise.resolve(),
                 checkFirstLaunch(),
                 clearStuckGameState(), // Clear any stuck game state
@@ -680,6 +992,7 @@ const HomeScreen = () => {
       if (user && !isAuthenticating) {
         refreshUserProfile(user);
         loadEasyModeRank(user);
+        loadGlobalEasyRank(user);
       }
     }, [user, isAuthenticating])
   );
@@ -892,17 +1205,33 @@ const HomeScreen = () => {
       >
         <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
         
-        {/* Easy Mode Leaderboard Position - Clickable to go to Leaderboard */}
+        {/* Easy Mode Leaderboard Positions - Clickable to go to Leaderboard */}
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => {
             playSound('rank');
             navigation.navigate('Leaderboard', { initialTab: 'solo', initialDifficulty: 'easy' });
           }}
+          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginBottom: 10 }]}
+        >
+          <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Friends Rank:</Text>
+          <Text style={[styles.rankValue, { color: colors.primary }]}>
+            {easyModeRank ? formatRankOrdinal(easyModeRank) : 'N/A'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => {
+            playSound('rank');
+            navigation.navigate('Leaderboard', { initialTab: 'global', initialDifficulty: 'easy' });
+          }}
           style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}
         >
-          <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Rank:</Text>
-          <Text style={[styles.rankValue, { color: colors.primary }]}>{formatRankOrdinal(easyModeRank)}</Text>
+          <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Global Rank:</Text>
+          <Text style={[styles.rankValue, { color: colors.primary }]}>
+            {globalEasyRank ? formatRankOrdinal(globalEasyRank) : 'N/A'}
+          </Text>
         </TouchableOpacity>
         
 
