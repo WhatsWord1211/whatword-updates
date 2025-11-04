@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, FlatList, ScrollView, RefreshControl, Ale
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
 
@@ -14,11 +14,14 @@ const LeaderboardScreen = () => {
   const { initialTab, initialDifficulty } = route.params || {};
   const [soloLeaderboard, setSoloLeaderboard] = useState([]);
   const [pvpLeaderboard, setPvpLeaderboard] = useState([]);
+  const [globalLeaderboard, setGlobalLeaderboard] = useState([]);
   const [userSoloRank, setUserSoloRank] = useState(null);
   const [userPvpRank, setUserPvpRank] = useState(null);
+  const [userGlobalRank, setUserGlobalRank] = useState(null);
+  const [isUserInactive, setIsUserInactive] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState(initialTab || 'solo'); // 'solo' or 'pvp'
+  const [activeTab, setActiveTab] = useState(initialTab || 'global'); // 'global', 'solo', or 'pvp'
   const [activeDifficulty, setActiveDifficulty] = useState(initialDifficulty || 'regular'); // 'easy', 'regular', or 'hard'
   const [userFriends, setUserFriends] = useState([]);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
@@ -72,13 +75,13 @@ const LeaderboardScreen = () => {
     }
   }, [user, userFriends]);
 
-  // Refresh leaderboard when screen comes into focus or difficulty changes
+  // Refresh leaderboard when screen comes into focus or difficulty/tab changes
   useFocusEffect(
     React.useCallback(() => {
-      if (user && userFriends.length >= 0) { // Changed from > 0 to >= 0 to include solo players
+      if (user && (userFriends.length >= 0 || activeTab === 'global')) {
         loadLeaderboards(user);
       }
-    }, [user, userFriends, activeDifficulty])
+    }, [user, userFriends, activeDifficulty, activeTab])
   );
 
   // Check hard mode unlock status
@@ -124,7 +127,7 @@ const LeaderboardScreen = () => {
     playSound('toggleTab').catch(() => {});
     
     // Reload leaderboards when difficulty changes
-    if (user && userFriends.length >= 0) {
+    if (user && (userFriends.length >= 0 || activeTab === 'global')) {
       await loadLeaderboards(user);
     }
   };
@@ -178,11 +181,352 @@ const LeaderboardScreen = () => {
 
   const loadLeaderboards = async (currentUser) => {
     try {
-      await loadSoloLeaderboard(currentUser);
-      await loadPvpLeaderboard(currentUser);
+      if (activeTab === 'global') {
+        await loadGlobalLeaderboard(currentUser);
+      } else if (activeTab === 'solo') {
+        await loadSoloLeaderboard(currentUser);
+      } else if (activeTab === 'pvp') {
+        await loadPvpLeaderboard(currentUser);
+      }
       setIsLoading(false);
     } catch (error) {
       console.error('Failed to load leaderboards:', error);
+      setIsLoading(false);
+    }
+  };
+
+  const loadGlobalLeaderboard = async (currentUser) => {
+    try {
+      console.log('LeaderboardScreen: Loading global leaderboard for difficulty:', activeDifficulty);
+      setIsLoading(true);
+      
+      // Check if we have cached data (to avoid recalculating every time)
+      const leaderboardRef = doc(db, 'globalLeaderboard', activeDifficulty);
+      const leaderboardDoc = await getDoc(leaderboardRef);
+      
+      // If cached data exists and is less than 1 hour old, use it
+      if (leaderboardDoc.exists()) {
+        const cachedData = leaderboardDoc.data();
+        const cachedAt = cachedData.calculatedAt?.toDate?.() || new Date(cachedData.calculatedAt || 0);
+        const oneHourAgo = new Date();
+        oneHourAgo.setHours(oneHourAgo.getHours() - 1);
+        
+        if (cachedAt > oneHourAgo && cachedData.entries?.length > 0) {
+          console.log('LeaderboardScreen: Using cached leaderboard data');
+          setGlobalLeaderboard(cachedData.entries);
+          // Continue to check user rank...
+          const userEntry = cachedData.entries.find(entry => entry.userId === currentUser.uid);
+          if (userEntry) {
+            setUserGlobalRank(userEntry);
+            setIsUserInactive(false);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+      
+      // Calculate leaderboard on-demand (client-side)
+      console.log('LeaderboardScreen: Calculating global leaderboard on-demand');
+      
+      const leaderboardEntries = [];
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      
+      // Get all users who have 15+ games in this difficulty (matching friends leaderboard)
+      const gamesCountField = `${activeDifficulty}GamesCount`;
+      const MIN_GAMES_REQUIRED = 15; // Match friends leaderboard requirement
+      const usersQuery = query(
+        collection(db, 'users'),
+        where(gamesCountField, '>=', MIN_GAMES_REQUIRED)
+      );
+      
+      const usersSnapshot = await getDocs(usersQuery);
+      console.log(`LeaderboardScreen: Found ${usersSnapshot.size} users with ${MIN_GAMES_REQUIRED}+ games for ${activeDifficulty}`);
+      
+      if (usersSnapshot.empty) {
+        console.log(`LeaderboardScreen: No users found with ${MIN_GAMES_REQUIRED}+ games`);
+        setGlobalLeaderboard([]);
+        setUserGlobalRank(null);
+        setIsUserInactive(false);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Process each user
+      for (const userDoc of usersSnapshot.docs) {
+        try {
+          const userData = userDoc.data();
+          const userId = userDoc.id;
+          
+          // Check inactivity (7 days threshold)
+          let lastSoloActivity = userData.lastSoloActivity;
+          if (!lastSoloActivity) {
+            // Fallback: use lastGamePlayed if available
+            if (userData.lastGamePlayed) {
+              lastSoloActivity = userData.lastGamePlayed;
+              console.log(`LeaderboardScreen: User ${userId} using lastGamePlayed as fallback: ${lastSoloActivity}`);
+            } else {
+              // Last resort: try to get most recent solo game (any difficulty)
+              try {
+                const recentGamesQuery = query(
+                  collection(db, 'leaderboard'),
+                  where('userId', '==', userId),
+                  where('mode', '==', 'solo')
+                );
+                const recentGames = await getDocs(recentGamesQuery);
+                if (!recentGames.empty) {
+                  // Get most recent game (sort in memory to avoid index requirement)
+                  const allGames = recentGames.docs.map(doc => ({
+                    timestamp: doc.data().timestamp,
+                    difficulty: doc.data().difficulty
+                  }));
+                  const sortedGames = allGames.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                  if (sortedGames.length > 0) {
+                    lastSoloActivity = sortedGames[0].timestamp;
+                    console.log(`LeaderboardScreen: User ${userId} using most recent game as fallback: ${lastSoloActivity}`);
+                  }
+                }
+              } catch (error) {
+                console.log(`LeaderboardScreen: Could not get fallback activity for user ${userId}:`, error.message);
+              }
+            }
+          }
+          
+          if (!lastSoloActivity) {
+            console.log(`LeaderboardScreen: User ${userId} has no activity data, skipping`);
+            continue;
+          }
+          
+          const lastActivityDate = new Date(lastSoloActivity);
+          if (lastActivityDate < sevenDaysAgo) {
+            continue; // User is inactive
+          }
+          
+          // Get last 20 games for this difficulty
+          const gamesQuery = query(
+            collection(db, 'leaderboard'),
+            where('userId', '==', userId),
+            where('mode', '==', 'solo')
+          );
+          
+          const gamesSnapshot = await getDocs(gamesQuery);
+          // Use 'guesses' first (matching playerProfileService) for consistency with friends leaderboard
+          const allGames = gamesSnapshot.docs.map(doc => ({
+            score: doc.data().guesses || doc.data().score || 0, // Use guesses first to match friends leaderboard
+            timestamp: doc.data().timestamp,
+            difficulty: doc.data().difficulty
+          }));
+          
+          const difficultyGames = allGames
+            .filter(game => game.difficulty === activeDifficulty)
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, MIN_GAMES_REQUIRED);
+          
+          if (difficultyGames.length < MIN_GAMES_REQUIRED) continue;
+          
+          // Calculate base score (rolling average of last 15 games)
+          // This should match the easyAverageScore from playerProfileService exactly
+          const totalScore = difficultyGames.reduce((sum, game) => sum + game.score, 0);
+          const baseScore = totalScore / difficultyGames.length;
+          
+          // Calculate activity bonuses (these REDUCE the score, making it better)
+          let activityBonus = 0;
+          const recentGames = difficultyGames.filter(game => new Date(game.timestamp) >= threeDaysAgo);
+          if (recentGames.length >= 1) {
+            activityBonus -= 0.5; // -0.5 bonus for playing in last 3 days
+          }
+          
+          const last7DaysGames = difficultyGames.filter(game => new Date(game.timestamp) >= sevenDaysAgo);
+          if (last7DaysGames.length >= 10) {
+            activityBonus -= 0.5; // -0.5 bonus for playing 10+ games in last 7 days
+          }
+          activityBonus = Math.max(activityBonus, -1.0); // Maximum -1.0 total bonus
+          
+          // Final score = baseScore + activityBonus (bonus is negative, so finalScore < baseScore)
+          const finalScore = baseScore + activityBonus;
+          
+          // Log for debugging if this is the current user
+          if (userId === currentUser?.uid) {
+            console.log(`LeaderboardScreen: User ${userId} - baseScore: ${baseScore.toFixed(2)}, activityBonus: ${activityBonus.toFixed(2)}, finalScore: ${finalScore.toFixed(2)}`);
+          }
+          
+          leaderboardEntries.push({
+            userId: userId,
+            username: userData.username || userData.displayName || 'Unknown Player',
+            displayName: userData.displayName || userData.username || 'Unknown Player',
+            baseScore: baseScore,
+            activityBonus: activityBonus,
+            finalScore: finalScore,
+            gamesCount: difficultyGames.length,
+            lastSoloActivity: lastSoloActivity
+          });
+        } catch (error) {
+          console.error(`LeaderboardScreen: Error processing user ${userDoc.id}:`, error);
+          // Continue with other users
+        }
+      }
+      
+      console.log(`LeaderboardScreen: Processed ${leaderboardEntries.length} eligible users`);
+      
+      // Sort by final score (lower is better)
+      leaderboardEntries.sort((a, b) => a.finalScore - b.finalScore);
+      
+      // Take top 100
+      const top100 = leaderboardEntries.slice(0, 100);
+      
+      console.log(`LeaderboardScreen: Top 100 players calculated`);
+      
+      // Add ranks
+      const rankedEntries = top100.map((entry, index) => ({
+        ...entry,
+        rank: index + 1
+      }));
+      
+      // Cache results in Firestore (optional - only if user has write permission)
+      try {
+        await updateDoc(leaderboardRef, {
+          difficulty: activeDifficulty,
+          calculatedAt: new Date(),
+          entries: rankedEntries,
+          totalEligible: leaderboardEntries.length
+        }).catch(() => {
+          // If update fails (permissions), try to create document
+          setDoc(leaderboardRef, {
+            difficulty: activeDifficulty,
+            calculatedAt: new Date(),
+            entries: rankedEntries,
+            totalEligible: leaderboardEntries.length
+          }).catch(() => {
+            // If both fail, that's okay - we'll just recalculate next time
+            console.log('LeaderboardScreen: Could not cache results (permissions issue)');
+          });
+        });
+      } catch (error) {
+        console.log('LeaderboardScreen: Could not cache results:', error.message);
+      }
+      
+      setGlobalLeaderboard(rankedEntries);
+      
+      // Check if current user is in the top 100
+      const userEntry = rankedEntries.find(entry => entry.userId === currentUser.uid);
+      if (userEntry) {
+        setUserGlobalRank(userEntry);
+        setIsUserInactive(false);
+      } else {
+        // User not in top 100 - check if they're inactive or just not ranked
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const lastSoloActivity = userData.lastSoloActivity;
+          const gamesCount = userData[`${activeDifficulty}GamesCount`] || 0;
+          
+          // Check if user is inactive (7 days threshold)
+          if (lastSoloActivity) {
+            const lastActivityDate = new Date(lastSoloActivity);
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            if (lastActivityDate < sevenDaysAgo) {
+              setIsUserInactive(true);
+              setUserGlobalRank(null);
+              return;
+            }
+          }
+          
+          // User is active but not in top 100 - calculate their rank on-demand
+          const MIN_GAMES_FOR_RANK = 15; // Match global leaderboard requirement
+          if (gamesCount >= MIN_GAMES_FOR_RANK) {
+            // Calculate user's rank
+            // Fetch all solo games for this user and difficulty (avoid index requirement)
+            const leaderboardQuery = query(
+              collection(db, 'leaderboard'),
+              where('userId', '==', currentUser.uid),
+              where('mode', '==', 'solo')
+            );
+            
+            const gamesSnapshot = await getDocs(leaderboardQuery);
+            // Filter, sort, and limit in memory (matching the main calculation above)
+            // Use 'guesses' first (matching playerProfileService) for consistency with friends leaderboard
+            const allGames = gamesSnapshot.docs.map(doc => ({
+              score: doc.data().guesses || doc.data().score || 0, // Use guesses first to match friends leaderboard
+              timestamp: doc.data().timestamp,
+              difficulty: doc.data().difficulty
+            }));
+            
+            const games = allGames
+              .filter(game => game.difficulty === activeDifficulty)
+              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              .slice(0, MIN_GAMES_FOR_RANK);
+            
+            if (games.length >= MIN_GAMES_FOR_RANK) {
+              
+              const totalScore = games.reduce((sum, game) => sum + game.score, 0);
+              const baseScore = totalScore / games.length;
+              
+              // Calculate activity bonuses (same logic as Cloud Function)
+              let activityBonus = 0;
+              const threeDaysAgo = new Date();
+              threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+              const sevenDaysAgo = new Date();
+              sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+              
+              const recentGames = games.filter(game => new Date(game.timestamp) >= threeDaysAgo);
+              if (recentGames.length >= 1) {
+                activityBonus -= 0.5;
+              }
+              
+              const last7DaysGames = games.filter(game => new Date(game.timestamp) >= sevenDaysAgo);
+              if (last7DaysGames.length >= 10) {
+                activityBonus -= 0.5;
+              }
+              activityBonus = Math.max(activityBonus, -1.0);
+              
+              const finalScore = baseScore + activityBonus;
+              
+              // Find rank by counting how many entries have better (lower) scores
+              let rank = 1;
+              for (const entry of rankedEntries) {
+                if (entry.finalScore < finalScore) {
+                  rank++;
+                } else {
+                  break;
+                }
+              }
+              
+              setUserGlobalRank({
+                userId: currentUser.uid,
+                username: userData.username || userData.displayName || 'You',
+                displayName: userData.displayName || userData.username || 'You',
+                baseScore: baseScore,
+                activityBonus: activityBonus,
+                finalScore: finalScore,
+                gamesCount: games.length,
+                rank: rank,
+                isEstimated: true
+              });
+              setIsUserInactive(false);
+            } else {
+              setUserGlobalRank(null);
+              setIsUserInactive(false);
+            }
+          } else {
+            // User doesn't have 20 games yet
+            setUserGlobalRank(null);
+            setIsUserInactive(false);
+          }
+        } else {
+          setUserGlobalRank(null);
+          setIsUserInactive(false);
+        }
+      }
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Failed to load global leaderboard:', error);
+      setGlobalLeaderboard([]);
+      setUserGlobalRank(null);
+      setIsUserInactive(false);
       setIsLoading(false);
     }
   };
@@ -380,6 +724,39 @@ const LeaderboardScreen = () => {
     setRefreshing(false);
   };
 
+  const renderGlobalLeaderboardItem = ({ item, index }) => (
+    <View style={[
+      styles.leaderboardItem,
+      item.userId === user?.uid && styles.currentUserItem
+    ]}>
+      <View style={styles.rankContainer}>
+        <Text style={[
+          styles.rankText,
+          index < 3 ? styles.topRankText : null
+        ]}>
+          #{item.rank}
+        </Text>
+        {index < 3 && (
+          <Text style={styles.medal}>
+            {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+          </Text>
+        )}
+      </View>
+      
+      <View style={styles.playerInfo}>
+        <Text style={[
+          styles.playerName,
+          item.userId === user?.uid && styles.currentUserName
+        ]}>
+          {item.username || item.displayName || 'Unknown Player'}
+        </Text>
+        <Text style={styles.difficultyScoreText}>
+          {activeDifficulty === 'easy' ? '🟢' : activeDifficulty === 'hard' ? '🔴' : '🟡'} {activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} <Text style={styles.scoreHighlight}>{item.finalScore ? item.finalScore.toFixed(2) : 'N/A'}</Text> Final Score
+        </Text>
+      </View>
+    </View>
+  );
+
   const renderSoloLeaderboardItem = ({ item, index }) => (
     <View style={[
       styles.leaderboardItem,
@@ -447,7 +824,27 @@ const LeaderboardScreen = () => {
   );
 
   const renderCurrentUserPosition = () => {
-    const currentRank = activeTab === 'solo' ? userSoloRank : userPvpRank;
+    const currentRank = activeTab === 'global' 
+      ? userGlobalRank 
+      : activeTab === 'solo' 
+        ? userSoloRank 
+        : userPvpRank;
+    
+    // Show inactivity message for global leaderboard
+    if (activeTab === 'global' && isUserInactive) {
+      return (
+        <View style={styles.userRankContainer}>
+          <View style={[styles.leaderboardItem, styles.inactiveUserItem]}>
+            <Text style={styles.inactiveUserText}>
+              ⚠️ You've been removed from the global leaderboard due to inactivity
+            </Text>
+            <Text style={styles.inactiveUserSubtext}>
+              Play a solo game to get back on the leaderboard!
+            </Text>
+          </View>
+        </View>
+      );
+    }
     
     if (!currentRank) return null;
     
@@ -464,27 +861,33 @@ const LeaderboardScreen = () => {
               {currentRank.username || currentRank.displayName || 'You'}
             </Text>
             <Text style={styles.playerStats}>
-              {activeTab === 'solo' 
-                ? `Total Games: ${currentRank.totalGames || 0}`
-                : `Games: ${currentRank.totalGames || 0}`
+              {activeTab === 'global'
+                ? `Games: ${currentRank.gamesCount || 0}`
+                : activeTab === 'solo' 
+                  ? `Total Games: ${currentRank.totalGames || 0}`
+                  : `Games: ${currentRank.totalGames || 0}`
               }
             </Text>
           </View>
           
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreText}>
-              {activeTab === 'solo'
-                ? (currentRank.runningAverage ? currentRank.runningAverage.toFixed(1) : 'N/A')
-                : (currentRank.winPercentage ? currentRank.winPercentage.toFixed(1) + '%' : 'N/A')
+              {activeTab === 'global'
+                ? (currentRank.finalScore ? currentRank.finalScore.toFixed(2) : 'N/A')
+                : activeTab === 'solo'
+                  ? (currentRank.runningAverage ? currentRank.runningAverage.toFixed(1) : 'N/A')
+                  : (currentRank.winPercentage ? currentRank.winPercentage.toFixed(1) + '%' : 'N/A')
               }
             </Text>
             <Text style={styles.scoreLabel}>
-              {activeTab === 'solo' ? 'Avg Attempts' : 'Win Rate'}
+              {activeTab === 'global' ? 'Final Score' : activeTab === 'solo' ? 'Avg Attempts' : 'Win Rate'}
             </Text>
             <Text style={styles.gamesCountText}>
-              {activeTab === 'solo'
-                ? `(Last ${currentRank.gamesCount || 0} games)`
-                : `(${currentRank.wins || 0}W / ${currentRank.totalGames || 0}G)`
+              {activeTab === 'global'
+                ? (currentRank.isEstimated ? '(Estimated rank)' : `(Last ${currentRank.gamesCount || 0} games)`)
+                : activeTab === 'solo'
+                  ? `(Last ${currentRank.gamesCount || 0} games)`
+                  : `(${currentRank.wins || 0}W / ${currentRank.totalGames || 0}G)`
               }
             </Text>
           </View>
@@ -506,6 +909,17 @@ const LeaderboardScreen = () => {
         {/* Tab Navigation */}
         <View style={styles.tabContainer}>
           <TouchableOpacity 
+            style={[styles.tab, activeTab === 'global' && styles.activeTab]}
+            onPress={() => {
+              setActiveTab('global');
+              playSound('toggleTab').catch(() => {});
+            }}
+          >
+            <Text style={[styles.tabText, activeTab === 'global' && styles.activeTabText]}>
+              🌍 Global
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
             style={[styles.tab, activeTab === 'solo' && styles.activeTab]}
             onPress={() => {
               setActiveTab('solo');
@@ -513,7 +927,7 @@ const LeaderboardScreen = () => {
             }}
           >
             <Text style={[styles.tabText, activeTab === 'solo' && styles.activeTabText]}>
-              🎯 Solo Mode
+              🎯 Solo
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -524,7 +938,7 @@ const LeaderboardScreen = () => {
             }}
           >
             <Text style={[styles.tabText, activeTab === 'pvp' && styles.activeTabText]}>
-              ⚔️ PvP Mode
+              ⚔️ PvP
             </Text>
           </TouchableOpacity>
         </View>
@@ -577,27 +991,42 @@ const LeaderboardScreen = () => {
         {/* Top Players */}
         <View style={[styles.section, { marginBottom: 0 }]}>
           <Text style={styles.sectionTitle}>
-            {activeTab === 'solo' 
-              ? `Top Solo Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
-              : `Top PvP Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
+            {activeTab === 'global'
+              ? `Global Rankings - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
+              : activeTab === 'solo' 
+                ? `Top Solo Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
+                : `Top PvP Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
             }
           </Text>
-          {(activeTab === 'solo' ? soloLeaderboard : pvpLeaderboard).length > 0 ? (
+          {(activeTab === 'global' ? globalLeaderboard : activeTab === 'solo' ? soloLeaderboard : pvpLeaderboard).length > 0 ? (
             <FlatList
-              data={activeTab === 'solo' ? soloLeaderboard : pvpLeaderboard}
-              renderItem={activeTab === 'solo' ? renderSoloLeaderboardItem : renderPvpLeaderboardItem}
-              keyExtractor={item => item.uid}
+              data={activeTab === 'global' ? globalLeaderboard : activeTab === 'solo' ? soloLeaderboard : pvpLeaderboard}
+              renderItem={activeTab === 'global' ? renderGlobalLeaderboardItem : activeTab === 'solo' ? renderSoloLeaderboardItem : renderPvpLeaderboardItem}
+              keyExtractor={item => item.userId || item.uid}
               scrollEnabled={false}
               showsVerticalScrollIndicator={false}
             />
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                {activeTab === 'solo' 
-                  ? `No solo ${activeDifficulty} games played yet. Start playing to see rankings!`
-                  : `No PvP ${activeDifficulty} games completed yet. Challenge friends to see rankings!`
-                }
-              </Text>
+              {isLoading && activeTab === 'global' ? (
+                <>
+                  <Text style={styles.emptyText}>
+                    Calculating global leaderboard...
+                  </Text>
+                  <Text style={[styles.emptyText, { marginTop: 10, fontSize: 14, opacity: 0.7 }]}>
+                    This may take 5-10 seconds
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.emptyText}>
+                  {activeTab === 'global'
+                    ? `No players found for ${activeDifficulty} mode. Make sure you have 15+ games and are active within 7 days to appear on the leaderboard!`
+                    : activeTab === 'solo' 
+                      ? `No solo ${activeDifficulty} games played yet. Start playing to see rankings!`
+                      : `No PvP ${activeDifficulty} games completed yet. Challenge friends to see rankings!`
+                  }
+                </Text>
+              )}
             </View>
           )}
         </View>

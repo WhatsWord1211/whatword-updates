@@ -280,9 +280,10 @@ const HomeScreen = () => {
       const gamesSnapshot = await getDocs(gamesQuery);
       
       // Filter for easy games and sort in memory (same as LeaderboardScreen)
+      // Use 'guesses' first (matching playerProfileService) for consistency with friends leaderboard
       const easyGames = gamesSnapshot.docs
         .map(doc => ({
-          score: doc.data().score || doc.data().guesses || 0,
+          score: doc.data().guesses || doc.data().score || 0, // Use guesses first to match friends leaderboard
           timestamp: doc.data().timestamp,
           difficulty: doc.data().difficulty
         }))
@@ -413,8 +414,9 @@ const HomeScreen = () => {
             );
             
             const userGamesSnapshot = await getDocs(userGamesQuery);
+            // Use 'guesses' first (matching playerProfileService) for consistency with friends leaderboard
             const allUserGames = userGamesSnapshot.docs.map(doc => ({
-              score: doc.data().score || doc.data().guesses || 0,
+              score: doc.data().guesses || doc.data().score || 0, // Use guesses first to match friends leaderboard
               timestamp: doc.data().timestamp,
               difficulty: doc.data().difficulty
             }));
