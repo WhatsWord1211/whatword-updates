@@ -134,11 +134,16 @@ export default function App() {
           
           if (!cancelled && fetched.isNew) {
             console.log('OTA: New update fetched successfully');
-            // On iOS, reload immediately to apply the update
+            // On iOS, reload after a short delay to ensure update is fully committed
             // On Android, the update will apply on next app restart
             if (Platform.OS === 'ios') {
-              console.log('OTA: iOS - reloading immediately to apply update');
-              await Updates.reloadAsync();
+              console.log('OTA: iOS - waiting briefly then reloading to apply update');
+              // Small delay to ensure update is fully committed to disk
+              await new Promise(resolve => setTimeout(resolve, 500));
+              if (!cancelled) {
+                console.log('OTA: iOS - reloading now to apply update');
+                await Updates.reloadAsync();
+              }
             } else {
               console.log('OTA: Android - update will apply on next app restart');
             }
