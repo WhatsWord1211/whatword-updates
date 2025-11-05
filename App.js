@@ -98,19 +98,63 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        console.log('OTA: runtimeVersion =', Updates.runtimeVersion, 'updateId =', Updates.updateId);
+        // Only check for updates in production builds
+        if (!Updates.isEnabled) {
+          console.log('OTA: Updates are not enabled (likely development build)');
+          return;
+        }
+        
+        console.log('OTA: Checking for updates...');
+        console.log('OTA: runtimeVersion =', Updates.runtimeVersion);
+        console.log('OTA: currentUpdateId =', Updates.updateId);
+        console.log('OTA: channel =', Updates.channel);
+        console.log('OTA: isEmbeddedLaunch =', Updates.isEmbeddedLaunch);
+        
         const result = await Updates.checkForUpdateAsync();
+        console.log('OTA: checkForUpdateAsync result:', {
+          isAvailable: result.isAvailable,
+          manifest: result.manifest ? {
+            id: result.manifest.id,
+            createdAt: result.manifest.createdAt,
+            runtimeVersion: result.manifest.runtimeVersion
+          } : null
+        });
+        
         if (result.isAvailable) {
           console.log('OTA: Update available, fetching...');
           const fetched = await Updates.fetchUpdateAsync();
+          console.log('OTA: fetchUpdateAsync result:', {
+            isNew: fetched.isNew,
+            manifest: fetched.manifest ? {
+              id: fetched.manifest.id,
+              createdAt: fetched.manifest.createdAt,
+              runtimeVersion: fetched.manifest.runtimeVersion
+            } : null
+          });
+          
           if (!cancelled && fetched.isNew) {
-            console.log('OTA: New update fetched; will apply on next app restart');
+            console.log('OTA: New update fetched successfully');
+            // On iOS, reload immediately to apply the update
+            // On Android, the update will apply on next app restart
+            if (Platform.OS === 'ios') {
+              console.log('OTA: iOS - reloading immediately to apply update');
+              await Updates.reloadAsync();
+            } else {
+              console.log('OTA: Android - update will apply on next app restart');
+            }
+          } else if (!cancelled) {
+            console.log('OTA: Update fetched but not new (already have this update)');
           }
         } else {
-          console.log('OTA: No update available');
+          console.log('OTA: No update available (app is up to date)');
         }
       } catch (e) {
-        console.log('OTA: check/fetch failed:', e?.message || e);
+        console.error('OTA: check/fetch failed:', e?.message || e);
+        console.error('OTA: Error details:', {
+          code: e?.code,
+          message: e?.message,
+          stack: e?.stack
+        });
       }
     })();
     return () => { cancelled = true; };
