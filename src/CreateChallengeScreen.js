@@ -8,6 +8,8 @@ import { playSound } from './soundsUtil';
 import styles from './styles';
 import { useTheme } from './ThemeContext';
 import friendRecordsService from './friendRecordsService';
+import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CreateChallengeScreen = () => {
   const navigation = useNavigation();
@@ -18,6 +20,27 @@ const CreateChallengeScreen = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
+  
+  // Load saved friend order from AsyncStorage
+  const loadFriendOrder = async (userId) => {
+    try {
+      const savedOrder = await AsyncStorage.getItem(`friendOrder_${userId}`);
+      return savedOrder ? JSON.parse(savedOrder) : null;
+    } catch (error) {
+      console.error('Failed to load friend order:', error);
+      return null;
+    }
+  };
+
+  // Save friend order to AsyncStorage
+  const saveFriendOrder = async (userId, orderedFriends) => {
+    try {
+      const orderIds = orderedFriends.map(f => f.uid);
+      await AsyncStorage.setItem(`friendOrder_${userId}`, JSON.stringify(orderIds));
+    } catch (error) {
+      console.error('Failed to save friend order:', error);
+    }
+  };
 
   // Share app link function
   const shareAppLink = async () => {
@@ -122,7 +145,26 @@ const CreateChallengeScreen = () => {
       }
 
       console.log('🔍 [CreateChallengeScreen] Total friends loaded:', friendsData.length);
-      setFriends(friendsData);
+      
+      // Load saved order and apply it
+      const savedOrder = await loadFriendOrder(userId);
+      if (savedOrder && savedOrder.length === friendsData.length) {
+        // Create a map for quick lookup
+        const friendMap = new Map(friendsData.map(f => [f.uid, f]));
+        // Reorder based on saved order
+        const orderedFriends = savedOrder
+          .map(uid => friendMap.get(uid))
+          .filter(f => f !== undefined); // Remove any friends that no longer exist
+        
+        // Add any new friends that weren't in the saved order
+        const existingUids = new Set(savedOrder);
+        const newFriends = friendsData.filter(f => !existingUids.has(f.uid));
+        const finalOrder = [...orderedFriends, ...newFriends];
+        
+        setFriends(finalOrder);
+      } else {
+        setFriends(friendsData);
+      }
       
       // Load friend records for all friends
       if (friendsData.length > 0) {
@@ -175,6 +217,67 @@ const CreateChallengeScreen = () => {
     }
   };
 
+  // Handle drag end - reorder friends and save order
+  const handleDragEnd = async ({ data }) => {
+    setFriends(data);
+    if (user) {
+      await saveFriendOrder(user.uid, data);
+    }
+  };
+
+  // Render friend item with drag handle
+  const renderFriendItem = ({ item, drag, isActive, index }) => {
+    const record = friendRecords[item.uid];
+    const formattedRecord = friendRecordsService.formatRecord(record);
+    const hasPlayedGames = record && record.totalGames > 0;
+    
+    return (
+      <ScaleDecorator>
+        <TouchableOpacity
+          onLongPress={drag}
+          disabled={isActive}
+          style={[
+            styles.friendItem,
+            index === friends.length - 1 && styles.lastFriendItem,
+            isActive && { opacity: 0.9, transform: [{ scale: 1.02 }] },
+            { position: 'relative' }
+          ]}
+        >
+          <View style={styles.friendInfo}>
+            <Text style={styles.friendUsername}>{item.username}</Text>
+            {hasPlayedGames ? (
+              <Text style={[styles.friendRecord, { color: colors.textSecondary }]}>
+                {formattedRecord} (W-L-T)
+              </Text>
+            ) : (
+              <Text style={[styles.friendRecord, { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' }]}>
+                No games yet
+              </Text>
+            )}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+            <TouchableOpacity
+              style={styles.challengeButton}
+              onPress={() => {
+                playSound('chime');
+                challengeFriend(item);
+              }}
+            >
+              <Text style={styles.challengeButtonText}>Challenge</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            onLongPress={drag}
+            style={{ position: 'absolute', right: 12, bottom: 12, padding: 8, alignItems: 'center', justifyContent: 'center' }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={{ fontSize: 32, color: '#F59E0B' }}>↕</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </ScaleDecorator>
+    );
+  };
+
 
 
 
@@ -202,20 +305,8 @@ const CreateChallengeScreen = () => {
         <Text style={styles.fabText}>👥</Text>
       </TouchableOpacity>
       
-      <ScrollView 
-        style={{ flex: 1, width: '100%' }}
-        contentContainerStyle={{ 
-          paddingHorizontal: 20, 
-          paddingBottom: 30,
-          alignItems: 'center',
-          paddingTop: 20,
-          minHeight: '100%' // Ensure content fills the screen
-        }}
-        showsVerticalScrollIndicator={true}
-        bounces={true}
-        alwaysBounceVertical={false}
-        keyboardShouldPersistTaps="handled"
-      >
+      {/* Header Section - Fixed at top */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 }}>
         {/* Back Button */}
         <TouchableOpacity
           style={[styles.createChallengeBackButton, { alignSelf: 'flex-start', marginLeft: 0 }]}
@@ -238,63 +329,38 @@ const CreateChallengeScreen = () => {
             <Text style={styles.shareButtonText}>Share App with Friends</Text>
           </TouchableOpacity>
         </View>
-        
-        {friends.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No Friends Yet</Text>
-            <Text style={styles.emptyText}>
-              You need to add friends before you can challenge them to a game.
-            </Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => {
-                playSound('chime');
-                navigation.navigate('AddFriends');
-              }}
-            >
-              <Text style={styles.buttonText}>Add Friends</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-
-            
-            <View style={styles.friendsContainer}>
-              {friends.map((friend, index) => {
-                const record = friendRecords[friend.uid];
-                const formattedRecord = friendRecordsService.formatRecord(record);
-                const hasPlayedGames = record && record.totalGames > 0;
-                
-                return (
-                  <View key={friend.uid} style={[styles.friendItem, index === friends.length - 1 && styles.lastFriendItem]}>
-                    <View style={styles.friendInfo}>
-                      <Text style={styles.friendUsername}>{friend.username}</Text>
-                      {hasPlayedGames ? (
-                        <Text style={[styles.friendRecord, { color: colors.textSecondary }]}>
-                          {formattedRecord} (W-L-T)
-                        </Text>
-                      ) : (
-                        <Text style={[styles.friendRecord, { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' }]}>
-                          No games yet
-                        </Text>
-                      )}
-                    </View>
-                    <TouchableOpacity
-                      style={styles.challengeButton}
-                      onPress={() => {
-                        playSound('chime');
-                        challengeFriend(friend);
-                      }}
-                    >
-                      <Text style={styles.challengeButtonText}>Challenge</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </View>
-          </>
-                 )}
-       </ScrollView>
+      </View>
+      
+      {/* Friends List - Scrollable */}
+      {friends.length === 0 ? (
+        <View style={[styles.emptyContainer, { flex: 1, justifyContent: 'center', paddingHorizontal: 20 }]}>
+          <Text style={styles.emptyTitle}>No Friends Yet</Text>
+          <Text style={styles.emptyText}>
+            You need to add friends before you can challenge them to a game.
+          </Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              playSound('chime');
+              navigation.navigate('AddFriends');
+            }}
+          >
+            <Text style={styles.buttonText}>Add Friends</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[styles.friendsContainer, { flex: 1, paddingHorizontal: 20 }]}>
+          <DraggableFlatList
+            data={friends}
+            onDragEnd={handleDragEnd}
+            keyExtractor={(item) => item.uid}
+            renderItem={renderFriendItem}
+            scrollEnabled={true}
+            contentContainerStyle={{ paddingBottom: 30 }}
+            showsVerticalScrollIndicator={true}
+          />
+        </View>
+      )}
 
        {/* Menu Popup Modal */}
        <Modal visible={showMenuPopup} transparent animationType="fade" statusBarTranslucent={false}>

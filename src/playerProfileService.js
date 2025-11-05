@@ -25,6 +25,11 @@ class PlayerProfileService {
         gamesPlayed: increment(1),
         lastGamePlayed: new Date().toISOString()
       };
+
+      // Track last solo activity for global leaderboard (only for solo games)
+      if (gameResult.mode === 'solo' || !gameResult.mode) {
+        updates.lastSoloActivity = new Date().toISOString();
+      }
       
       console.log(`PlayerProfileService: Initial updates object:`, updates);
 
@@ -344,26 +349,42 @@ class PlayerProfileService {
       
       console.log(`PlayerProfileService: Querying leaderboard collection for user ${uid}`);
       const leaderboardSnapshot = await getDocs(leaderboardQuery);
-      const allGames = leaderboardSnapshot.docs.map(doc => doc.data());
+      // Use 'guesses' first (matching global leaderboard) for consistency
+      // Use 'score' as field name to match global leaderboard structure
+      const allGames = leaderboardSnapshot.docs.map(doc => ({
+        score: doc.data().guesses || doc.data().score || 0, // Use guesses first to match friends leaderboard
+        timestamp: doc.data().timestamp,
+        difficulty: doc.data().difficulty
+      }));
       console.log(`PlayerProfileService: Found ${allGames.length} total games for user`);
       
       // Filter by difficulty and sort by timestamp in memory
+      // The current game should already be in the database (saved before this function is called)
       const difficultyGames = allGames
         .filter(game => game.difficulty === difficulty)
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .slice(0, 15); // Take last 15 games
+        .slice(0, 15); // Take last 15 games (newest first)
       
-      // Add the current game score
-      difficultyGames.unshift({
-        guesses: newScore,
-        timestamp: new Date().toISOString()
-      });
+      // Ensure we have at least the current game
+      if (difficultyGames.length === 0) {
+        console.log(`PlayerProfileService: No games found for difficulty ${difficulty}, using current game only`);
+        const rollingAverage = newScore;
+        const difficultyField = `${difficulty}AverageScore`;
+        const gamesCountField = `${difficulty}GamesCount`;
+        await updateDoc(doc(db, 'users', uid), {
+          [difficultyField]: rollingAverage,
+          [gamesCountField]: 1,
+          lastUpdated: new Date().toISOString()
+        });
+        return rollingAverage;
+      }
       
-      // Keep only the last 15 games
-      const last15Games = difficultyGames.slice(0, 15);
+      // Use the last 15 games from database (should include current game if it was saved)
+      const last15Games = difficultyGames;
       
-      // Calculate rolling average
-      const totalAttempts = last15Games.reduce((sum, game) => sum + game.guesses, 0);
+      // Calculate rolling average using score field (consistent with global leaderboard)
+      // Use the same field name structure as global leaderboard for consistency
+      const totalAttempts = last15Games.reduce((sum, game) => sum + game.score, 0);
       const rollingAverage = totalAttempts / last15Games.length;
       
       console.log(`PlayerProfileService: Calculated rolling average: ${rollingAverage} from ${last15Games.length} games`);

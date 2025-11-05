@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, StyleSheet, Alert, Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/firebase';
 
@@ -315,9 +316,10 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary>
-      <ThemeProvider>
-        <NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <NavigationContainer>
           <Stack.Navigator 
             initialRouteName={user ? "MainTabs" : "Auth"}
             screenOptions={{ 
@@ -382,8 +384,9 @@ export default function App() {
             )}
           </Stack.Navigator>
         </NavigationContainer>
-      </ThemeProvider>
-    </ErrorBoundary>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }
 
