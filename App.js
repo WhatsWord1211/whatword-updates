@@ -110,6 +110,13 @@ export default function App() {
         console.log('OTA: channel =', Updates.channel);
         console.log('OTA: isEmbeddedLaunch =', Updates.isEmbeddedLaunch);
         
+        // On iOS, if this is an embedded launch (first launch after update), don't check again
+        // This prevents reload loops
+        if (Platform.OS === 'ios' && Updates.isEmbeddedLaunch) {
+          console.log('OTA: iOS embedded launch detected - skipping update check to avoid reload loop');
+          return;
+        }
+        
         const result = await Updates.checkForUpdateAsync();
         console.log('OTA: checkForUpdateAsync result:', {
           isAvailable: result.isAvailable,
