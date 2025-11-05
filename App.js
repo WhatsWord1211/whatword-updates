@@ -93,80 +93,29 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Check for OTA updates on startup, fetch in background; do NOT auto-reload on launch
+  // Auto-apply OTA updates on startup (no second relaunch needed)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // Only check for updates in production builds
         if (!Updates.isEnabled) {
-          console.log('OTA: Updates are not enabled (likely development build)');
           return;
         }
         
-        console.log('OTA: Checking for updates...');
-        console.log('OTA: runtimeVersion =', Updates.runtimeVersion);
-        console.log('OTA: currentUpdateId =', Updates.updateId);
-        console.log('OTA: channel =', Updates.channel);
-        console.log('OTA: isEmbeddedLaunch =', Updates.isEmbeddedLaunch);
-        
-        // On iOS, if this is an embedded launch (first launch after update), don't check again
-        // This prevents reload loops
-        if (Platform.OS === 'ios' && Updates.isEmbeddedLaunch) {
-          console.log('OTA: iOS embedded launch detected - skipping update check to avoid reload loop');
-          return;
-        }
-        
+        console.log('OTA: runtimeVersion =', Updates.runtimeVersion, 'updateId =', Updates.updateId);
         const result = await Updates.checkForUpdateAsync();
-        console.log('OTA: checkForUpdateAsync result:', {
-          isAvailable: result.isAvailable,
-          manifest: result.manifest ? {
-            id: result.manifest.id,
-            createdAt: result.manifest.createdAt,
-            runtimeVersion: result.manifest.runtimeVersion
-          } : null
-        });
-        
         if (result.isAvailable) {
           console.log('OTA: Update available, fetching...');
           const fetched = await Updates.fetchUpdateAsync();
-          console.log('OTA: fetchUpdateAsync result:', {
-            isNew: fetched.isNew,
-            manifest: fetched.manifest ? {
-              id: fetched.manifest.id,
-              createdAt: fetched.manifest.createdAt,
-              runtimeVersion: fetched.manifest.runtimeVersion
-            } : null
-          });
-          
           if (!cancelled && fetched.isNew) {
-            console.log('OTA: New update fetched successfully');
-            // On iOS, reload after a short delay to ensure update is fully committed
-            // On Android, the update will apply on next app restart
-            if (Platform.OS === 'ios') {
-              console.log('OTA: iOS - waiting briefly then reloading to apply update');
-              // Small delay to ensure update is fully committed to disk
-              await new Promise(resolve => setTimeout(resolve, 500));
-              if (!cancelled) {
-                console.log('OTA: iOS - reloading now to apply update');
-                await Updates.reloadAsync();
-              }
-            } else {
-              console.log('OTA: Android - update will apply on next app restart');
-            }
-          } else if (!cancelled) {
-            console.log('OTA: Update fetched but not new (already have this update)');
+            console.log('OTA: New update fetched, reloading app...');
+            await Updates.reloadAsync();
           }
         } else {
-          console.log('OTA: No update available (app is up to date)');
+          console.log('OTA: No update available');
         }
       } catch (e) {
-        console.error('OTA: check/fetch failed:', e?.message || e);
-        console.error('OTA: Error details:', {
-          code: e?.code,
-          message: e?.message,
-          stack: e?.stack
-        });
+        console.log('OTA: check/fetch failed:', e?.message || e);
       }
     })();
     return () => { cancelled = true; };
