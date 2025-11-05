@@ -593,11 +593,15 @@ const GameScreen = () => {
       if (gameState === 'playing') {
         const { dots, circles, feedback } = getFeedback(upperInput, targetWord);
         const newGuess = { word: upperInput, dots, circles, feedback, isCorrect: dots === (wordLength || 5) };
-        setGuessesWithLog(guesses => [...guesses, newGuess]);
+        const updatedGuesses = [...guesses, newGuess];
+        setGuessesWithLog(updatedGuesses);
         setInputWord('');
         
         // Clear loading state immediately after updating UI to prevent black flash on iOS
         setIsLoading(false);
+
+        // Count only non-hint guesses for max guesses check
+        const nonHintGuessesCount = updatedGuesses.filter(guess => !guess.isHint).length;
 
         if (dots === (wordLength || 5)) {
           // Solo: go straight to detailed win popup and sound
@@ -609,10 +613,10 @@ const GameScreen = () => {
           if (gameMode === 'solo') {
             try {
               // Calculate score with hint penalty (each hint = 3 guesses)
-              const nonHintGuesses = guesses.filter(guess => !guess.isHint);
-              const usedHints = guesses.filter(guess => guess.isHint).length;
+              const nonHintGuesses = updatedGuesses.filter(guess => !guess.isHint);
+              const usedHints = updatedGuesses.filter(guess => guess.isHint).length;
               const hintPenalty = usedHints * 3; // Each hint counts as 3 guesses
-              const newScore = nonHintGuesses.length + hintPenalty + 1;
+              const newScore = nonHintGuesses.length + hintPenalty;
               
               // Always save to local storage for all users
               try {
@@ -664,7 +668,8 @@ const GameScreen = () => {
                     score: newScore,
                     bestScore: 0, // Will be updated by the service if it's better
                     difficulty: gameDifficulty, // Pass difficulty for rolling average calculation
-                    usedHints: usedHints // Pass hint usage information
+                    usedHints: usedHints, // Pass hint usage information
+                    mode: 'solo' // Mark as solo game for activity tracking
                   });
                 } catch (firebaseError) {
                   console.error('GameScreen: Firebase error details:', {
@@ -703,7 +708,7 @@ const GameScreen = () => {
               );
             }
           }
-        } else if (guesses.length + 1 >= MAX_GUESSES) {
+        } else if (nonHintGuessesCount >= MAX_GUESSES) {
           setGameState('maxGuesses');
           setShowMaxGuessesPopup(true);
           await playSound('lose').catch(() => {});
@@ -724,7 +729,8 @@ const GameScreen = () => {
                 won: false,
                 score: MAX_GUESSES,
                 bestScore: 0,
-                difficulty: gameDifficulty // Pass difficulty for rolling average calculation
+                difficulty: gameDifficulty, // Pass difficulty for rolling average calculation
+                mode: 'solo' // Mark as solo game for activity tracking
               });
             } catch (error) {
               console.error('GameScreen: Failed to update user profile for lost game', error);

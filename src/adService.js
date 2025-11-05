@@ -19,11 +19,11 @@ const IOS_TEST_AD_UNIT = 'ca-app-pub-3940256099942544/4411468910';
 // iOS Production Ad Unit ID (requires 24-48h propagation after AdMob setup)
 const IOS_PROD_AD_UNIT = 'ca-app-pub-8036041739101786/9274366810';
 
-function iosDebugLog(message, showAlert = false) {
+function iosDebugLog(message, showAlert = true) {
   if (Platform.OS === 'ios') {
     console.log(`[iOS AD DEBUG] ${message}`);
     if (IOS_DEBUG_ADS && showAlert) {
-      Alert.alert('iOS Ad Debug', message, [{ text: 'OK' }], { cancelable: true });
+      Alert.alert('🔍 iOS Ad Debug', message, [{ text: 'OK' }], { cancelable: true });
     }
   }
 }
@@ -182,6 +182,11 @@ class AdService {
       console.log('AdService: Creating ad with requestNonPersonalizedAdsOnly:', requestNonPersonalized);
       console.log('AdService: ATT status:', this.attStatus, 'Platform:', Platform.OS);
       
+      // iOS-specific: More aggressive ad loading for ATT denied users
+      if (Platform.OS === 'ios' && this.attStatus === 'denied') {
+        iosDebugLog('ATT DENIED: Using non-personalized ads with extended timeout', true);
+      }
+      
       this.interstitialAd = InterstitialAd.createForAdRequest(AD_UNIT_IDS.INTERSTITIAL, {
         requestNonPersonalizedAdsOnly: requestNonPersonalized,
         keywords: ['word games', 'puzzle games', 'brain games', 'word puzzle'],
@@ -312,19 +317,34 @@ class AdService {
         return true;
       }
 
+      // iOS-specific: Check if ad is actually ready to show (not just loaded)
+      if (Platform.OS === 'ios') {
+        try {
+          // Force a quick check to see if ad is truly ready
+          if (!this.interstitialAd || !this.isAdLoaded) {
+            iosDebugLog('SKIPPED: Ad not truly ready for iOS display', true);
+            return true;
+          }
+        } catch (error) {
+          iosDebugLog(`SKIPPED: iOS ad readiness check failed: ${error.message}`, true);
+          return true;
+        }
+      }
+
       // iOS CRITICAL: Show ad IMMEDIATELY without delays
       // Delays cause ads to expire on iOS
       console.log('AdService: Showing ad immediately (no delays)');
       iosDebugLog('Ad is loaded! Attempting to show now...', true);
       
       return new Promise((resolve) => {
-        // Set up timeout
+        // Set up timeout - shorter for iOS to prevent hanging
+        const timeoutDuration = Platform.OS === 'ios' ? 8000 : 15000; // 8s for iOS, 15s for Android
         const timeout = setTimeout(() => {
-          console.log('AdService: Ad show timeout (15s), continuing');
-          iosDebugLog('Ad show TIMEOUT (15s) - ad may have failed to display', true);
+          console.log(`AdService: Ad show timeout (${timeoutDuration/1000}s), continuing`);
+          iosDebugLog(`Ad show TIMEOUT (${timeoutDuration/1000}s) - ad may have failed to display`, true);
           this.showCompletionCallback = null;
           resolve(true);
-        }, 15000);
+        }, timeoutDuration);
         
         // Set callback that existing 'closed'/'error' listeners will call
         this.showCompletionCallback = () => {
@@ -337,6 +357,19 @@ class AdService {
         // Show the ad IMMEDIATELY - existing listeners will handle the rest
         try {
           console.log('AdService: Calling show() on interstitialAd');
+          
+          // iOS-specific: Add extra validation before showing
+          if (Platform.OS === 'ios') {
+            // Double-check ad is ready
+            if (!this.interstitialAd || !this.isAdLoaded) {
+              iosDebugLog('iOS: Ad became unavailable right before show()', true);
+              clearTimeout(timeout);
+              this.showCompletionCallback = null;
+              resolve(true);
+              return;
+            }
+          }
+          
           this.interstitialAd.show();
           console.log('AdService: show() called successfully');
           iosDebugLog('show() called - ad should appear now!', false);

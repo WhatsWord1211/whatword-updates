@@ -1,0 +1,122 @@
+[1mdiff --git a/src/GameScreen.js b/src/GameScreen.js[m
+[1mindex 221e18c..32e329f 100644[m
+[1m--- a/src/GameScreen.js[m
+[1m+++ b/src/GameScreen.js[m
+[36m@@ -1098,7 +1098,7 @@[m [mconst GameScreen = () => {[m
+           <ScrollView [m
+             ref={scrollViewRef} [m
+             style={styles.scroll} [m
+[31m-            contentContainerStyle={{ flexGrow: 1 }}[m
+[32m+[m[32m            contentContainerStyle={{ flexGrow: 1, paddingBottom: 5 }}[m
+           >[m
+             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Your Guesses</Text>[m
+             {(() => {[m
+[36m@@ -1113,11 +1113,11 @@[m [mconst GameScreen = () => {[m
+             })()}[m
+             <View style={styles.guessGrid}>[m
+               {guesses.map((g, idx) => ([m
+[31m-                <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 50 : 38, paddingVertical: isIPad ? 2 : 1, marginBottom: isIPad ? 3 : 2 }]}>[m
+[31m-                  <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 50 : 38 }]}>[m
+[32m+[m[32m                <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 40 : 32, paddingVertical: 0, marginBottom: isIPad ? 2 : 1 }]}>[m
+[32m+[m[32m                  <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 40 : 32 }]}>[m
+                     {g.isHint ? ([m
+[31m-                      <View style={{ justifyContent: 'center', alignItems: 'center', height: isIPad ? 60 : 44 }}>[m
+[31m-                        <Text style={{ fontSize: isIPad ? 28 : 22, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>HINT</Text>[m
+[32m+[m[32m                      <View style={{ justifyContent: 'center', alignItems: 'center', height: isIPad ? 40 : 32 }}>[m
+[32m+[m[32m                        <Text style={{ fontSize: isIPad ? 22 : 18, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>HINT</Text>[m
+                       </View>[m
+                     ) : ([m
+                       g.word.split('').map((letter, i) => ([m
+[36m@@ -1125,7 +1125,7 @@[m [mconst GameScreen = () => {[m
+                           key={`letter-${idx}-${i}`}[m
+                           style={{[m
+                             width: isIPad ? 46 : 28,[m
+[31m-                            height: isIPad ? 60 : 44,[m
+[32m+[m[32m                            height: isIPad ? 40 : 32,[m
+                             justifyContent: 'center',[m
+                             alignItems: 'center',[m
+                             marginHorizontal: isIPad ? 2 : 0,[m
+[36m@@ -1161,6 +1161,14 @@[m [mconst GameScreen = () => {[m
+               ))}[m
+             </View>[m
+           </ScrollView>[m
+[32m+[m[41m          [m
+[32m+[m[32m          {/* Guess Counter - Top Left */}[m
+[32m+[m[32m          <View style={[styles.fabTop, { top: insets.top + 10, left: 20, right: 'auto', zIndex: 1000 }]}>[m
+[32m+[m[32m            <Text style={[styles.fabText, { color: colors.textPrimary }]}>[m
+[32m+[m[32m              {guesses.filter(g => !g.isHint).length}[m
+[32m+[m[32m            </Text>[m
+[32m+[m[32m          </View>[m
+[32m+[m
+           <TouchableOpacity [m
+             style={[styles.fabTop, { top: insets.top + 10, zIndex: 1000 }]} [m
+             onPress={() => setShowMenuPopup(true)}[m
+[36m@@ -1168,7 +1176,7 @@[m [mconst GameScreen = () => {[m
+             <Text style={[styles.fabText, { color: colors.textPrimary }]}>☰</Text>[m
+           </TouchableOpacity>[m
+           [m
+[31m-          <Modal visible={!!showInvalidPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showInvalidPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Invalid Word</Text>[m
+[36m@@ -1184,7 +1192,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showWinPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showWinPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Congratulations!</Text>[m
+[36m@@ -1249,7 +1257,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showMenuPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showMenuPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.modalContainer, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.header, { color: colors.textPrimary }]}>Game Menu</Text>[m
+[36m@@ -1277,7 +1285,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showQuitConfirmPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showQuitConfirmPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.quitConfirmPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.quitConfirmTitle, { color: colors.textPrimary }]}>Quit Game?</Text>[m
+[36m@@ -1302,7 +1310,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showWordRevealPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showWordRevealPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.wordRevealPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.wordRevealTitle, { color: colors.textPrimary }]}>Game Over</Text>[m
+[36m@@ -1327,7 +1335,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showHintPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showHintPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.hintPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>Hint</Text>[m
+[36m@@ -1346,7 +1354,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showHintLimitPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showHintLimitPopup} transparent animationType="fade" statusBarTranslucent={false}>[m
+             <View style={styles.modalOverlay}>[m
+               <View style={[styles.hintPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>[m
+                 <Text style={[styles.hintTitle, { color: colors.textPrimary }]}>No Hints Left!</Text>[m
+[36m@@ -1365,7 +1373,7 @@[m [mconst GameScreen = () => {[m
+               </View>[m
+             </View>[m
+           </Modal>[m
+[31m-          <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade">[m
+[32m+[m[32m          <Modal visible={!!showMaxGuessesPopup} transparent animationType="fade" statusBarTranslucent={false}

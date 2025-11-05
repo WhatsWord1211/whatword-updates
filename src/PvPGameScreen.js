@@ -71,6 +71,7 @@ const PvPGameScreen = () => {
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showMaxGuessesPopup, setShowMaxGuessesPopup] = useState(false);
   const [showQuitConfirmPopup, setShowQuitConfirmPopup] = useState(false);
+  const [showWordRevealPopup, setShowWordRevealPopup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingResultData, setPendingResultData] = useState(null);
@@ -634,8 +635,10 @@ const PvPGameScreen = () => {
         console.log('PvPGameScreen: Successfully quit game');
         setShowQuitConfirmPopup(false);
         setShowMenuPopup(false);
-        navigation.navigate('MainTabs');
-        playSound('chime').catch(() => {});
+        
+        // Show word reveal popup before navigating
+        setShowWordRevealPopup(true);
+        await playSound('chime').catch(() => {});
       } else {
         console.error('PvPGameScreen: Missing required data for quit game:', {
           hasGame: !!game,
@@ -1199,6 +1202,9 @@ const PvPGameScreen = () => {
         return;
       }
       
+      // Calculate updated guesses count (current guesses + the one just submitted)
+      const updatedGuessesCount = guesses.length + 1;
+      
              if (isCorrect) {
                // Determine if this player is the second solver (opponent already finished or maxed out)
                try {
@@ -1223,7 +1229,7 @@ const PvPGameScreen = () => {
                const currentPlayerData = getMyPlayerData();
                await updateDoc(gameRef, {
                  [`${currentPlayerData.field}.solved`]: true,
-                 [`${currentPlayerData.field}.attempts`]: guesses.length + 1,
+                 [`${currentPlayerData.field}.attempts`]: updatedGuessesCount,
                  [`${currentPlayerData.field}.solveTime`]: new Date().toISOString()
                });
                
@@ -1246,11 +1252,11 @@ const PvPGameScreen = () => {
                  });
                }
                // If game not over, player waits for opponent to finish
-             } else if (guesses.length + 1 >= getMaxGuesses()) {
+             } else if (updatedGuessesCount >= getMaxGuesses()) {
                // Reached max attempts without solving
                const currentPlayerData = getMyPlayerData();
                await updateDoc(gameRef, {
-                 [`${currentPlayerData.field}.attempts`]: guesses.length + 1
+                 [`${currentPlayerData.field}.attempts`]: updatedGuessesCount
                });
                
                // Get fresh game data to check opponent status
@@ -1972,6 +1978,38 @@ const PvPGameScreen = () => {
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Word Reveal Popup (shown after quitting) */}
+      <Modal visible={showWordRevealPopup} transparent animationType="fade" statusBarTranslucent={false}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.wordRevealPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.wordRevealTitle, { color: colors.textPrimary }]}>Game Over</Text>
+            <Text style={[styles.wordRevealMessage, { color: colors.textSecondary }]}>
+              The word was: {getOpponentWord() || 'Unknown'}
+            </Text>
+            <TouchableOpacity
+              style={styles.wordRevealButtonContainer}
+              onPress={async () => {
+                setShowWordRevealPopup(false);
+                
+                // Show ad and wait for completion before navigating
+                if (Platform.OS === 'ios') {
+                  // iOS: Fire and forget - navigate immediately
+                  adService.showInterstitialAd().catch(() => {});
+                  navigation.navigate('MainTabs');
+                } else {
+                  // Android: Wait for ad to complete
+                  await adService.showInterstitialAd().catch(() => {});
+                  navigation.navigate('MainTabs');
+                }
+                playSound('chime').catch(() => {});
+              }}
+            >
+              <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

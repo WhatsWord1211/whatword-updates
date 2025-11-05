@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert, FlatList, Modal } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, onSnapshot, collection, query, where, updateDoc, addDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
+import { getNotificationService } from './notificationService';
 import { playSound } from './soundsUtil';
 import styles from './styles';
 import adService from './adService';
@@ -27,6 +28,8 @@ const ResumeGamesScreen = () => {
   const [showCancelChallengeConfirm, setShowCancelChallengeConfirm] = useState(false);
   const [showChallengeCanceledPopup, setShowChallengeCanceledPopup] = useState(false);
   const [challengeToCancel, setChallengeToCancel] = useState(null);
+  const [showNudgeSentPopup, setShowNudgeSentPopup] = useState(false);
+  const [nudgeSentMessage, setNudgeSentMessage] = useState('');
   
   // This screen now shows:
   // 1. Pending challenges (waiting for acceptance)
@@ -248,7 +251,8 @@ const ResumeGamesScreen = () => {
               fromUsername: challenge.fromUsername || 'Loading...',
               toUsername: challenge.toUsername || 'Loading...',
               gameType: isRecipient ? 'pending_challenge' : 'awaiting_acceptance',
-              myWord: myWord
+              myWord: myWord,
+              nudgedBy: challenge.nudgedBy || [] // Track who has nudged
             };
           });
           
@@ -401,7 +405,8 @@ const ResumeGamesScreen = () => {
               currentPlayerSolved: !!currentPlayerSolved,
               opponentSolved: !!opponentSolved,
               isMyTurn: !currentPlayerSolved,
-              myWord: myWord ? myWord.toUpperCase() : null
+              myWord: myWord ? myWord.toUpperCase() : null,
+              nudgedBy: gameData.nudgedBy || [] // Track who has nudged
             };
 
             if (gameData.status === 'completed') {
@@ -455,9 +460,29 @@ const ResumeGamesScreen = () => {
             return dateA - dateB; // Oldest first (ascending order)
           });
 
-          setPvpGames(activeGames);
-          setWaitingForOpponentGames(waitingGames);
-          setCompletedUnseenGames(completedPendingResults);
+          // Helper function to compare games arrays - only update if games actually changed
+          const gamesChanged = (prevGames, newGames) => {
+            if (prevGames.length !== newGames.length) return true;
+            // Check if gameIds match and order is the same
+            for (let i = 0; i < prevGames.length; i++) {
+              if (prevGames[i].gameId !== newGames[i].gameId) return true;
+              // Also check if critical fields changed (status, turn, solved state)
+              const prev = prevGames[i];
+              const curr = newGames[i];
+              if (prev.gameStatus !== curr.gameStatus ||
+                  prev.isMyTurn !== curr.isMyTurn ||
+                  prev.currentPlayerSolved !== curr.currentPlayerSolved ||
+                  prev.opponentSolved !== curr.opponentSolved) {
+                return true;
+              }
+            }
+            return false;
+          };
+
+          // Only update state if games actually changed to prevent unnecessary re-renders
+          setPvpGames(prev => gamesChanged(prev, activeGames) ? activeGames : prev);
+          setWaitingForOpponentGames(prev => gamesChanged(prev, waitingGames) ? waitingGames : prev);
+          setCompletedUnseenGames(prev => gamesChanged(prev, completedPendingResults) ? completedPendingResults : prev);
 
           // Populate opponent usernames asynchronously
           const allGames = [...activeGames, ...waitingGames, ...completedPendingResults];
@@ -506,7 +531,7 @@ const ResumeGamesScreen = () => {
     }
   };
 
-  const handleGameAction = (game) => {
+  const handleGameAction = useCallback((game) => {
     try {
       // Validate game object
       if (!game || !game.gameType) {
@@ -544,8 +569,13 @@ const ResumeGamesScreen = () => {
         case 'waiting_for_opponent':
           // Show game results or wait for opponent
           if (game.opponentSolved) {
-            // Both players solved, show results
-            showGameResults(game);
+            // Both players solved, navigate to show results
+            if (game.gameId) {
+              navigation.navigate('PvPGame', { 
+                gameId: game.gameId, 
+                showResults: true 
+              });
+            }
           } else {
             // Still waiting for opponent
             Alert.alert(
@@ -577,12 +607,12 @@ const ResumeGamesScreen = () => {
       console.error('Failed to handle game action:', error);
       Alert.alert('Error', 'Failed to process game action. Please try again.');
     }
-  };
+  }, [navigation]);
 
-  const handleChallengeResponse = (challenge) => {
+  const handleChallengeResponse = useCallback((challenge) => {
     setChallengeData(challenge);
     setShowChallengeResponsePopup(true);
-  };
+  }, []);
 
   const acceptChallenge = async (challenge) => {
     try {
@@ -618,7 +648,7 @@ const ResumeGamesScreen = () => {
     }
   };
 
-  const handleQuitGame = async (game) => {
+  const handleQuitGame = useCallback(async (game) => {
     try {
       Alert.alert(
         'Quit Game?',
@@ -660,9 +690,9 @@ const ResumeGamesScreen = () => {
       console.error('ResumeGamesScreen: Failed to handle quit game:', error);
       Alert.alert('Error', 'Failed to process quit game action. Please try again.');
     }
-  };
+  }, []);
 
-  const handleCancelChallenge = async (challenge) => {
+  const handleCancelChallenge = useCallback(async (challenge) => {
     try {
       setChallengeToCancel(challenge);
       setShowCancelChallengeConfirm(true);
@@ -670,7 +700,130 @@ const ResumeGamesScreen = () => {
       console.error('Failed to handle cancel challenge:', error);
       Alert.alert('Error', 'Failed to process cancel challenge action. Please try again.');
     }
-  };
+  }, []);
+
+  const handleNudge = useCallback(async (item) => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        Alert.alert('Error', 'You must be logged in to send a nudge.');
+        return;
+      }
+
+      // Check if this is a challenge or a game
+      if (item.gameType === 'pending_challenge' || item.gameType === 'awaiting_acceptance') {
+        // Handle challenge nudge
+        const challengeId = item.id;
+        const challengeDoc = await getDoc(doc(db, 'challenges', challengeId));
+        
+        if (!challengeDoc.exists()) {
+          Alert.alert('Error', 'Challenge not found.');
+          return;
+        }
+
+        const challengeData = challengeDoc.data();
+        const nudgedBy = challengeData.nudgedBy || [];
+        
+        // Check if already nudged
+        if (nudgedBy.includes(currentUser.uid)) {
+          Alert.alert(
+            'Already Nudged',
+            'You have already sent a nudge for this challenge. Your opponent will be notified when they open the app.'
+          );
+          return;
+        }
+
+        // Get opponent info
+        const isRecipient = (challengeData.toUid === currentUser.uid || challengeData.to === currentUser.uid);
+        const opponentUid = isRecipient ? (challengeData.fromUid || challengeData.from) : (challengeData.toUid || challengeData.to);
+        const opponentUsername = isRecipient ? (challengeData.fromUsername || 'Unknown') : (challengeData.toUsername || 'Unknown');
+        
+        // Get current user's username from Firestore profile
+        const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        const currentUserData = currentUserDoc.exists() ? currentUserDoc.data() : {};
+        const currentUsername = currentUserData.username || currentUserData.displayName || currentUser.displayName || 'Unknown';
+
+        // Mark as nudged
+        await updateDoc(doc(db, 'challenges', challengeId), {
+          nudgedBy: arrayUnion(currentUser.uid),
+          nudgedAt: new Date().toISOString()
+        });
+
+        // Send notification
+        const notificationService = getNotificationService();
+        await notificationService.sendPushNotification(
+          opponentUid,
+          'WhatWord',
+          `${currentUsername} is waiting for you to respond to their challenge!`,
+          {
+            type: 'game_challenge',
+            challengeId: challengeId,
+            fromUserId: currentUser.uid
+          }
+        );
+
+        playSound('chime').catch(() => {});
+        setNudgeSentMessage(`Your nudge has been sent to ${opponentUsername}.`);
+        setShowNudgeSentPopup(true);
+      } else if (item.gameType === 'waiting_for_opponent') {
+        // Handle game nudge
+        const gameId = item.gameId;
+        const gameDoc = await getDoc(doc(db, 'games', gameId));
+        
+        if (!gameDoc.exists()) {
+          Alert.alert('Error', 'Game not found.');
+          return;
+        }
+
+        const gameData = gameDoc.data();
+        const nudgedBy = gameData.nudgedBy || [];
+        
+        // Check if already nudged
+        if (nudgedBy.includes(currentUser.uid)) {
+          Alert.alert(
+            'Already Nudged',
+            'You have already sent a nudge for this game. Your opponent will be notified when they open the app.'
+          );
+          return;
+        }
+
+        // Get opponent info
+        const opponentUid = item.opponentUid;
+        const opponentUsername = item.opponent || 'Unknown';
+        
+        // Get current user's username from Firestore profile
+        const currentUserDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        const currentUserData = currentUserDoc.exists() ? currentUserDoc.data() : {};
+        const currentUsername = currentUserData.username || currentUserData.displayName || currentUser.displayName || 'Unknown';
+
+        // Mark as nudged
+        await updateDoc(doc(db, 'games', gameId), {
+          nudgedBy: arrayUnion(currentUser.uid),
+          nudgedAt: new Date().toISOString()
+        });
+
+        // Send notification
+        const notificationService = getNotificationService();
+        await notificationService.sendPushNotification(
+          opponentUid,
+          'WhatWord',
+          `${currentUsername} is waiting for you to play your turn!`,
+          {
+            type: 'game_challenge',
+            gameId: gameId,
+            fromUserId: currentUser.uid
+          }
+        );
+
+        playSound('chime').catch(() => {});
+        setNudgeSentMessage(`Your nudge has been sent to ${opponentUsername}.`);
+        setShowNudgeSentPopup(true);
+      }
+    } catch (error) {
+      console.error('ResumeGamesScreen: Failed to send nudge:', error);
+      Alert.alert('Error', 'Failed to send nudge. Please try again.');
+    }
+  }, []);
 
   const confirmCancelChallenge = async () => {
     try {
@@ -734,15 +887,17 @@ const ResumeGamesScreen = () => {
   };
 
 
-  const renderGameItem = ({ item }) => {
+  const renderGameItem = useCallback(({ item }) => {
     const isAwaitingAcceptance = item.gameType === 'awaiting_acceptance';
+    const currentUser = auth.currentUser;
+    const hasNudged = currentUser && (item.nudgedBy || []).includes(currentUser.uid);
     
     if (isAwaitingAcceptance) {
-      // Special layout for awaiting acceptance boxes - left text, date below, red quit button right
+      // Special layout for awaiting acceptance boxes - left text, date below, nudge and quit buttons right
       return (
         <View style={styles.awaitingAcceptanceItem}>
           <View style={styles.awaitingAcceptanceInfo}>
-            <Text style={styles.awaitingAcceptanceTitle}>
+            <Text style={styles.awaitingAcceptanceTitle} numberOfLines={1}>
               Waiting for
             </Text>
             <Text style={styles.awaitingAcceptanceUsername}>
@@ -757,12 +912,21 @@ const ResumeGamesScreen = () => {
               Sent: {new Date(item.createdAt?.toDate?.() || item.createdAt || Date.now()).toLocaleDateString()}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.redQuitButton}
-            onPress={() => handleCancelChallenge(item)}
-          >
-            <Text style={styles.redQuitButtonText}>Quit</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              style={[styles.redQuitButton, { backgroundColor: hasNudged ? colors.surface : colors.primary, opacity: hasNudged ? 0.6 : 1, marginRight: 8 }]}
+              onPress={() => handleNudge(item)}
+              disabled={hasNudged}
+            >
+              <Text style={[styles.redQuitButtonText, { color: hasNudged ? colors.textSecondary : '#FFFFFF' }]}>Nudge</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.redQuitButton}
+              onPress={() => handleCancelChallenge(item)}
+            >
+              <Text style={styles.redQuitButtonText}>Quit</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
@@ -794,13 +958,39 @@ const ResumeGamesScreen = () => {
           </Text>
         </View>
         {item.gameType === 'waiting_for_opponent' ? (
-          // For waiting games, show only Quit button
-          <TouchableOpacity
-            style={[styles.challengeButton, styles.quitButton]}
-            onPress={() => handleQuitGame(item)}
-          >
-            <Text style={styles.challengeButtonText}>Quit</Text>
-          </TouchableOpacity>
+          // For waiting games, show Nudge and Quit buttons
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              style={[styles.redQuitButton, { backgroundColor: hasNudged ? colors.surface : colors.primary, opacity: hasNudged ? 0.6 : 1, marginRight: 8 }]}
+              onPress={() => handleNudge(item)}
+              disabled={hasNudged}
+            >
+              <Text style={[styles.redQuitButtonText, { color: hasNudged ? colors.textSecondary : '#FFFFFF' }]}>Nudge</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.redQuitButton}
+              onPress={() => handleQuitGame(item)}
+            >
+              <Text style={styles.redQuitButtonText}>Quit</Text>
+            </TouchableOpacity>
+          </View>
+        ) : item.gameType === 'pending_challenge' ? (
+          // For pending challenges, show Nudge and Respond buttons
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              style={[styles.redQuitButton, { backgroundColor: hasNudged ? colors.surface : colors.primary, opacity: hasNudged ? 0.6 : 1, marginRight: 8 }]}
+              onPress={() => handleNudge(item)}
+              disabled={hasNudged}
+            >
+              <Text style={[styles.redQuitButtonText, { color: hasNudged ? colors.textSecondary : '#FFFFFF' }]}>Nudge</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.compactChallengeButton}
+              onPress={() => handleGameAction(item)}
+            >
+              <Text style={styles.compactChallengeButtonText}>Respond</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           // For other game types, show single button
           <TouchableOpacity
@@ -808,13 +998,13 @@ const ResumeGamesScreen = () => {
             onPress={() => handleGameAction(item)}
           >
             <Text style={styles.compactChallengeButtonText}>
-              {item.gameType === 'pending_challenge' ? 'Respond' : item.gameType === 'completed_pending_results' ? 'View Results' : 'Resume'}
+              {item.gameType === 'completed_pending_results' ? 'View Results' : 'Resume'}
             </Text>
           </TouchableOpacity>
         )}
       </TouchableOpacity>
     );
-  };
+  }, [colors, handleGameAction, handleCancelChallenge, handleQuitGame, handleNudge]);
 
   const renderSoloGameItem = ({ item }) => {
     const getDifficultyText = (wordLength) => {
@@ -1096,6 +1286,27 @@ const ResumeGamesScreen = () => {
               style={styles.winButtonContainer}
               onPress={() => {
                 setShowChallengeCanceledPopup(false);
+                playSound('chime').catch(() => {});
+              }}
+            >
+              <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Nudge Sent Popup */}
+      <Modal visible={showNudgeSentPopup} transparent animationType="fade" statusBarTranslucent={false}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Nudge Sent</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
+              {nudgeSentMessage}
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => {
+                setShowNudgeSentPopup(false);
                 playSound('chime').catch(() => {});
               }}
             >

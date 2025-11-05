@@ -2566,6 +2566,27 @@ export default StyleSheet.create({
     borderColor: '#F59E0B',
     borderWidth: 2,
   },
+  inactiveUserItem: {
+    backgroundColor: '#7F1D1D',
+    borderColor: '#EF4444',
+    borderWidth: 2,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  inactiveUserText: {
+    color: '#FCA5A5',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  inactiveUserSubtext: {
+    color: '#FCA5A5',
+    fontSize: 14,
+    textAlign: 'center',
+    opacity: 0.8,
+  },
   rankContainer: {
     width: 60,
     alignItems: 'center',

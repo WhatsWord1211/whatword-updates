@@ -55,11 +55,13 @@ service cloud.firestore {
          resource.data.diff(request.resource.data).changedKeys().hasOnly(['gamesPlayed', 'gamesWon', 'bestScore']) ||
          // Allow updates to multiple game stats fields together (from updateGameStats)
          (resource.data.diff(request.resource.data).changedKeys().hasAll(['gamesPlayed', 'lastGamePlayed']) ||
+          resource.data.diff(request.resource.data).changedKeys().hasAll(['gamesPlayed', 'lastGamePlayed', 'lastSoloActivity']) ||
           resource.data.diff(request.resource.data).changedKeys().hasAll(['gamesPlayed', 'totalScore', 'averageScore']) ||
           resource.data.diff(request.resource.data).changedKeys().hasAll(['gamesPlayed', 'gamesWon', 'currentStreak']) ||
           resource.data.diff(request.resource.data).changedKeys().hasAll(['gamesPlayed', 'hintsUsed', 'gamesWithHints']) ||
           resource.data.diff(request.resource.data).changedKeys().hasAll(['gamesPlayed', 'gamesWithoutHints']) ||
-          resource.data.diff(request.resource.data).changedKeys().hasAll(['bestScore'])) ||
+          resource.data.diff(request.resource.data).changedKeys().hasAll(['bestScore']) ||
+          resource.data.diff(request.resource.data).changedKeys().hasOnly(['lastSoloActivity'])) ||
          // Allow updates to total score
          resource.data.diff(request.resource.data).changedKeys().hasOnly(['totalScore']) ||
          // Allow updates to rank-related fields
@@ -334,6 +336,13 @@ service cloud.firestore {
       
       // Friends can read records about themselves (for display purposes)
       allow read: if request.auth != null && request.auth.uid == friendId;
+    }
+    
+    // Global leaderboard - anyone authenticated can read
+    match /globalLeaderboard/{difficulty} {
+      allow read: if request.auth != null;
+      // Only Cloud Functions can write (via admin SDK)
+      allow write: if false;
     }
   }
 }
