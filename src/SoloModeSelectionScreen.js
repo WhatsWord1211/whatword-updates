@@ -96,7 +96,7 @@ const SoloModeSelectionScreen = () => {
               },
             ]}
           >
-            Beat the clock in 3 minutes
+            Beat the clock
           </Text>
         </TouchableOpacity>
       </View>

@@ -86,26 +86,8 @@ const GameScreen = () => {
       setGameId(initialGameId);
     }
   }, [initialGameId, gameId]);
-  const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const scrollViewRef = useRef(null);
   const soundsInitialized = useRef(false);
-
-  // Check hard mode unlock status when component mounts
-  useEffect(() => {
-    const checkUnlockStatus = async () => {
-      try {
-        if (gameState === 'selectDifficulty') {
-          const isUnlocked = await checkHardModeUnlocked();
-          setHardModeUnlocked(isUnlocked);
-        }
-      } catch (error) {
-        console.error('GameScreen: Error checking hard mode unlock status:', error);
-        setHardModeUnlocked(false); // Default to locked on error
-      }
-    };
-    
-    checkUnlockStatus();
-  }, [gameState]);
 
   // Adjustable padding variables
   const inputToKeyboardPadding = 20;
@@ -147,42 +129,6 @@ const GameScreen = () => {
   ];
 
   const MAX_GUESSES = 25;
-
-  // Check if hard mode is unlocked
-  const checkHardModeUnlocked = async () => {
-    try {
-      if (!auth.currentUser) return false;
-      
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      if (!userDoc.exists()) return false;
-      
-      const userData = userDoc.data();
-      
-      // Check if user is premium
-      if (userData.isPremium) return true;
-      
-      // Check if user has reached Word Expert rank
-      const easyAvg = userData.easyAverageScore || 0;
-      const regularAvg = userData.regularAverageScore || 0;
-      const hardAvg = userData.hardAverageScore || 0;
-      
-      // Check if player has played any games
-      if (easyAvg === 0 && regularAvg === 0 && hardAvg === 0) {
-        return false;
-      }
-      
-      // Check if user has reached Word Expert rank (Regular mode average ≤ 10 AND 15+ games played)
-      const regularGamesCount = userData.regularGamesCount || 0;
-      if (regularAvg > 0 && regularAvg <= 10 && regularGamesCount >= 15) {
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Failed to check hard mode unlock status:', error);
-      return false;
-    }
-  };
 
   // Preload game completion ad when game starts
   const preloadGameAd = useCallback(async () => {
@@ -807,22 +753,6 @@ const GameScreen = () => {
         console.log('GameScreen: Already loading, ignoring duplicate difficulty selection');
         return;
       }
-      
-      // Check if hard mode is locked
-      if (diff === 'hard') {
-        const isUnlocked = await checkHardModeUnlocked();
-        if (!isUnlocked) {
-          Alert.alert(
-            'Hard Mode Locked 🔒',
-            'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
-            ]
-          );
-          return;
-        }
-      }
 
       const length = diff === 'easy' ? 4 : diff === 'regular' ? 5 : 6;
       
@@ -934,51 +864,6 @@ const GameScreen = () => {
           >
             <Text style={styles.buttonText}>Regular (5 Letters)</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.button, 
-              !hardModeUnlocked && styles.lockedButton,
-              isLoading && styles.disabledButton,
-              { zIndex: 100 }
-            ]}
-            onPress={() => {
-              console.log('GameScreen: Hard difficulty button pressed, hardModeUnlocked:', hardModeUnlocked);
-              if (hardModeUnlocked) {
-                handleDifficultySelect('hard');
-              } else {
-                // Show unlock popup for locked hard mode
-                Alert.alert(
-                  'Hard Mode Locked 🔒',
-                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play 15+ Regular mode games (5 letters)\n• Achieve an average of 10 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
-                  ]
-                );
-              }
-            }}
-            disabled={isLoading || (!hardModeUnlocked && false)}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.buttonText,
-              !hardModeUnlocked && styles.lockedButtonText
-            ]}>
-              {hardModeUnlocked ? 'Hard (6 Letters)' : '🔒 Hard (6 Letters) - Locked 💡'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Hard Mode Lock Status Message */}
-          {!hardModeUnlocked && (
-            <View style={styles.lockStatusContainer}>
-              <Text style={[styles.lockStatusText, { color: colors.textSecondary }]}>
-                🔒 You need to unlock Hard Mode first
-              </Text>
-              <Text style={[styles.lockStatusSubtext, { color: colors.textMuted }]}>
-                Play 15+ Regular games with avg ≤10 or get premium
-              </Text>
-            </View>
-          )}
         </View>
       ) : gameState === 'waiting' ? (
         <View style={styles.waitingContainer}>

@@ -431,78 +431,22 @@ const SetWordGameScreen = () => {
           
           <TouchableOpacity
             style={[styles.difficultyButton, { zIndex: 100 }]}
-            onPress={() => selectDifficulty('easy')}
+            onPress={() => {
+              playSound('chime');
+              selectDifficulty('easy');
+            }}
           >
             <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Easy (4 letters)</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity
             style={[styles.difficultyButton, { zIndex: 100 }]}
-            onPress={() => selectDifficulty('regular')}
+            onPress={() => {
+              playSound('chime');
+              selectDifficulty('regular');
+            }}
           >
             <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Regular (5 letters)</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.difficultyButton, 
-              (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButton,
-              { zIndex: 100 }
-            ]}
-            onPress={() => {
-              if (hardModeUnlocked && opponentHardModeUnlocked) {
-                selectDifficulty('hard');
-              } else if (!hardModeUnlocked) {
-                // Show unlock popup for locked hard mode
-                Alert.alert(
-                  'Hard Mode Locked 🔒',
-                  'Hard Mode (6-letter words) is currently locked.\n\nTo unlock it, you need to:\n\n🏆 Reach Word Expert Rank\n• Play 15+ Regular mode games (5 letters)\n• Achieve an average of 10 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n• Access to all game modes and features\n\nWould you like to go to your Profile to see your progress?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
-                  ]
-                );
-              } else if (!opponentHardModeUnlocked) {
-                // Show popup explaining opponent doesn't have access
-                Alert.alert(
-                  'Opponent Cannot Play Hard Mode 🔒',
-                  'The player you want to challenge does not have Hard Mode unlocked yet.\n\nThey need to either:\n\n🏆 Reach Word Expert Rank\n• Play 15+ Regular mode games (5 letters)\n• Achieve an average of 10 attempts or fewer\n\n💎 OR Get Premium Access\n• Instant unlock with premium subscription\n\nPlease choose Easy or Regular difficulty instead, or wait for them to unlock Hard Mode.',
-                  [{ text: 'OK', style: 'default' }]
-                );
-              }
-            }}
-          >
-            <Text style={[
-              styles.buttonText,
-              { numberOfLines: 1 },
-              (!hardModeUnlocked || !opponentHardModeUnlocked) && styles.lockedButtonText
-            ]}>
-              {!hardModeUnlocked 
-                ? '🔒 Hard (6 letters) - Locked 💡' 
-                : !opponentHardModeUnlocked 
-                  ? '🔒 Hard (6 letters) - Opponent Locked 💡'
-                  : 'Hard (6 letters)'
-              }
-            </Text>
-          </TouchableOpacity>
-
-          {/* Hard Mode Lock Status Message */}
-          {(!hardModeUnlocked || !opponentHardModeUnlocked) && (
-            <View style={styles.lockStatusContainer}>
-              <Text style={styles.lockStatusText}>
-                {!hardModeUnlocked 
-                  ? '🔒 You need to unlock Hard Mode first'
-                  : '🔒 Your opponent cannot play Hard Mode yet'
-                }
-              </Text>
-              <Text style={styles.lockStatusSubtext}>
-                {!hardModeUnlocked 
-                  ? 'Play 15+ Regular games with avg ≤10 or get premium'
-                  : 'They need to play 15+ Regular games with avg ≤10 or get premium'
-                }
-              </Text>
-            </View>
-          )}
         </View>
       </SafeAreaView>
     );

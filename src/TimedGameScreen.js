@@ -13,7 +13,8 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { isValidWord, getFeedback, selectRandomWord } from './gameLogic';
 import styles from './styles';
 import { playSound } from './soundsUtil';
@@ -22,8 +23,24 @@ import ThreeDPurpleRing from './ThreeDPurpleRing';
 import { useTheme } from './ThemeContext';
 import adService from './adService';
 
-const TIMER_DURATION_MS = 3 * 60 * 1000; // 3 minutes
+const TIMED_DURATION_MAP = {
+  easy: 2.5 * 60 * 1000,
+  regular: 3.5 * 60 * 1000,
+};
+
+const DEFAULT_TIMED_DURATION_MS = TIMED_DURATION_MAP.regular;
+
+const getDurationForDifficulty = (diff) => {
+  if (!diff) return DEFAULT_TIMED_DURATION_MS;
+  if (diff in TIMED_DURATION_MAP) {
+    return TIMED_DURATION_MAP[diff];
+  }
+  return DEFAULT_TIMED_DURATION_MS;
+};
+
 const MAX_GUESSES = 25;
+
+const normalizeTimedDifficulty = (diff) => (diff === 'easy' ? 'easy' : 'regular');
 
 const TimedGameScreen = () => {
   const navigation = useNavigation();
@@ -53,9 +70,11 @@ const TimedGameScreen = () => {
   const [guesses, setGuesses] = useState(savedGuesses || []);
   const [alphabet, setAlphabet] = useState(savedAlphabet || Array(26).fill('unknown'));
   const [gameState, setGameState] = useState(savedGameState || 'loading');
-  const [remainingTimeMs, setRemainingTimeMs] = useState(typeof savedRemaining === 'number' ? savedRemaining : TIMER_DURATION_MS);
+  const [timerDurationMs, setTimerDurationMs] = useState(() => getDurationForDifficulty(initialDifficulty || 'regular'));
+  const [remainingTimeMs, setRemainingTimeMs] = useState(typeof savedRemaining === 'number' ? savedRemaining : getDurationForDifficulty(initialDifficulty || 'regular'));
   const [isLoading, setIsLoading] = useState(false);
   const [guessesLoaded, setGuessesLoaded] = useState(false);
+  const [streakCount, setStreakCount] = useState(0);
 
   // UI modal states
   const [showInvalidPopup, setShowInvalidPopup] = useState(false);
@@ -144,14 +163,18 @@ const TimedGameScreen = () => {
     clearTimer();
     setGameState('timeUp');
     setShowTimeUpPopup(true);
+    updateStreak(false);
     await playSound('lose').catch(() => {});
-  }, [clearTimer]);
+  }, [clearTimer, updateStreak]);
 
   const startTimer = useCallback(() => {
     clearTimer();
 
     if (!timerDeadlineRef.current) {
-      timerDeadlineRef.current = Date.now() + TIMER_DURATION_MS;
+      const duration = getDurationForDifficulty(difficulty || 'regular');
+      setTimerDurationMs(duration);
+      timerDeadlineRef.current = Date.now() + duration;
+      setRemainingTimeMs(duration);
     }
 
     timerIntervalRef.current = setInterval(() => {
@@ -163,9 +186,76 @@ const TimedGameScreen = () => {
         setRemainingTimeMs(remaining);
       }
     }, 1000);
-  }, [clearTimer, handleTimeExpired]);
+  }, [clearTimer, handleTimeExpired, difficulty]);
 
   const guaranteeNumber = (value) => (isNaN(value) ? 0 : value || 0);
+
+  const getStreakStorageKey = useCallback((diff) => {
+    const normalized = normalizeTimedDifficulty(diff);
+    const uid = auth.currentUser?.uid || 'guest';
+    return `timedStreak_${normalized}_${uid}`;
+  }, []);
+
+  const persistStreakToProfile = useCallback(async (normalized, currentValue, didWin) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const userRef = doc(db, 'users', user.uid);
+      const currentField = normalized === 'easy' ? 'timedStreakCurrent_easy' : 'timedStreakCurrent_regular';
+      const bestField = normalized === 'easy' ? 'timedStreakBest_easy' : 'timedStreakBest_regular';
+
+      if (didWin) {
+        let existingBest = 0;
+        try {
+          const snapshot = await getDoc(userRef);
+          if (snapshot.exists()) {
+            existingBest = snapshot.data()?.[bestField] || 0;
+          }
+        } catch (error) {
+          console.error('TimedGameScreen: Failed to read streak best from profile:', error);
+        }
+
+        const nextBest = Math.max(existingBest, currentValue);
+        await setDoc(userRef, {
+          [currentField]: currentValue,
+          [bestField]: nextBest,
+          lastSoloActivity: new Date().toISOString(),
+        }, { merge: true });
+      } else {
+        await setDoc(userRef, {
+          [currentField]: 0,
+        }, { merge: true });
+      }
+    } catch (error) {
+      console.error('TimedGameScreen: Failed to persist streak:', error);
+    }
+  }, []);
+
+  const loadStreakForDifficulty = useCallback(async (diff) => {
+    try {
+      const key = getStreakStorageKey(diff);
+      const stored = await AsyncStorage.getItem(key);
+      const parsed = stored !== null ? parseInt(stored, 10) : 0;
+      setStreakCount(Number.isNaN(parsed) ? 0 : parsed);
+    } catch (error) {
+      console.error('TimedGameScreen: Failed to load streak:', error);
+      setStreakCount(0);
+    }
+  }, [getStreakStorageKey]);
+
+  const updateStreak = useCallback((didWin, diffOverride) => {
+    const normalizedDiff = normalizeTimedDifficulty(diffOverride || difficulty || 'regular');
+    const key = getStreakStorageKey(normalizedDiff);
+    setStreakCount((previous) => {
+      const next = didWin ? previous + 1 : 0;
+      AsyncStorage.setItem(key, next.toString()).catch((error) => {
+        console.error('TimedGameScreen: Failed to store streak:', error);
+      });
+      persistStreakToProfile(normalizedDiff, next, didWin);
+      return next;
+    });
+  }, [difficulty, getStreakStorageKey, persistStreakToProfile]);
 
   const ensureTimerRunning = useCallback(() => {
     if (gameState === 'playing' && !timerIntervalRef.current && !timeUpHandledRef.current) {
@@ -205,6 +295,7 @@ const TimedGameScreen = () => {
         timestamp: new Date().toISOString(),
         timerDeadline: timerDeadlineRef.current ? new Date(timerDeadlineRef.current).toISOString() : null,
         remainingTimeMs,
+        timerDurationMs,
         playerId: auth.currentUser?.uid,
       };
 
@@ -220,18 +311,21 @@ const TimedGameScreen = () => {
     } catch (error) {
       console.error('TimedGameScreen: Failed to save game state:', error);
     }
-  }, [alphabet, difficulty, gameId, gameState, guesses, guessesLoaded, inputWord, remainingTimeMs, resumeGame, savedGameState, targetWord, wordLength]);
+  }, [alphabet, difficulty, gameId, gameState, guesses, guessesLoaded, inputWord, remainingTimeMs, resumeGame, savedGameState, targetWord, wordLength, timerDurationMs]);
 
   const initializeNewGame = useCallback(async () => {
     try {
       setIsLoading(true);
-      const length = initialWordLength || (difficulty === 'easy' ? 4 : difficulty === 'hard' ? 6 : 5);
+      const currentDifficulty = difficulty || 'regular';
+      const length = initialWordLength || (currentDifficulty === 'easy' ? 4 : currentDifficulty === 'hard' ? 6 : 5);
       const word = await selectRandomWord(length);
       const upperWord = (word || '').toUpperCase();
 
-      timerDeadlineRef.current = Date.now() + TIMER_DURATION_MS;
+      const duration = getDurationForDifficulty(currentDifficulty);
+      setTimerDurationMs(duration);
+      timerDeadlineRef.current = Date.now() + duration;
       timeUpHandledRef.current = false;
-      setRemainingTimeMs(TIMER_DURATION_MS);
+      setRemainingTimeMs(duration);
       setTargetWord(upperWord);
       setWordLength(length);
       setInputWord('');
@@ -266,11 +360,14 @@ const TimedGameScreen = () => {
         return;
       }
 
-      const deadline = existing.timerDeadline ? new Date(existing.timerDeadline).getTime() : Date.now() + TIMER_DURATION_MS;
+      const savedDifficulty = existing.difficulty || difficulty || 'regular';
+      const duration = existing.timerDurationMs || getDurationForDifficulty(savedDifficulty);
+      setTimerDurationMs(duration);
+      const deadline = existing.timerDeadline ? new Date(existing.timerDeadline).getTime() : Date.now() + duration;
       timerDeadlineRef.current = deadline;
       const remaining = Math.max(deadline - Date.now(), 0);
 
-      setDifficulty(existing.difficulty || difficulty);
+      setDifficulty(savedDifficulty);
       setWordLength(existing.wordLength || wordLength);
       setTargetWord((existing.targetWord || '').toUpperCase());
       setInputWord(existing.inputWord || '');
@@ -280,6 +377,8 @@ const TimedGameScreen = () => {
       setRemainingTimeMs(remaining > 0 ? remaining : 0);
       setGuessesLoaded(true);
       setIsLoading(false);
+
+      await loadStreakForDifficulty(savedDifficulty);
 
       if (remaining <= 0) {
         handleTimeExpired();
@@ -292,7 +391,7 @@ const TimedGameScreen = () => {
       Alert.alert('Error', 'Failed to load saved timed game.');
       navigation.goBack();
     }
-  }, [difficulty, gameId, handleTimeExpired, initialGameId, navigation, startTimer, wordLength]);
+  }, [difficulty, gameId, handleTimeExpired, initialGameId, navigation, startTimer, wordLength, loadStreakForDifficulty]);
 
   useEffect(() => {
     let mounted = true;
@@ -304,7 +403,12 @@ const TimedGameScreen = () => {
         await initializeNewGame();
       } else {
         if (!timerDeadlineRef.current) {
-          timerDeadlineRef.current = Date.now() + TIMER_DURATION_MS;
+          const currentDiff = difficulty || 'regular';
+          const duration = getDurationForDifficulty(currentDiff);
+          setTimerDurationMs(duration);
+          timerDeadlineRef.current = Date.now() + duration;
+          setRemainingTimeMs(duration);
+          await loadStreakForDifficulty(currentDiff);
         }
         setGameState('playing');
         setGuessesLoaded(true);
@@ -320,7 +424,12 @@ const TimedGameScreen = () => {
       mounted = false;
       clearTimer();
     };
-  }, [clearTimer, initializeNewGame, loadSavedGame, resumeGame, savedGameState, savedTarget, startTimer, targetWord]);
+  }, [clearTimer, initializeNewGame, loadSavedGame, resumeGame, savedGameState, savedTarget, startTimer, targetWord, difficulty, loadStreakForDifficulty]);
+
+  useEffect(() => {
+    const normalized = normalizeTimedDifficulty(difficulty || 'regular');
+    loadStreakForDifficulty(normalized);
+  }, [difficulty, loadStreakForDifficulty]);
 
   useEffect(() => {
     ensureTimerRunning();
@@ -350,7 +459,7 @@ const TimedGameScreen = () => {
     if (gameState !== 'playing') return;
     if ((resumeGame || savedGameState) && !guessesLoaded) return;
     saveGameState();
-  }, [alphabet, gameState, guesses, guessesLoaded, inputWord, remainingTimeMs, resumeGame, saveGameState, savedGameState, targetWord]);
+  }, [alphabet, gameState, guesses, guessesLoaded, inputWord, remainingTimeMs, resumeGame, saveGameState, savedGameState, targetWord, wordLength, timerDurationMs]);
 
   const handleLetterInput = (letter) => {
     if (gameState !== 'playing') return;
@@ -419,6 +528,7 @@ const TimedGameScreen = () => {
         setGameState('gameOver');
         setShowWinPopup(true);
         await playSound('congratulations').catch(() => {});
+        updateStreak(true);
       } else {
         const nonHintGuessCount = updatedGuesses.length;
         if (nonHintGuessCount >= MAX_GUESSES) {
@@ -426,6 +536,7 @@ const TimedGameScreen = () => {
           setGameState('maxGuesses');
           setShowMaxGuessesPopup(true);
           await playSound('lose').catch(() => {});
+          updateStreak(false);
         }
       }
     } catch (error) {
@@ -435,7 +546,7 @@ const TimedGameScreen = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [clearTimer, gameState, guesses, inputWord, isLoading, targetWord, wordLength]);
+  }, [clearTimer, gameState, guesses, inputWord, isLoading, targetWord, wordLength, updateStreak]);
 
   const handleQuit = async () => {
     setShowMenuPopup(false);
@@ -450,6 +561,7 @@ const TimedGameScreen = () => {
       setGameState('timeUp');
       await saveGameState();
       await cleanupCompletedTimedGame();
+      updateStreak(false);
       setShowWordRevealPopup(true);
       await playSound('chime').catch(() => {});
     } catch (error) {
@@ -467,9 +579,12 @@ const TimedGameScreen = () => {
     setGameId(`timed_${Date.now()}`);
     timerDeadlineRef.current = null;
     timeUpHandledRef.current = false;
-    setRemainingTimeMs(TIMER_DURATION_MS);
+    const currentDiff = difficulty || 'regular';
+    const duration = getDurationForDifficulty(currentDiff);
+    setTimerDurationMs(duration);
+    setRemainingTimeMs(duration);
     await initializeNewGame();
-  }, [initializeNewGame, showCompletionAd]);
+  }, [difficulty, initializeNewGame, showCompletionAd]);
 
   const handleReturnHome = useCallback(async () => {
     await showCompletionAd();
@@ -525,7 +640,7 @@ const TimedGameScreen = () => {
   }, []);
 
   const timeRemainingText = useMemo(() => formatDuration(remainingTimeMs), [formatDuration, remainingTimeMs]);
-  const timeElapsedText = useMemo(() => formatDuration(TIMER_DURATION_MS - remainingTimeMs), [formatDuration, remainingTimeMs]);
+  const timeElapsedText = useMemo(() => formatDuration(Math.max(timerDurationMs - remainingTimeMs, 0)), [formatDuration, remainingTimeMs, timerDurationMs]);
 
   const handleSaveAndExit = async () => {
     try {
@@ -681,7 +796,7 @@ const TimedGameScreen = () => {
       </ScrollView>
 
       <View style={[styles.fabTop, { top: insets.top + 10, left: 20, right: 'auto', zIndex: 1000 }]}> 
-        <Text style={[styles.fabText, { color: colors.textPrimary }]}>{guesses.length}</Text>
+        <Text style={[styles.fabText, { color: colors.textPrimary }]}>{streakCount}</Text>
       </View>
 
       <TouchableOpacity
@@ -812,6 +927,7 @@ const TimedGameScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={[styles.maxGuessesPopup, styles.modalShadow, { backgroundColor: colors.surface }]}> 
             <Text style={[styles.maxGuessesTitle, { color: colors.textPrimary }]}>Time's Up!</Text>
+            <Text style={[styles.maxGuessesMessage, { color: colors.textSecondary }]}>The word was: {targetWord || 'Unknown'}</Text>
             <TouchableOpacity style={styles.maxGuessesButtonContainer} onPress={handlePlayAgain}>
               <Text style={styles.buttonText}>Play Again</Text>
             </TouchableOpacity>

@@ -22,17 +22,28 @@ const LeaderboardScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState(initialTab || 'global'); // 'global', 'solo', or 'pvp'
-  const [activeDifficulty, setActiveDifficulty] = useState(initialDifficulty || 'regular'); // 'easy', 'regular', or 'hard'
+  const [activeDifficulty, setActiveDifficulty] = useState(initialDifficulty || 'regular'); // 'easy', 'regular', or 'timed'
   const [userFriends, setUserFriends] = useState([]);
-  const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
   const [needsMoreGames, setNeedsMoreGames] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const getDifficultyLabel = (difficulty) => {
+    if (difficulty === 'timed') return 'Timed';
+    if (difficulty === 'regular') return 'Regular';
+    if (difficulty === 'easy') return 'Easy';
+    return difficulty;
+  };
+
+  const getDifficultyIcon = (difficulty) => {
+    if (difficulty === 'timed') return '⏱️';
+    if (difficulty === 'regular') return '🟡';
+    return '🟢';
+  };
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        checkHardModeUnlock(currentUser);
         // Load friends first, then leaderboards will be loaded via useFocusEffect
         loadUserFriends(currentUser);
       }
@@ -85,45 +96,14 @@ const LeaderboardScreen = () => {
     }, [user, userFriends, activeDifficulty, activeTab])
   );
 
-  // Check hard mode unlock status
-  const checkHardModeUnlock = async (currentUser) => {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        
-        // Check if user is premium
-        if (userData.isPremium) {
-          setHardModeUnlocked(true);
-          return;
-        }
-        
-        // Check if user has reached Word Expert rank (Regular mode average ≤ 10 AND 15+ games played)
-        const regularAvg = userData.regularAverageScore || 0;
-        const regularGamesCount = userData.regularGamesCount || 0;
-        if (regularAvg > 0 && regularAvg <= 10 && regularGamesCount >= 15) {
-          setHardModeUnlocked(true);
-        } else {
-          setHardModeUnlocked(false);
-        }
-      }
-    } catch (error) {
-      console.error('LeaderboardScreen: Failed to check hard mode unlock status:', error);
-      setHardModeUnlocked(false);
+  useEffect(() => {
+    if (activeTab === 'pvp' && activeDifficulty === 'timed') {
+      setActiveDifficulty('easy');
     }
-  };
+  }, [activeTab, activeDifficulty]);
 
   // Handle difficulty tab selection
   const handleDifficultyChange = async (difficulty) => {
-    if (difficulty === 'hard' && !hardModeUnlocked) {
-      // Show alert that hard mode is locked
-      Alert.alert(
-        'Hard Mode Locked',
-        'Hard Mode is locked. Unlock it by either:\n\n🏆 Reaching Word Expert rank\n• Play 15+ Regular mode games\n• Achieve average of 10 attempts or fewer\n\n💎 OR Get premium access',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
     setActiveDifficulty(difficulty);
     playSound('toggleTab').catch(() => {});
     
@@ -201,9 +181,72 @@ const LeaderboardScreen = () => {
       console.log('LeaderboardScreen: Loading global leaderboard for difficulty:', activeDifficulty);
       setIsLoading(true);
       setNeedsMoreGames(false);
-      
+
+      if (activeDifficulty === 'timed') {
+        const streakField = 'timedStreakBest_easy';
+        const streakQuery = query(
+          collection(db, 'users'),
+          orderBy(streakField, 'desc'),
+          limit(100)
+        );
+
+        const snapshot = await getDocs(streakQuery);
+
+        const streakEntries = snapshot.docs
+          .map((docSnap, index) => {
+            const data = docSnap.data();
+            const bestStreak = data[streakField] || 0;
+            return {
+              userId: docSnap.id,
+              username: data.username || data.displayName || 'Unknown Player',
+              displayName: data.displayName || data.username || 'Unknown Player',
+              bestStreak,
+              rank: index + 1,
+            };
+          })
+          .filter(entry => entry.bestStreak > 0);
+
+        setGlobalLeaderboard(streakEntries);
+
+        if (currentUser) {
+          const userEntry = streakEntries.find(entry => entry.userId === currentUser.uid);
+          if (userEntry) {
+            setUserGlobalRank({
+              ...userEntry,
+              bestStreak: userEntry.bestStreak,
+              isEstimated: false,
+            });
+            setIsUserInactive(false);
+            setNeedsMoreGames(false);
+          } else {
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              const bestStreak = userData[streakField] || 0;
+              setUserGlobalRank(bestStreak > 0 ? {
+                userId: currentUser.uid,
+                username: userData.username || userData.displayName || 'You',
+                displayName: userData.displayName || userData.username || 'You',
+                bestStreak,
+                rank: streakEntries.length + 1,
+                isEstimated: true,
+              } : null);
+            } else {
+              setUserGlobalRank(null);
+            }
+            setIsUserInactive(false);
+            setNeedsMoreGames(false);
+          }
+        }
+
+        setIsLoading(false);
+        return;
+      }
+
+      const effectiveDifficulty = activeDifficulty === 'timed' ? 'easy' : activeDifficulty;
+
       // Check if we have cached data (to avoid recalculating every time)
-      const leaderboardRef = doc(db, 'globalLeaderboard', activeDifficulty);
+      const leaderboardRef = doc(db, 'globalLeaderboard', effectiveDifficulty);
       const leaderboardDoc = await getDoc(leaderboardRef);
       
       // If cached data exists and is less than 1 hour old, use it
@@ -238,7 +281,7 @@ const LeaderboardScreen = () => {
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
       
       // Get all users who have 15+ games in this difficulty (matching friends leaderboard)
-      const gamesCountField = `${activeDifficulty}GamesCount`;
+      const gamesCountField = `${effectiveDifficulty}GamesCount`;
       const MIN_GAMES_REQUIRED = 15; // Match friends leaderboard requirement
       const usersQuery = query(
         collection(db, 'users'),
@@ -324,7 +367,7 @@ const LeaderboardScreen = () => {
           }));
           
           const difficultyGames = allGames
-            .filter(game => game.difficulty === activeDifficulty)
+            .filter(game => game.difficulty === effectiveDifficulty)
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
             .slice(0, MIN_GAMES_REQUIRED);
           
@@ -391,14 +434,14 @@ const LeaderboardScreen = () => {
       // Cache results in Firestore (optional - only if user has write permission)
       try {
         await updateDoc(leaderboardRef, {
-          difficulty: activeDifficulty,
+          difficulty: effectiveDifficulty,
           calculatedAt: new Date(),
           entries: rankedEntries,
           totalEligible: leaderboardEntries.length
         }).catch(() => {
           // If update fails (permissions), try to create document
           setDoc(leaderboardRef, {
-            difficulty: activeDifficulty,
+            difficulty: effectiveDifficulty,
             calculatedAt: new Date(),
             entries: rankedEntries,
             totalEligible: leaderboardEntries.length
@@ -425,7 +468,7 @@ const LeaderboardScreen = () => {
         if (userDoc.exists()) {
           const userData = userDoc.data();
           const lastSoloActivity = userData.lastSoloActivity;
-          const gamesCount = userData[`${activeDifficulty}GamesCount`] || 0;
+          const gamesCount = userData[`${effectiveDifficulty}GamesCount`] || 0;
           
           // Check if user is inactive (7 days threshold)
           if (lastSoloActivity) {
@@ -461,7 +504,7 @@ const LeaderboardScreen = () => {
             }));
             
             const games = allGames
-              .filter(game => game.difficulty === activeDifficulty)
+              .filter(game => game.difficulty === effectiveDifficulty)
               .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
               .slice(0, MIN_GAMES_FOR_RANK);
             
@@ -547,6 +590,7 @@ const LeaderboardScreen = () => {
       console.log('LeaderboardScreen: User friends count:', userFriends.length);
       
       const leaderboardData = [];
+      const statDifficulty = activeDifficulty === 'timed' ? 'easy' : activeDifficulty;
       
       // Get solo averages for all friends (including current user) for the selected difficulty
       for (const friend of userFriends) {
@@ -555,31 +599,40 @@ const LeaderboardScreen = () => {
           let runningAverage = 0;
           let gamesCount = 0;
           
-          if (activeDifficulty === 'easy') {
-            runningAverage = friend.easyAverageScore || 0;
-            gamesCount = friend.easyGamesCount || 0;
-          } else if (activeDifficulty === 'hard') {
-            runningAverage = friend.hardAverageScore || 0;
-            gamesCount = friend.hardGamesCount || 0;
+          if (activeDifficulty === 'timed') {
+            const bestStreak = friend.timedStreakBest_easy || 0;
+            runningAverage = bestStreak;
+            gamesCount = bestStreak;
+
+            if (bestStreak > 0 || friend.uid === currentUser.uid) {
+              leaderboardData.push({
+                uid: friend.uid,
+                username: friend.username || friend.displayName || 'Unknown Player',
+                displayName: friend.displayName || friend.username || 'Unknown Player',
+                bestStreak,
+              });
+            }
           } else {
-            // Regular difficulty (default)
-            runningAverage = friend.regularAverageScore || 0;
-            gamesCount = friend.regularGamesCount || 0;
-          }
-          
-          // Only include players who have played games in this difficulty
-          console.log(`LeaderboardScreen: Friend ${friend.username || friend.displayName}: avg=${runningAverage}, games=${gamesCount}`);
-          
-          // Include players who have played games (runningAverage > 0) OR show current user even with 0 games
-          if (runningAverage > 0 || friend.uid === currentUser.uid) {
-            leaderboardData.push({
-              uid: friend.uid,
-              username: friend.username || friend.displayName || 'Unknown Player',
-              displayName: friend.displayName || friend.username || 'Unknown Player',
-              runningAverage: runningAverage,
-              gamesCount: gamesCount,
-              totalGames: friend.gamesPlayed || 0
-            });
+            if (statDifficulty === 'easy') {
+              runningAverage = friend.easyAverageScore || 0;
+              gamesCount = friend.easyGamesCount || 0;
+            } else {
+              runningAverage = friend.regularAverageScore || 0;
+              gamesCount = friend.regularGamesCount || 0;
+            }
+
+            console.log(`LeaderboardScreen: Friend ${friend.username || friend.displayName}: avg=${runningAverage}, games=${gamesCount}`);
+
+            if (runningAverage > 0 || friend.uid === currentUser.uid) {
+              leaderboardData.push({
+                uid: friend.uid,
+                username: friend.username || friend.displayName || 'Unknown Player',
+                displayName: friend.displayName || friend.username || 'Unknown Player',
+                runningAverage,
+                gamesCount,
+                totalGames: friend.gamesPlayed || 0,
+              });
+            }
           }
         } catch (error) {
           console.error(`Failed to get solo stats for user ${friend.uid}:`, error);
@@ -587,14 +640,16 @@ const LeaderboardScreen = () => {
         }
       }
       
-      
-      // Sort by running average (lowest is best)
-      leaderboardData.sort((a, b) => a.runningAverage - b.runningAverage);
+      if (activeDifficulty === 'timed') {
+        leaderboardData.sort((a, b) => (b.bestStreak || 0) - (a.bestStreak || 0));
+      } else {
+        leaderboardData.sort((a, b) => a.runningAverage - b.runningAverage);
+      }
       
       // Add ranks
       const rankedData = leaderboardData.map((player, index) => ({
         ...player,
-        rank: index + 1
+        rank: index + 1,
       }));
       
       console.log('LeaderboardScreen: Final solo leaderboard data:', rankedData);
@@ -648,17 +703,12 @@ const LeaderboardScreen = () => {
           // Filter by selected difficulty, then sort by completion time and take last 15 games
           const difficultyFiltered = pvpStats.filter(stat => {
             if (!stat) return false;
-            // Prefer wordLength if available (new format)
+            const targetLength = activeDifficulty === 'easy' ? 4 : 5;
             if (stat.wordLength !== undefined) {
-              if (activeDifficulty === 'easy') return stat.wordLength === 4;
-              if (activeDifficulty === 'hard') return stat.wordLength === 6;
-              return stat.wordLength === 5; // regular
+              return stat.wordLength === targetLength;
             }
-            // Fallback to difficulty string (legacy)
             if (stat.difficulty !== undefined) {
-              if (activeDifficulty === 'easy') return stat.difficulty === 'easy';
-              if (activeDifficulty === 'hard') return stat.difficulty === 'hard';
-              return stat.difficulty === 'regular';
+              return stat.difficulty === (activeDifficulty === 'easy' ? 'easy' : 'regular');
             }
             return false;
           });
@@ -761,7 +811,13 @@ const LeaderboardScreen = () => {
           {item.username || item.displayName || 'Unknown Player'}
         </Text>
         <Text style={styles.difficultyScoreText}>
-          {activeDifficulty === 'easy' ? '🟢' : activeDifficulty === 'hard' ? '🔴' : '🟡'} {activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} <Text style={styles.scoreHighlight}>{item.finalScore ? item.finalScore.toFixed(2) : 'N/A'}</Text> Final Score
+          {getDifficultyIcon(activeDifficulty)} {getDifficultyLabel(activeDifficulty)}{' '}
+          <Text style={styles.scoreHighlight}>
+            {activeDifficulty === 'timed'
+              ? (item.bestStreak !== undefined ? item.bestStreak : 'N/A')
+              : (item.finalScore ? item.finalScore.toFixed(2) : 'N/A')}
+          </Text>{' '}
+          {activeDifficulty === 'timed' ? 'Best Streak' : 'Final Score'}
         </Text>
       </View>
     </View>
@@ -794,7 +850,13 @@ const LeaderboardScreen = () => {
           {item.username || item.displayName || 'Unknown Player'}
         </Text>
         <Text style={styles.difficultyScoreText}>
-          {activeDifficulty === 'easy' ? '🟢' : activeDifficulty === 'hard' ? '🔴' : '🟡'} {activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} <Text style={styles.scoreHighlight}>{item.runningAverage ? item.runningAverage.toFixed(2) : 'N/A'}</Text> Avg Attempts
+          {getDifficultyIcon(activeDifficulty)} {getDifficultyLabel(activeDifficulty)}{' '}
+          <Text style={styles.scoreHighlight}>
+            {activeDifficulty === 'timed'
+              ? (item.bestStreak !== undefined ? item.bestStreak : 'N/A')
+              : (item.runningAverage ? item.runningAverage.toFixed(2) : 'N/A')}
+          </Text>{' '}
+          {activeDifficulty === 'timed' ? 'Best Streak' : 'Avg Attempts'}
         </Text>
       </View>
     </View>
@@ -827,7 +889,7 @@ const LeaderboardScreen = () => {
           {item.username || item.displayName || 'Unknown Player'}
         </Text>
         <Text style={styles.difficultyScoreText}>
-          {activeDifficulty === 'easy' ? '🟢' : activeDifficulty === 'hard' ? '🔴' : '🟡'} {activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} <Text style={styles.scoreHighlight}>{item.winPercentage ? item.winPercentage.toFixed(1) : 'N/A'}%</Text> Win Rate
+          {getDifficultyIcon(activeDifficulty)} {getDifficultyLabel(activeDifficulty)} <Text style={styles.scoreHighlight}>{item.winPercentage ? item.winPercentage.toFixed(1) : 'N/A'}%</Text> Win Rate
         </Text>
       </View>
     </View>
@@ -884,9 +946,13 @@ const LeaderboardScreen = () => {
             </Text>
             <Text style={styles.playerStats}>
               {activeTab === 'global'
-                ? `Games: ${currentRank.gamesCount || 0}`
+                ? (activeDifficulty === 'timed'
+                    ? `Best Streak: ${currentRank.bestStreak || 0}`
+                    : `Games: ${currentRank.gamesCount || 0}`)
                 : activeTab === 'solo' 
-                  ? `Total Games: ${currentRank.totalGames || 0}`
+                  ? (activeDifficulty === 'timed'
+                      ? `Best Streak: ${currentRank.bestStreak || 0}`
+                      : `Total Games: ${currentRank.totalGames || 0}`)
                   : `Games: ${currentRank.totalGames || 0}`
               }
             </Text>
@@ -895,20 +961,30 @@ const LeaderboardScreen = () => {
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreText}>
               {activeTab === 'global'
-                ? (currentRank.finalScore ? currentRank.finalScore.toFixed(2) : 'N/A')
+                ? (activeDifficulty === 'timed'
+                    ? (currentRank.bestStreak !== undefined ? currentRank.bestStreak : 'N/A')
+                    : (currentRank.finalScore ? currentRank.finalScore.toFixed(2) : 'N/A'))
                 : activeTab === 'solo'
-                  ? (currentRank.runningAverage ? currentRank.runningAverage.toFixed(1) : 'N/A')
+                  ? (activeDifficulty === 'timed'
+                      ? (currentRank.bestStreak !== undefined ? currentRank.bestStreak : 'N/A')
+                      : (currentRank.runningAverage ? currentRank.runningAverage.toFixed(1) : 'N/A'))
                   : (currentRank.winPercentage ? currentRank.winPercentage.toFixed(1) + '%' : 'N/A')
               }
             </Text>
             <Text style={styles.scoreLabel}>
-              {activeTab === 'global' ? 'Final Score' : activeTab === 'solo' ? 'Avg Attempts' : 'Win Rate'}
+              {activeTab === 'global'
+                ? (activeDifficulty === 'timed' ? 'Best Streak' : 'Final Score')
+                : activeTab === 'solo'
+                  ? (activeDifficulty === 'timed' ? 'Best Streak' : 'Avg Attempts')
+                  : 'Win Rate'}
             </Text>
             <Text style={styles.gamesCountText}>
               {activeTab === 'global'
-                ? (currentRank.isEstimated ? '(Estimated rank)' : `(Last ${currentRank.gamesCount || 0} games)`)
+                ? (activeDifficulty === 'timed'
+                    ? (currentRank.isEstimated ? '(Estimated rank)' : '')
+                    : (currentRank.isEstimated ? '(Estimated rank)' : `(Last ${currentRank.gamesCount || 0} games)`))
                 : activeTab === 'solo'
-                  ? `(Last ${currentRank.gamesCount || 0} games)`
+                  ? (activeDifficulty === 'timed' ? '' : `(Last ${currentRank.gamesCount || 0} games)`)
                   : `(${currentRank.wins || 0}W / ${currentRank.totalGames || 0}G)`
               }
             </Text>
@@ -967,44 +1043,21 @@ const LeaderboardScreen = () => {
         
         {/* Difficulty Tabs (show for both Solo and PvP Mode) */}
         <View style={styles.difficultyTabContainer}>
-          <TouchableOpacity 
-            style={[styles.difficultyTab, activeDifficulty === 'easy' && styles.activeDifficultyTab]}
-            onPress={() => handleDifficultyChange('easy')}
-          >
-            <Text style={[styles.difficultyTabText, activeDifficulty === 'easy' && styles.activeDifficultyTabText]}>
-              Easy
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.difficultyTab, activeDifficulty === 'regular' && styles.activeDifficultyTab]}
-            onPress={() => handleDifficultyChange('regular')}
-          >
-            <Text style={[styles.difficultyTabText, activeDifficulty === 'regular' && styles.activeDifficultyTabText]}>
-              Regular
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[
-              styles.difficultyTab, 
-              activeDifficulty === 'hard' && styles.activeDifficultyTab,
-              !hardModeUnlocked && styles.lockedDifficultyTab
-            ]}
-            onPress={() => handleDifficultyChange('hard')}
-            disabled={!hardModeUnlocked}
-          >
-            <Text style={[
-              styles.difficultyTabText, 
-              activeDifficulty === 'hard' && styles.activeDifficultyTabText,
-              !hardModeUnlocked && styles.lockedDifficultyTabText
-            ]}>
-              {!hardModeUnlocked ? '🔒' : ''} Hard
-            </Text>
-            {!hardModeUnlocked && (
-              <Text style={styles.lockedDifficultySubtext}>
-                Reach Word Expert rank
+          {((activeTab === 'pvp') ? ['easy', 'regular'] : ['easy', 'regular', 'timed']).map((difficulty) => (
+            <TouchableOpacity
+              key={difficulty}
+              style={[
+                styles.difficultyTab,
+                activeTab === 'pvp' ? { flex: 1 } : null,
+                activeDifficulty === difficulty && styles.activeDifficultyTab,
+              ]}
+              onPress={() => handleDifficultyChange(difficulty)}
+            >
+              <Text style={[styles.difficultyTabText, activeDifficulty === difficulty && styles.activeDifficultyTabText]}>
+                {difficulty === 'easy' ? 'Easy' : difficulty === 'regular' ? 'Regular' : 'Timed'}
               </Text>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
         </View>
         
         {/* Current User's Position */}
@@ -1014,10 +1067,10 @@ const LeaderboardScreen = () => {
         <View style={[styles.section, { marginBottom: 0 }]}>
           <Text style={styles.sectionTitle}>
             {activeTab === 'global'
-              ? `Global Rankings - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
+              ? `Global Rankings - ${getDifficultyLabel(activeDifficulty)} Mode`
               : activeTab === 'solo' 
-                ? `Top Solo Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
-                : `Top PvP Players - ${activeDifficulty.charAt(0).toUpperCase() + activeDifficulty.slice(1)} Mode`
+                ? `Top Solo Players - ${getDifficultyLabel(activeDifficulty)} Mode`
+                : `Top PvP Players - ${getDifficultyLabel(activeDifficulty)} Mode`
             }
           </Text>
           {(activeTab === 'global' ? globalLeaderboard : activeTab === 'solo' ? soloLeaderboard : pvpLeaderboard).length > 0 ? (
@@ -1042,10 +1095,10 @@ const LeaderboardScreen = () => {
               ) : (
                 <Text style={styles.emptyText}>
                   {activeTab === 'global'
-                    ? `No players found for ${activeDifficulty} mode. Make sure you have 15+ games and are active within 7 days to appear on the leaderboard!`
+                    ? `No players found for ${getDifficultyLabel(activeDifficulty)} mode yet. Play timed games to build a streak!`
                     : activeTab === 'solo' 
-                      ? `No solo ${activeDifficulty} games played yet. Start playing to see rankings!`
-                      : `No PvP ${activeDifficulty} games completed yet. Challenge friends to see rankings!`
+                      ? `No solo ${getDifficultyLabel(activeDifficulty)} games played yet. Start playing to see rankings!`
+                      : `No PvP ${getDifficultyLabel(activeDifficulty)} games completed yet. Challenge friends to see rankings!`
                   }
                 </Text>
               )}

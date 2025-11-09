@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Image,
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
-import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where, updateDoc, deleteDoc, getDocs, orderBy, limit, getCountFromServer } from 'firebase/firestore';
 import { generateUsernameFromEmail } from './usernameValidation';
 import { onAuthStateChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -41,6 +41,7 @@ const HomeScreen = () => {
   // const [showRankModal, setShowRankModal] = useState(false); // OLD RANK SYSTEM - KEPT FOR FUTURE USE
   const [easyModeRank, setEasyModeRank] = useState(null);
   const [globalEasyRank, setGlobalEasyRank] = useState(null);
+  const [timedStreakRank, setTimedStreakRank] = useState(null);
   const invitesUnsubscribeRef = useRef(null);
   const challengesUnsubscribeRef = useRef(null);
 
@@ -478,6 +479,64 @@ const HomeScreen = () => {
     }
   };
 
+  const loadTimedStreakRank = async (currentUser) => {
+    try {
+      if (!currentUser) {
+        setTimedStreakRank(null);
+        return;
+      }
+
+      const streakField = 'timedStreakBest_easy';
+      const userDocSnap = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDocSnap.exists()) {
+        setTimedStreakRank(null);
+        return;
+      }
+
+      const userData = userDocSnap.data();
+      const userBestStreak = userData[streakField] || 0;
+
+      if (userBestStreak <= 0) {
+        setTimedStreakRank(null);
+        return;
+      }
+
+      const topQuery = query(
+        collection(db, 'users'),
+        orderBy(streakField, 'desc'),
+        limit(100)
+      );
+      const topSnapshot = await getDocs(topQuery);
+
+      const topEntries = topSnapshot.docs
+        .map((docSnap, index) => ({
+          uid: docSnap.id,
+          bestStreak: docSnap.data()[streakField] || 0,
+          rank: index + 1,
+        }))
+        .filter(entry => entry.bestStreak > 0);
+
+      const topMatch = topEntries.find(entry => entry.uid === currentUser.uid);
+      if (topMatch) {
+        setTimedStreakRank(topMatch.rank);
+        return;
+      }
+
+      const countQuery = query(
+        collection(db, 'users'),
+        where(streakField, '>', userBestStreak),
+        orderBy(streakField)
+      );
+      const countSnapshot = await getCountFromServer(countQuery);
+      const higherCount = countSnapshot.data().count || 0;
+
+      setTimedStreakRank(higherCount + 1);
+    } catch (error) {
+      console.error('HomeScreen: Failed to load timed streak rank:', error);
+      setTimedStreakRank(null);
+    }
+  };
+
   const loadUserProfile = async (currentUser) => {
     try {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -883,6 +942,7 @@ const HomeScreen = () => {
               loadUserProfile(currentUser),
               loadEasyModeRank(currentUser),
               loadGlobalEasyRank(currentUser),
+              loadTimedStreakRank(currentUser),
               Promise.resolve().then(() => setIsSoundReady(true)).catch(() => setIsSoundReady(false)),
               checkFirstLaunch(),
               clearStuckGameState(), // Clear any stuck game state
@@ -911,6 +971,7 @@ const HomeScreen = () => {
                 loadUserProfile(currentUser),
                 loadEasyModeRank(currentUser),
                 loadGlobalEasyRank(currentUser),
+                loadTimedStreakRank(currentUser),
                 Promise.resolve(),
                 checkFirstLaunch(),
                 clearStuckGameState(), // Clear any stuck game state
@@ -996,6 +1057,7 @@ const HomeScreen = () => {
         refreshUserProfile(user);
         loadEasyModeRank(user);
         loadGlobalEasyRank(user);
+        loadTimedStreakRank(user);
       }
     }, [user, isAuthenticating])
   );
@@ -1197,7 +1259,7 @@ const HomeScreen = () => {
         <View style={{ alignItems: 'center', width: '100%' }}>
           <Image
             source={require('../assets/images/WhatWord-header.png')}
-            style={[styles.imageHeader, { marginTop: 5, marginBottom: 5 }]}
+            style={[styles.imageHeader, { marginTop: -10, marginBottom: 20 }]}
             resizeMode="contain"
           />
         </View>
@@ -1206,7 +1268,6 @@ const HomeScreen = () => {
       <View
         style={{ flex: 1, width: '100%', paddingTop: 0, paddingBottom: 20, alignItems: 'center' }}
       >
-        <Text style={[styles.header, { marginBottom: 40, color: colors.textPrimary }]}>Welcome, {displayName}</Text>
         
         {/* Easy Mode Leaderboard Positions - Clickable to go to Leaderboard */}
         <TouchableOpacity
@@ -1215,7 +1276,7 @@ const HomeScreen = () => {
             playSound('rank');
             navigation.navigate('Leaderboard', { initialTab: 'solo', initialDifficulty: 'easy' });
           }}
-          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginBottom: 10 }]}
+          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginTop: 10, marginBottom: 10 }]}
         >
           <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Friends Rank:</Text>
           <Text style={[styles.rankValue, { color: colors.primary }]}>
@@ -1229,11 +1290,25 @@ const HomeScreen = () => {
             playSound('rank');
             navigation.navigate('Leaderboard', { initialTab: 'global', initialDifficulty: 'easy' });
           }}
-          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary }]}
+          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginBottom: 10 }]}
         >
           <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Global Rank:</Text>
           <Text style={[styles.rankValue, { color: colors.primary }]}>
             {globalEasyRank ? formatRankOrdinal(globalEasyRank) : 'N/A'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => {
+            playSound('rank');
+            navigation.navigate('Leaderboard', { initialTab: 'global', initialDifficulty: 'timed' });
+          }}
+          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginBottom: 20 }]}
+        >
+          <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Streak Rank:</Text>
+          <Text style={[styles.rankValue, { color: colors.primary }]}>
+            {timedStreakRank ? formatRankOrdinal(timedStreakRank) : 'N/A'}
           </Text>
         </TouchableOpacity>
         

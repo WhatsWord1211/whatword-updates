@@ -172,13 +172,6 @@ const SetWordScreen = () => {
             >
               <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Regular (5 letters)</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.difficultyButton}
-              onPress={() => selectDifficulty('hard')}
-            >
-              <Text style={[styles.buttonText, { numberOfLines: 1 }]}>Hard (6 letters)</Text>
-            </TouchableOpacity>
           </>
         ) : (
           <>
