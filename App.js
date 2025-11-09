@@ -15,6 +15,7 @@ import PendingChallengesScreen from './src/PendingChallengesScreen';
 import FriendsListScreen from './src/FriendsListScreen';
 import HowToPlayScreen from './src/HowToPlayScreen';
 import GameScreen from './src/GameScreen';
+import TimedGameScreen from './src/TimedGameScreen';
 import ProfileScreen from './src/ProfileScreen';
 import SetWordScreen from './src/SetWordScreen';
 import SetWordGameScreen from './src/SetWordGameScreen';
@@ -25,6 +26,8 @@ import SettingsScreen from './src/SettingsScreen';
 import PrivacySettingsScreen from './src/PrivacySettingsScreen';
 import FriendDiscoveryScreen from './src/FriendDiscoveryScreen';
 import LegalScreen from './src/LegalScreen';
+import SoloModeSelectionScreen from './src/SoloModeSelectionScreen';
+import TimedSelectDifficultyScreen from './src/TimedSelectDifficultyScreen';
 
 import { ThemeProvider } from './src/ThemeContext';
 import './src/adService'; // Initialize AdMob service
@@ -348,6 +351,9 @@ export default function App() {
                   }}
                 />
                 <Stack.Screen name="Game" component={GameScreen} />
+                <Stack.Screen name="SoloModeSelect" component={SoloModeSelectionScreen} />
+                <Stack.Screen name="TimedSelectDifficulty" component={TimedSelectDifficultyScreen} />
+                <Stack.Screen name="TimedGame" component={TimedGameScreen} />
                 <Stack.Screen name="Profile" component={ProfileScreen} />
                 <Stack.Screen name="SetWord" component={SetWordScreen} />
                 <Stack.Screen 

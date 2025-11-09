@@ -284,7 +284,7 @@ const GameScreen = () => {
       });
       setUsedHintLetters(prev => [...prev, hintLetter]);
       if (gameMode === 'solo') {
-        setGuessesWithLog((prev) => [...prev, { word: 'HINT', isHint: true }]);
+        setGuessesWithLog((prev) => [...prev, { word: 'HINT', isHint: true, hintLetter }]);
       }
       setHintLetter(hintLetter);
       setHintCount(prev => prev + 1);
@@ -338,7 +338,7 @@ const GameScreen = () => {
               
               // Restore common game state for both solo and PvP
               // Validate and clean guesses data
-              const validatedGuesses = (savedGame.guesses || []).map((guess, index) => {
+      const validatedGuesses = (savedGame.guesses || []).map((guess, index) => {
                 // Reduced logging for better performance on iPad
                 
                 if (!guess || typeof guess !== 'object') {
@@ -369,7 +369,8 @@ const GameScreen = () => {
                   circles: circles,
                   feedback: feedback,
                   isCorrect: Boolean(guess.isCorrect),
-                  isHint: Boolean(guess.isHint)
+                  isHint: Boolean(guess.isHint),
+                  hintLetter: guess.hintLetter
                 };
                 
                 // Reduced logging for better performance on iPad
@@ -466,7 +467,8 @@ const GameScreen = () => {
             circles: guaranteeCircles(guess.circles),
             feedback: guess.feedback,
             isCorrect: guess.isCorrect,
-            isHint: guess.isHint || false
+            isHint: guess.isHint || false,
+            hintLetter: guess.hintLetter
           })),
           inputWord,
           alphabet,
@@ -1141,7 +1143,9 @@ const GameScreen = () => {
                   <View style={[styles.guessWord, { width: isIPad ? 280 : 140, minHeight: isIPad ? 40 : 32 }]}>
                     {g.isHint ? (
                       <View style={{ justifyContent: 'center', alignItems: 'center', height: isIPad ? 40 : 32 }}>
-                        <Text style={{ fontSize: isIPad ? 22 : 18, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>HINT</Text>
+                        <Text style={{ fontSize: isIPad ? 22 : 18, color: colors.textPrimary, fontFamily: 'Roboto-Regular', includeFontPadding: false }}>
+                          {`HINT   ${g.hintLetter || ''}`}
+                        </Text>
                       </View>
                     ) : (
                       g.word.split('').map((letter, i) => (

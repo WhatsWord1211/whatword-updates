@@ -12,12 +12,15 @@ import gameService from './gameService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './ThemeContext';
 
+const TIMED_DURATION_MS = 3 * 60 * 1000;
+
 const ResumeGamesScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [user, setUser] = useState(null);
   const [soloGames, setSoloGames] = useState([]);
+  const [timedGames, setTimedGames] = useState([]);
   const [pvpGames, setPvpGames] = useState([]);
   const [pendingChallenges, setPendingChallenges] = useState([]);
   const [waitingForOpponentGames, setWaitingForOpponentGames] = useState([]);
@@ -30,6 +33,8 @@ const ResumeGamesScreen = () => {
   const [challengeToCancel, setChallengeToCancel] = useState(null);
   const [showNudgeSentPopup, setShowNudgeSentPopup] = useState(false);
   const [nudgeSentMessage, setNudgeSentMessage] = useState('');
+  const [showAlreadyNudgedPopup, setShowAlreadyNudgedPopup] = useState(false);
+  const [alreadyNudgedMessage, setAlreadyNudgedMessage] = useState('');
   
   // This screen now shows:
   // 1. Pending challenges (waiting for acceptance)
@@ -75,54 +80,54 @@ const ResumeGamesScreen = () => {
   const loadSoloGames = async (userId) => {
     try {
       const savedGames = await AsyncStorage.getItem('savedGames');
-      if (savedGames) {
-        const games = JSON.parse(savedGames);
-        // Filter for solo games that are not completed AND belong to the current user
-        // For backward compatibility, also include solo games without playerId (legacy games)
-        const soloGames = games.filter(game => 
-          game.gameMode === 'solo' && 
-          game.gameState !== 'gameOver' && 
-          game.gameState !== 'maxGuesses' &&
-          game.targetWord &&
-          (game.playerId === userId || !game.playerId) // Include legacy games without playerId
-        );
-        
-        // Migrate legacy solo games by adding playerId
-        let needsUpdate = false;
-        const migratedGames = soloGames.map(game => {
-          if (!game.playerId) {
-            needsUpdate = true;
-            return { ...game, playerId: userId };
-          }
-          return game;
-        });
-        
-        // Update AsyncStorage if any games were migrated
-        if (needsUpdate) {
-          const updatedGames = games.map(game => {
-            if (game.gameMode === 'solo' && !game.playerId) {
-              return { ...game, playerId: userId };
-            }
-            return game;
-          });
-          await AsyncStorage.setItem('savedGames', JSON.stringify(updatedGames));
-          console.log('ResumeGamesScreen: Migrated legacy solo games with playerId');
-        }
-        
-        // Sort solo games chronologically with oldest first
-        migratedGames.sort((a, b) => {
-          const dateA = new Date(a.timestamp || 0);
-          const dateB = new Date(b.timestamp || 0);
-          return dateA - dateB; // Oldest first (ascending order)
-        });
-        
-        setSoloGames(migratedGames);
-      } else {
+      if (!savedGames) {
         setSoloGames([]);
+        setTimedGames([]);
+        return;
       }
+
+      const games = JSON.parse(savedGames);
+      let needsUpdate = false;
+      const normalizedGames = games.map(game => {
+        if ((game.gameMode === 'solo' || game.gameMode === 'timed') && !game.playerId) {
+          needsUpdate = true;
+          return { ...game, playerId: userId };
+        }
+        return game;
+      });
+
+      if (needsUpdate) {
+        await AsyncStorage.setItem('savedGames', JSON.stringify(normalizedGames));
+        console.log('ResumeGamesScreen: Migrated legacy solo/timed games with playerId');
+      }
+
+      const solo = normalizedGames.filter(game =>
+        game.gameMode === 'solo' &&
+        game.gameState !== 'gameOver' &&
+        game.gameState !== 'maxGuesses' &&
+        game.targetWord &&
+        game.playerId === userId
+      );
+
+      const timed = normalizedGames.filter(game =>
+        game.gameMode === 'timed' &&
+        game.targetWord &&
+        game.gameState === 'playing' &&
+        game.playerId === userId
+      );
+
+      const sortByTimestamp = (arr) => arr.sort((a, b) => {
+        const dateA = new Date(a.timestamp || 0);
+        const dateB = new Date(b.timestamp || 0);
+        return dateA - dateB;
+      });
+
+      setSoloGames(sortByTimestamp(solo));
+      setTimedGames(sortByTimestamp(timed));
     } catch (error) {
-      console.error('ResumeGamesScreen: Failed to load solo games:', error);
+      console.error('ResumeGamesScreen: Failed to load saved games:', error);
       setSoloGames([]);
+      setTimedGames([]);
     }
   };
 
@@ -134,6 +139,7 @@ const ResumeGamesScreen = () => {
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (!userDoc.exists()) {
         setSoloGames([]);
+        setTimedGames([]);
         setPvpGames([]);
         setPendingChallenges([]);
         setWaitingForOpponentGames([]);
@@ -726,10 +732,8 @@ const ResumeGamesScreen = () => {
         
         // Check if already nudged
         if (nudgedBy.includes(currentUser.uid)) {
-          Alert.alert(
-            'Already Nudged',
-            'You have already sent a nudge for this challenge. Your opponent will be notified when they open the app.'
-          );
+          setAlreadyNudgedMessage('You have already sent a nudge for this challenge. Your opponent will be notified when they open the app.');
+          setShowAlreadyNudgedPopup(true);
           return;
         }
 
@@ -748,6 +752,17 @@ const ResumeGamesScreen = () => {
           nudgedBy: arrayUnion(currentUser.uid),
           nudgedAt: new Date().toISOString()
         });
+
+        setPendingChallenges(prevChallenges =>
+          prevChallenges.map(prev =>
+            prev.id === challengeId
+              ? {
+                  ...prev,
+                  nudgedBy: Array.from(new Set([...(prev.nudgedBy || []), currentUser.uid]))
+                }
+              : prev
+          )
+        );
 
         // Send notification
         const notificationService = getNotificationService();
@@ -780,10 +795,8 @@ const ResumeGamesScreen = () => {
         
         // Check if already nudged
         if (nudgedBy.includes(currentUser.uid)) {
-          Alert.alert(
-            'Already Nudged',
-            'You have already sent a nudge for this game. Your opponent will be notified when they open the app.'
-          );
+          setAlreadyNudgedMessage('You have already sent a nudge for this game. Your opponent will be notified when they open the app.');
+          setShowAlreadyNudgedPopup(true);
           return;
         }
 
@@ -801,6 +814,17 @@ const ResumeGamesScreen = () => {
           nudgedBy: arrayUnion(currentUser.uid),
           nudgedAt: new Date().toISOString()
         });
+
+        setWaitingForOpponentGames(prevGames =>
+          prevGames.map(prev =>
+            prev.gameId === gameId
+              ? {
+                  ...prev,
+                  nudgedBy: Array.from(new Set([...(prev.nudgedBy || []), currentUser.uid]))
+                }
+              : prev
+          )
+        );
 
         // Send notification
         const notificationService = getNotificationService();
@@ -975,22 +999,13 @@ const ResumeGamesScreen = () => {
             </TouchableOpacity>
           </View>
         ) : item.gameType === 'pending_challenge' ? (
-          // For pending challenges, show Nudge and Respond buttons
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <TouchableOpacity
-              style={[styles.redQuitButton, { backgroundColor: hasNudged ? colors.surface : colors.primary, opacity: hasNudged ? 0.6 : 1, marginRight: 8 }]}
-              onPress={() => handleNudge(item)}
-              disabled={hasNudged}
-            >
-              <Text style={[styles.redQuitButtonText, { color: hasNudged ? colors.textSecondary : '#FFFFFF' }]}>Nudge</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.compactChallengeButton}
-              onPress={() => handleGameAction(item)}
-            >
-              <Text style={styles.compactChallengeButtonText}>Respond</Text>
-            </TouchableOpacity>
-          </View>
+          // For incoming challenges, only show Respond button
+          <TouchableOpacity
+            style={styles.compactChallengeButton}
+            onPress={() => handleGameAction(item)}
+          >
+            <Text style={styles.compactChallengeButtonText}>Respond</Text>
+          </TouchableOpacity>
         ) : (
           // For other game types, show single button
           <TouchableOpacity
@@ -1005,6 +1020,21 @@ const ResumeGamesScreen = () => {
       </TouchableOpacity>
     );
   }, [colors, handleGameAction, handleCancelChallenge, handleQuitGame, handleNudge]);
+
+  const handleResumeTimedGame = async (game) => {
+    try {
+      await playSound('backspace').catch(() => {});
+      navigation.navigate('TimedGame', {
+        gameId: game.gameId,
+        resumeGame: true,
+        difficulty: game.difficulty || (game.wordLength === 4 ? 'easy' : game.wordLength === 6 ? 'hard' : 'regular'),
+        wordLength: game.wordLength || 5,
+      });
+    } catch (error) {
+      console.error('ResumeGamesScreen: Failed to resume timed game:', error);
+      Alert.alert('Error', 'Failed to resume timed game. Please try again.');
+    }
+  };
 
   const renderSoloGameItem = ({ item }) => {
     const getDifficultyText = (wordLength) => {
@@ -1063,6 +1093,53 @@ const ResumeGamesScreen = () => {
     );
   };
 
+  const renderTimedGameItem = ({ item }) => {
+    const computeRemaining = () => {
+      if (typeof item.remainingTimeMs === 'number') {
+        return Math.max(item.remainingTimeMs, 0);
+      }
+      if (item.timerDeadline) {
+        const deadline = new Date(item.timerDeadline).getTime();
+        return Math.max(deadline - Date.now(), 0);
+      }
+      return TIMED_DURATION_MS;
+    };
+
+    const formatTime = (ms) => {
+      const totalSeconds = Math.max(Math.floor(ms / 1000), 0);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    const remainingMs = computeRemaining();
+    const timeLeft = formatTime(remainingMs);
+    const difficultyLabel = item.difficulty ? item.difficulty.charAt(0).toUpperCase() + item.difficulty.slice(1) : 'Regular';
+
+    return (
+      <TouchableOpacity
+        style={styles.soloGameItem}
+        onPress={() => handleResumeTimedGame(item)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.soloGameContent}>
+          <View style={styles.soloGameInfo}>
+            <Text style={styles.soloGameTitle}>Timed • {difficultyLabel}</Text>
+            <Text style={styles.unifiedDate}>
+              Started: {new Date(item.timestamp || Date.now()).toLocaleDateString()}
+            </Text>
+            <Text style={[styles.unifiedDate, { color: colors.textSecondary, marginTop: 2 }]}>
+              Time left: {timeLeft}
+            </Text>
+          </View>
+          <View style={styles.soloGameAction}>
+            <Text style={styles.soloGameResumeText}>Resume</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
@@ -1085,7 +1162,7 @@ const ResumeGamesScreen = () => {
     );
   }
 
-  const hasGames = soloGames.length > 0 || pvpGames.length > 0 || 
+  const hasGames = soloGames.length > 0 || timedGames.length > 0 || pvpGames.length > 0 || 
                    pendingChallenges.length > 0 || waitingForOpponentGames.length > 0 ||
                    completedUnseenGames.length > 0;
 
@@ -1181,6 +1258,20 @@ const ResumeGamesScreen = () => {
                 <FlatList
                   data={completedUnseenGames}
                   renderItem={renderGameItem}
+                  keyExtractor={(item) => item.gameId}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            )}
+
+            {timedGames.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Timed Games ({timedGames.length})</Text>
+                <Text style={styles.sectionSubtitle}>Continue your timed solo runs</Text>
+                <FlatList
+                  data={timedGames}
+                  renderItem={renderTimedGameItem}
                   keyExtractor={(item) => item.gameId}
                   scrollEnabled={false}
                   showsVerticalScrollIndicator={false}
@@ -1308,6 +1399,27 @@ const ResumeGamesScreen = () => {
               onPress={() => {
                 setShowNudgeSentPopup(false);
                 playSound('chime').catch(() => {});
+              }}
+            >
+              <Text style={styles.buttonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Already Nudged Popup */}
+      <Modal visible={showAlreadyNudgedPopup} transparent animationType="fade" statusBarTranslucent={false}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.winPopup, styles.modalShadow, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.winTitle, { color: colors.textPrimary }]}>Already Nudged</Text>
+            <Text style={[styles.winMessage, { color: colors.textSecondary }]}>
+              {alreadyNudgedMessage}
+            </Text>
+            <TouchableOpacity
+              style={styles.winButtonContainer}
+              onPress={() => {
+                setShowAlreadyNudgedPopup(false);
+                playSound('backspace').catch(() => {});
               }}
             >
               <Text style={styles.buttonText}>OK</Text>

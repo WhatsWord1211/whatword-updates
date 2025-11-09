@@ -25,6 +25,7 @@ const LeaderboardScreen = () => {
   const [activeDifficulty, setActiveDifficulty] = useState(initialDifficulty || 'regular'); // 'easy', 'regular', or 'hard'
   const [userFriends, setUserFriends] = useState([]);
   const [hardModeUnlocked, setHardModeUnlocked] = useState(false);
+  const [needsMoreGames, setNeedsMoreGames] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -199,6 +200,7 @@ const LeaderboardScreen = () => {
     try {
       console.log('LeaderboardScreen: Loading global leaderboard for difficulty:', activeDifficulty);
       setIsLoading(true);
+      setNeedsMoreGames(false);
       
       // Check if we have cached data (to avoid recalculating every time)
       const leaderboardRef = doc(db, 'globalLeaderboard', activeDifficulty);
@@ -219,6 +221,7 @@ const LeaderboardScreen = () => {
           if (userEntry) {
             setUserGlobalRank(userEntry);
             setIsUserInactive(false);
+            setNeedsMoreGames(false);
             setIsLoading(false);
             return;
           }
@@ -250,6 +253,7 @@ const LeaderboardScreen = () => {
         setGlobalLeaderboard([]);
         setUserGlobalRank(null);
         setIsUserInactive(false);
+        setNeedsMoreGames(false);
         setIsLoading(false);
         return;
       }
@@ -414,6 +418,7 @@ const LeaderboardScreen = () => {
       if (userEntry) {
         setUserGlobalRank(userEntry);
         setIsUserInactive(false);
+        setNeedsMoreGames(false);
       } else {
         // User not in top 100 - check if they're inactive or just not ranked
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -507,18 +512,22 @@ const LeaderboardScreen = () => {
                 isEstimated: true
               });
               setIsUserInactive(false);
+              setNeedsMoreGames(false);
             } else {
               setUserGlobalRank(null);
               setIsUserInactive(false);
+              setNeedsMoreGames(true);
             }
           } else {
             // User doesn't have 20 games yet
             setUserGlobalRank(null);
             setIsUserInactive(false);
+            setNeedsMoreGames(true);
           }
         } else {
           setUserGlobalRank(null);
           setIsUserInactive(false);
+          setNeedsMoreGames(false);
         }
       }
       setIsLoading(false);
@@ -527,6 +536,7 @@ const LeaderboardScreen = () => {
       setGlobalLeaderboard([]);
       setUserGlobalRank(null);
       setIsUserInactive(false);
+      setNeedsMoreGames(false);
       setIsLoading(false);
     }
   };
@@ -846,6 +856,18 @@ const LeaderboardScreen = () => {
       );
     }
     
+    if (activeTab === 'global' && needsMoreGames) {
+      return (
+        <View style={styles.userRankContainer}>
+          <View style={[styles.leaderboardItem, styles.currentUserItem]}>
+            <Text style={styles.currentUserName}>
+              Must play at least 15 games to qualify
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
     if (!currentRank) return null;
     
     return (

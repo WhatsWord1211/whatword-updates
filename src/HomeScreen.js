@@ -170,6 +170,7 @@ const HomeScreen = () => {
   const loadGlobalEasyRank = async (currentUser) => {
     try {
       console.log('HomeScreen: Loading global EASY mode rank for user:', currentUser.uid);
+      setGlobalEasyRank(null);
       
       // Check if user has 15+ games in easy mode
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -1255,7 +1256,7 @@ const HomeScreen = () => {
         
         <TouchableOpacity
           style={styles.button}
-          onPress={() => handleButtonPress('Game', { gameMode: 'solo', showDifficulty: true })}
+          onPress={() => handleButtonPress('SoloModeSelect')}
         >
           <Text style={styles.buttonText}>Play Solo</Text>
         </TouchableOpacity>
