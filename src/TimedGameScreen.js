@@ -137,10 +137,8 @@ const TimedGameScreen = () => {
 
   const showCompletionAd = useCallback(async () => {
     try {
-      if (Platform.OS === 'ios') {
-        adService.showInterstitialAd().catch(() => {});
-      } else {
-        await adService.showInterstitialAd();
+      await adService.showInterstitialAd();
+      if (Platform.OS === 'android') {
         const { reconfigureAudio } = require('./soundsUtil');
         await reconfigureAudio().catch(() => {});
       }
@@ -236,7 +234,29 @@ const TimedGameScreen = () => {
     try {
       const key = getStreakStorageKey(diff);
       const stored = await AsyncStorage.getItem(key);
-      const parsed = stored !== null ? parseInt(stored, 10) : 0;
+      let parsed = stored !== null ? parseInt(stored, 10) : NaN;
+
+      if (Number.isNaN(parsed)) {
+        const user = auth.currentUser;
+        if (user) {
+          try {
+            const userRef = doc(db, 'users', user.uid);
+            const snapshot = await getDoc(userRef);
+            if (snapshot.exists()) {
+              const field = diff === 'easy' ? 'timedStreakCurrent_easy' : 'timedStreakCurrent_regular';
+              const remoteValue = snapshot.data()?.[field];
+              parsed = typeof remoteValue === 'number' ? remoteValue : 0;
+              await AsyncStorage.setItem(key, parsed.toString());
+            }
+          } catch (firestoreError) {
+            console.error('TimedGameScreen: Failed to fetch streak from profile:', firestoreError);
+            parsed = 0;
+          }
+        } else {
+          parsed = 0;
+        }
+      }
+
       setStreakCount(Number.isNaN(parsed) ? 0 : parsed);
     } catch (error) {
       console.error('TimedGameScreen: Failed to load streak:', error);
