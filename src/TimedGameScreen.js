@@ -297,11 +297,28 @@ const TimedGameScreen = () => {
     }
   }, [gameId]);
 
-  const saveGameState = useCallback(async () => {
-    if (gameState !== 'playing' || !targetWord) return;
-    if ((resumeGame || savedGameState) && !guessesLoaded) return;
+  const saveGameState = useCallback(async (options = {}) => {
+    const {
+      remainingOverride,
+      timerDeadlineOverride,
+      force = false,
+    } = options;
+
+    if ((!force && (gameState !== 'playing' || !targetWord))) return;
+    if (!targetWord) return;
+    if (!force && (resumeGame || savedGameState) && !guessesLoaded) return;
 
     try {
+      const chosenRemaining = typeof remainingOverride === 'number'
+        ? remainingOverride
+        : remainingTimeMs;
+      const chosenDeadline = timerDeadlineOverride !== undefined
+        ? timerDeadlineOverride
+        : timerDeadlineRef.current;
+      const normalizedDeadline = typeof chosenDeadline === 'number'
+        ? chosenDeadline
+        : null;
+
       const gameData = {
         gameMode: 'timed',
         wordLength,
@@ -313,8 +330,8 @@ const TimedGameScreen = () => {
         gameState,
         difficulty,
         timestamp: new Date().toISOString(),
-        timerDeadline: timerDeadlineRef.current ? new Date(timerDeadlineRef.current).toISOString() : null,
-        remainingTimeMs,
+        timerDeadline: normalizedDeadline ? new Date(normalizedDeadline).toISOString() : null,
+        remainingTimeMs: typeof chosenRemaining === 'number' ? Math.max(chosenRemaining, 0) : 0,
         timerDurationMs,
         playerId: auth.currentUser?.uid,
       };
@@ -381,11 +398,21 @@ const TimedGameScreen = () => {
       }
 
       const savedDifficulty = existing.difficulty || difficulty || 'regular';
+      const normalizedDifficulty = normalizeTimedDifficulty(savedDifficulty);
       const duration = existing.timerDurationMs || getDurationForDifficulty(savedDifficulty);
       setTimerDurationMs(duration);
-      const deadline = existing.timerDeadline ? new Date(existing.timerDeadline).getTime() : Date.now() + duration;
-      timerDeadlineRef.current = deadline;
-      const remaining = Math.max(deadline - Date.now(), 0);
+      let storedRemaining = typeof existing.remainingTimeMs === 'number' ? existing.remainingTimeMs : NaN;
+      if (Number.isNaN(storedRemaining) && typeof existing.remainingTimeMs === 'string') {
+        const parsed = parseInt(existing.remainingTimeMs, 10);
+        storedRemaining = Number.isNaN(parsed) ? NaN : parsed;
+      }
+      const fallbackDeadline = existing.timerDeadline ? new Date(existing.timerDeadline).getTime() : null;
+      let remaining = Number.isFinite(storedRemaining) ? Math.max(storedRemaining, 0) : NaN;
+      if (!Number.isFinite(remaining)) {
+        remaining = fallbackDeadline ? Math.max(fallbackDeadline - Date.now(), 0) : duration;
+      }
+      timerDeadlineRef.current = remaining > 0 ? Date.now() + remaining : null;
+      timeUpHandledRef.current = false;
 
       setDifficulty(savedDifficulty);
       setWordLength(existing.wordLength || wordLength);
@@ -398,7 +425,7 @@ const TimedGameScreen = () => {
       setGuessesLoaded(true);
       setIsLoading(false);
 
-      await loadStreakForDifficulty(savedDifficulty);
+      await loadStreakForDifficulty(normalizedDifficulty);
 
       if (remaining <= 0) {
         handleTimeExpired();
@@ -579,7 +606,6 @@ const TimedGameScreen = () => {
       setShowQuitConfirmPopup(false);
       clearTimer();
       setGameState('timeUp');
-      await saveGameState();
       await cleanupCompletedTimedGame();
       updateStreak(false);
       setShowWordRevealPopup(true);
@@ -596,6 +622,7 @@ const TimedGameScreen = () => {
     setShowMaxGuessesPopup(false);
     setShowTimeUpPopup(false);
     await showCompletionAd();
+    await cleanupCompletedTimedGame();
     setGameId(`timed_${Date.now()}`);
     timerDeadlineRef.current = null;
     timeUpHandledRef.current = false;
@@ -604,13 +631,14 @@ const TimedGameScreen = () => {
     setTimerDurationMs(duration);
     setRemainingTimeMs(duration);
     await initializeNewGame();
-  }, [difficulty, initializeNewGame, showCompletionAd]);
+  }, [cleanupCompletedTimedGame, difficulty, initializeNewGame, showCompletionAd]);
 
   const handleReturnHome = useCallback(async () => {
+    await cleanupCompletedTimedGame();
     await showCompletionAd();
     playSound('chime').catch(() => {});
     navigation.navigate('MainTabs');
-  }, [navigation, showCompletionAd]);
+  }, [cleanupCompletedTimedGame, navigation, showCompletionAd]);
 
   const renderGuessRow = (guess, idx) => (
     <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 40 : 32, paddingVertical: 0, marginBottom: isIPad ? 2 : 1 }]}> 
@@ -664,7 +692,14 @@ const TimedGameScreen = () => {
 
   const handleSaveAndExit = async () => {
     try {
-      await saveGameState();
+      const snapshotRemaining = remainingTimeMs;
+      clearTimer();
+      timerDeadlineRef.current = null;
+      await saveGameState({
+        remainingOverride: snapshotRemaining,
+        timerDeadlineOverride: null,
+        force: true,
+      });
     } catch (error) {
       console.error('TimedGameScreen: Failed to save before exit:', error);
     } finally {

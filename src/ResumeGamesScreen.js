@@ -7,12 +7,22 @@ import { doc, getDoc, getDocs, onSnapshot, collection, query, where, updateDoc, 
 import { getNotificationService } from './notificationService';
 import { playSound } from './soundsUtil';
 import styles from './styles';
-import adService from './adService';
 import gameService from './gameService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './ThemeContext';
 
-const TIMED_DURATION_MS = 3 * 60 * 1000;
+const TIMED_DURATION_MAP = {
+  easy: 2.5 * 60 * 1000,
+  regular: 3.5 * 60 * 1000,
+};
+
+const getTimedDuration = (diff) => {
+  if (!diff) return TIMED_DURATION_MAP.regular;
+  if (diff in TIMED_DURATION_MAP) {
+    return TIMED_DURATION_MAP[diff];
+  }
+  return TIMED_DURATION_MAP.regular;
+};
 
 const ResumeGamesScreen = () => {
   const navigation = useNavigation();
@@ -89,16 +99,66 @@ const ResumeGamesScreen = () => {
       const games = JSON.parse(savedGames);
       let needsUpdate = false;
       const normalizedGames = games.map(game => {
+        let updatedGame = game;
+        let mutated = false;
+
+        const ensureMutable = () => {
+          if (!mutated) {
+            updatedGame = { ...updatedGame };
+            mutated = true;
+          }
+        };
+
         if ((game.gameMode === 'solo' || game.gameMode === 'timed') && !game.playerId) {
-          needsUpdate = true;
-          return { ...game, playerId: userId };
+          ensureMutable();
+          updatedGame.playerId = userId;
         }
-        return game;
+
+        if (game.gameMode === 'timed') {
+          const normalizedDifficulty = game.difficulty === 'easy' ? 'easy' : 'regular';
+          const duration = getTimedDuration(normalizedDifficulty);
+          const currentRemaining = typeof game.remainingTimeMs === 'number'
+            ? game.remainingTimeMs
+            : (typeof game.remainingTimeMs === 'string' ? parseInt(game.remainingTimeMs, 10) : NaN);
+
+          if (typeof game.timerDurationMs !== 'number' || game.timerDurationMs <= 0) {
+            ensureMutable();
+            updatedGame.timerDurationMs = duration;
+          }
+
+          if (Number.isNaN(currentRemaining)) {
+            let computedRemaining = duration;
+            if (game.timerDeadline) {
+              const deadline = new Date(game.timerDeadline).getTime();
+              if (!Number.isNaN(deadline)) {
+                computedRemaining = Math.max(deadline - Date.now(), 0);
+              }
+            }
+            ensureMutable();
+            updatedGame.remainingTimeMs = computedRemaining;
+          } else if (typeof game.remainingTimeMs === 'string') {
+            ensureMutable();
+            updatedGame.remainingTimeMs = Math.max(currentRemaining, 0);
+          } else if (currentRemaining > duration) {
+            ensureMutable();
+            updatedGame.remainingTimeMs = duration;
+          }
+
+          if (game.timerDeadline) {
+            ensureMutable();
+            updatedGame.timerDeadline = null;
+          }
+        }
+
+        if (mutated) {
+          needsUpdate = true;
+        }
+        return updatedGame;
       });
 
       if (needsUpdate) {
         await AsyncStorage.setItem('savedGames', JSON.stringify(normalizedGames));
-        console.log('ResumeGamesScreen: Migrated legacy solo/timed games with playerId');
+        console.log('ResumeGamesScreen: Normalized saved solo/timed games metadata');
       }
 
       const solo = normalizedGames.filter(game =>
@@ -1036,6 +1096,35 @@ const ResumeGamesScreen = () => {
     }
   };
 
+  const handleQuitTimedGame = useCallback((game) => {
+    Alert.alert(
+      'Quit Timed Game?',
+      'This will abandon your timed run and remove it from the list.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Quit',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await playSound('backspace').catch(() => {});
+              const savedGames = await AsyncStorage.getItem('savedGames');
+              if (savedGames) {
+                const games = JSON.parse(savedGames);
+                const filtered = games.filter(g => g.gameId !== game.gameId);
+                await AsyncStorage.setItem('savedGames', JSON.stringify(filtered));
+              }
+              setTimedGames(prev => prev.filter(g => g.gameId !== game.gameId));
+            } catch (error) {
+              console.error('ResumeGamesScreen: Failed to remove timed game:', error);
+              Alert.alert('Error', 'Failed to remove timed game. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, []);
+
   const renderSoloGameItem = ({ item }) => {
     const getDifficultyText = (wordLength) => {
       if (wordLength === 4) return '🟢 Easy';
@@ -1095,6 +1184,8 @@ const ResumeGamesScreen = () => {
 
   const renderTimedGameItem = ({ item }) => {
     const computeRemaining = () => {
+      const normalizedDifficulty = item.difficulty === 'easy' ? 'easy' : 'regular';
+      const fallbackDuration = getTimedDuration(normalizedDifficulty);
       if (typeof item.remainingTimeMs === 'number') {
         return Math.max(item.remainingTimeMs, 0);
       }
@@ -1102,7 +1193,7 @@ const ResumeGamesScreen = () => {
         const deadline = new Date(item.timerDeadline).getTime();
         return Math.max(deadline - Date.now(), 0);
       }
-      return TIMED_DURATION_MS;
+      return fallbackDuration;
     };
 
     const formatTime = (ms) => {
@@ -1132,8 +1223,20 @@ const ResumeGamesScreen = () => {
               Time left: {timeLeft}
             </Text>
           </View>
-          <View style={styles.soloGameAction}>
-            <Text style={styles.soloGameResumeText}>Resume</Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <View style={styles.soloGameAction}>
+              <Text style={styles.soloGameResumeText}>Resume</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.redQuitButton, { marginTop: 8 }]}
+              onPress={(event) => {
+                event?.stopPropagation?.();
+                handleQuitTimedGame(item);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.redQuitButtonText}>Quit</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
