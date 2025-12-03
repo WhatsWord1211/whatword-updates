@@ -14,7 +14,7 @@ import { validateUsernameContent, validateDisplayNameContent } from './profanity
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -53,6 +53,13 @@ const ProfileScreen = () => {
       loadPvpStats(user.uid);
     }
   }, [user]);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showRankUpPopup, showDeleteModal, updateNavigationBar]);
 
   // Real-time profile updates
   useEffect(() => {

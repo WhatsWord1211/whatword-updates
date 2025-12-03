@@ -27,7 +27,7 @@ const getTimedDuration = (diff) => {
 const ResumeGamesScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const [user, setUser] = useState(null);
   const [soloGames, setSoloGames] = useState([]);
   const [timedGames, setTimedGames] = useState([]);
@@ -45,6 +45,13 @@ const ResumeGamesScreen = () => {
   const [nudgeSentMessage, setNudgeSentMessage] = useState('');
   const [showAlreadyNudgedPopup, setShowAlreadyNudgedPopup] = useState(false);
   const [alreadyNudgedMessage, setAlreadyNudgedMessage] = useState('');
+  
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showChallengeResponsePopup, showCancelChallengeConfirm, showChallengeCanceledPopup, showNudgeSentPopup, showAlreadyNudgedPopup, updateNavigationBar]);
   
   // This screen now shows:
   // 1. Pending challenges (waiting for acceptance)

@@ -19,7 +19,7 @@ import * as Notifications from 'expo-notifications';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const insets = useSafeAreaInsets();
 
   const [showInvalidPopup, setShowInvalidPopup] = useState(false);
@@ -924,6 +924,13 @@ const HomeScreen = () => {
       // Don't show error alert for initialization failures
     }
   };
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showMenuModal, showInvalidPopup, updateNavigationBar]);
 
   useEffect(() => {
     let mounted = true;

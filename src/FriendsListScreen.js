@@ -5,15 +5,24 @@ import { useNavigation } from '@react-navigation/native';
 import { db, auth } from './firebase';
 import { doc, onSnapshot, arrayRemove, updateDoc, getDoc, collection, query, where, deleteDoc } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
+import { useTheme } from './ThemeContext';
 import styles from './styles';
 
 const FriendsListScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { updateNavigationBar } = useTheme();
   const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showFriendOptionsModal, setShowFriendOptionsModal] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState(null);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showFriendOptionsModal, updateNavigationBar]);
 
   useEffect(() => {
     console.log('🔍 [FriendsListScreen] Setting up friends listener using NEW subcollection system');

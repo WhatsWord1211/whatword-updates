@@ -14,7 +14,7 @@ const SetWordScreen = () => {
   const route = useRoute();
   const { challenge, isAccepting } = route.params;
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,6 +30,13 @@ const SetWordScreen = () => {
       setShowDifficultySelection(false);
     }
   }, [isAccepting, challenge]);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showGameStartedPopup, updateNavigationBar]);
 
   // Audio mode is now handled in soundsUtil.js
 

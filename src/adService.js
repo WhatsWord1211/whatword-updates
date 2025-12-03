@@ -1,6 +1,7 @@
 // AdMob imports - load in production builds
 import Constants from 'expo-constants';
 import { Platform, InteractionManager } from 'react-native';
+import { auth } from './firebase';
 
 let mobileAdsModule;
 try {
@@ -27,6 +28,13 @@ const AD_UNIT_IDS = {
     : 'ca-app-pub-8036041739101786/1836533025',
 };
 
+// Ad-free accounts - add email addresses or UIDs here
+// This prevents ads from showing for developer accounts to avoid AdMob policy violations
+const AD_FREE_ACCOUNTS = [
+  'wilderbssmstr@gmail.com',
+  'scolleenw@gmail.com',
+];
+
 class AdService {
   constructor() {
     this.enabled = !!mobileAds && !!InterstitialAd && !isExpoGo;
@@ -37,6 +45,7 @@ class AdService {
     this.isAdLoaded = false;
     this.gamesPlayed = 0;
     this.adFrequency = 1;
+    this.activeShowPromise = null;
   }
 
   async ensureInitialized() {
@@ -72,6 +81,28 @@ class AdService {
     this.adListeners = [];
     this.interstitialAd = null;
     this.isAdLoaded = false;
+  }
+
+  // Check if current user should be ad-free
+  isUserAdFree() {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        return false;
+      }
+
+      // Check by email or UID
+      const userEmail = currentUser.email?.toLowerCase();
+      const userUid = currentUser.uid;
+
+      return AD_FREE_ACCOUNTS.some(account => {
+        const accountLower = account.toLowerCase();
+        return accountLower === userEmail || accountLower === userUid.toLowerCase();
+      });
+    } catch (error) {
+      console.warn('AdService: Error checking ad-free status:', error?.message || error);
+      return false;
+    }
   }
 
   async loadInterstitialAd() {
@@ -131,6 +162,17 @@ class AdService {
       return true;
     }
 
+    // Check if user is ad-free (developer account)
+    if (this.isUserAdFree()) {
+      console.log('AdService: User is ad-free, skipping ad');
+      return true;
+    }
+
+    if (this.activeShowPromise) {
+      console.warn('AdService: showInterstitialAd called while another ad is active. Reusing existing promise.');
+      return this.activeShowPromise;
+    }
+
     this.gamesPlayed += 1;
 
     const loaded = await this.loadInterstitialAd();
@@ -138,11 +180,12 @@ class AdService {
       return true;
     }
 
-    return new Promise(resolve => {
+    this.activeShowPromise = new Promise(resolve => {
       const cleanUpAfterShow = () => {
         tempListeners.forEach(unsub => unsub && unsub());
         this.cleanupAdInstance();
         this.loadInterstitialAd().catch(() => {});
+        this.activeShowPromise = null;
         resolve(true);
       };
 
@@ -163,6 +206,8 @@ class AdService {
         }
       });
     });
+
+    return this.activeShowPromise;
   }
 
   async showInterstitialAdForHint() {

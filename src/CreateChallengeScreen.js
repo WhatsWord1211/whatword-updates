@@ -14,7 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const CreateChallengeScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const [friends, setFriends] = useState([]);
   const [friendRecords, setFriendRecords] = useState({});
   const [loading, setLoading] = useState(true);
@@ -78,6 +78,13 @@ const CreateChallengeScreen = () => {
 
     return unsubscribe;
   }, []);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showMenuPopup, updateNavigationBar]);
 
   // Prevent back button from going to word submission page - always go to main screen
   useEffect(() => {

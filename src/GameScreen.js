@@ -18,7 +18,7 @@ import adService from './adService';
 const GameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const insets = useSafeAreaInsets();
   
   // Validate route params and provide defaults
@@ -45,6 +45,13 @@ const GameScreen = () => {
       // Don't force navigation back, let the component handle missing params gracefully
     }
   }, [gameMode, showDifficulty, soloWord]);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showInvalidPopup, showWinPopup, showMenuPopup, showQuitConfirmPopup, showWordRevealPopup, showHintPopup, showHintLimitPopup, showMaxGuessesPopup, updateNavigationBar]);
 
 
 
@@ -140,35 +147,27 @@ const GameScreen = () => {
     }
   }, []);
 
+  const waitForModalToDismiss = useCallback(async () => {
+    // Give React Native a frame to unmount modal views before presenting ads
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }, []);
+
   // Show interstitial ad after game completion
   const showGameCompletionAd = useCallback(async () => {
     try {
       console.log('GameScreen: showGameCompletionAd called for gameMode:', gameMode);
-      
-      if (Platform.OS === 'ios') {
-        // iOS: Skip game completion ads due to ATT restrictions and reliability issues
-        console.log('GameScreen: iOS - skipping game completion ad');
-        // No ad call on iOS to prevent flashing/freezing issues
-      } else {
-        // Android: Block and wait for ad to complete
-        console.log('GameScreen: Android blocking ad mode');
-        await adService.showInterstitialAd();
-        
-        // Ad has completed - minimal audio recovery
-        console.log('GameScreen: Ad completed, recovering audio...');
-        
+      await adService.showInterstitialAd();
+
+      if (Platform.OS === 'android') {
         // Brief delay for audio recovery
         await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // Reconfigure audio session
         const { reconfigureAudio } = require('./soundsUtil');
         await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
       }
-      
+
       console.log('GameScreen: showGameCompletionAd completed');
     } catch (error) {
       console.error('GameScreen: Failed to show game completion ad:', error);
-      // Don't throw - continue game flow even if ad fails
     }
   }, [gameMode]);
 
@@ -1123,19 +1122,10 @@ const GameScreen = () => {
                     
                     // Show ad only for solo mode - PvP ad already played after congratulations
                     if (gameMode === 'solo') {
-                      if (Platform.OS === 'ios') {
-                        // iOS: Fire and forget - navigate immediately
-                        showGameCompletionAd().catch(() => {});
-                        navigation.navigate('MainTabs');
-                      } else {
-                        // Android: Wait for ad to complete
-                        await showGameCompletionAd().catch(() => {});
-                        navigation.navigate('MainTabs');
-                      }
-                    } else {
-                      // Navigate immediately if no ad
-                      navigation.navigate('MainTabs');
+                      await waitForModalToDismiss();
+                      await showGameCompletionAd().catch(() => {});
                     }
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >
@@ -1149,36 +1139,16 @@ const GameScreen = () => {
                       
                       // Show ad and wait for completion before starting new game
                       if (gameMode === 'solo') {
-                        if (Platform.OS === 'ios') {
-                          // iOS: Fire and forget - start new game immediately
-                          showGameCompletionAd().catch(() => {});
-                          // Reset game state and select new word
-                          setGuessesWithLog([]);
-                          setInputWord('');
-                          setAlphabet(Array(26).fill('unknown'));
-                          setHintCount(0);
-                          setUsedHintLetters([]);
-                          setGameState('playing');
-                        } else {
-                          // Android: Wait for ad to complete
-                          await showGameCompletionAd().catch(() => {});
-                          // Reset game state and select new word
-                          setGuessesWithLog([]);
-                          setInputWord('');
-                          setAlphabet(Array(26).fill('unknown'));
-                          setHintCount(0);
-                          setUsedHintLetters([]);
-                          setGameState('playing');
-                        }
-                      } else {
-                        // Reset game state and select new word (no ad for non-solo)
-                        setGuessesWithLog([]);
-                        setInputWord('');
-                        setAlphabet(Array(26).fill('unknown'));
-                        setHintCount(0);
-                        setUsedHintLetters([]);
-                        setGameState('playing');
+                        await waitForModalToDismiss();
+                        await showGameCompletionAd().catch(() => {});
                       }
+                      // Reset game state and select new word
+                      setGuessesWithLog([]);
+                      setInputWord('');
+                      setAlphabet(Array(26).fill('unknown'));
+                      setHintCount(0);
+                      setUsedHintLetters([]);
+                      setGameState('playing');
                       setIsLoading(true);
                       
                       try {
@@ -1263,16 +1233,9 @@ const GameScreen = () => {
                   onPress={async () => {
                     setShowWordRevealPopup(false);
                     
-                    // Show ad and wait for completion before navigating
-                    if (Platform.OS === 'ios') {
-                      // iOS: Fire and forget - navigate immediately
-                      showGameCompletionAd().catch(() => {});
-                      navigation.navigate('MainTabs');
-                    } else {
-                      // Android: Wait for ad to complete
-                      await showGameCompletionAd().catch(() => {});
-                      navigation.navigate('MainTabs');
-                    }
+                    await waitForModalToDismiss();
+                    await showGameCompletionAd().catch(() => {});
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >
@@ -1332,28 +1295,15 @@ const GameScreen = () => {
                     setShowMaxGuessesPopup(false);
                     await saveGameState();
                     
-                    // Show ad and wait for completion before starting new game
-                    if (Platform.OS === 'ios') {
-                      // iOS: Fire and forget - start new game immediately
-                      showGameCompletionAd().catch(() => {});
-                      // Reset game state and select new word
-                      setGuessesWithLog([]);
-                      setInputWord('');
-                      setAlphabet(Array(26).fill('unknown'));
-                      setHintCount(0);
-                      setUsedHintLetters([]);
-                      setGameState('playing');
-                    } else {
-                      // Android: Wait for ad to complete
-                      await showGameCompletionAd().catch(() => {});
-                      // Reset game state and select new word
-                      setGuessesWithLog([]);
-                      setInputWord('');
-                      setAlphabet(Array(26).fill('unknown'));
-                      setHintCount(0);
-                      setUsedHintLetters([]);
-                      setGameState('playing');
-                    }
+                    await waitForModalToDismiss();
+                    await showGameCompletionAd().catch(() => {});
+                    // Reset game state and select new word
+                    setGuessesWithLog([]);
+                    setInputWord('');
+                    setAlphabet(Array(26).fill('unknown'));
+                    setHintCount(0);
+                    setUsedHintLetters([]);
+                    setGameState('playing');
                     setIsLoading(true);
                     
                     try {
@@ -1375,16 +1325,9 @@ const GameScreen = () => {
                     setShowMaxGuessesPopup(false);
                     await saveGameState();
                     
-                    // Show ad and wait for completion before navigating
-                    if (Platform.OS === 'ios') {
-                      // iOS: Fire and forget - navigate immediately
-                      showGameCompletionAd().catch(() => {});
-                      navigation.navigate('MainTabs');
-                    } else {
-                      // Android: Wait for ad to complete
-                      await showGameCompletionAd().catch(() => {});
-                      navigation.navigate('MainTabs');
-                    }
+                    await waitForModalToDismiss();
+                    await showGameCompletionAd().catch(() => {});
+                    navigation.navigate('MainTabs');
                     playSound('chime').catch(() => {});
                   }}
                 >

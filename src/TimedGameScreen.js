@@ -45,7 +45,7 @@ const normalizeTimedDifficulty = (diff) => (diff === 'easy' ? 'easy' : 'regular'
 const TimedGameScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const insets = useSafeAreaInsets();
 
   const {
@@ -133,6 +133,10 @@ const TimedGameScreen = () => {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+  }, []);
+
+  const waitForModalToDismiss = useCallback(async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
   }, []);
 
   const showCompletionAd = useCallback(async () => {
@@ -482,6 +486,13 @@ const TimedGameScreen = () => {
     ensureTimerRunning();
   }, [ensureTimerRunning, gameState]);
 
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showInvalidPopup, showWinPopup, showMenuPopup, showQuitConfirmPopup, showWordRevealPopup, showMaxGuessesPopup, showTimeUpPopup, updateNavigationBar]);
+
   useEffect(() => {
     if (guesses.length > 0 && scrollViewRef.current) {
       const delay = (resumeGame || savedGameState) ? 300 : 100;
@@ -621,6 +632,7 @@ const TimedGameScreen = () => {
     setShowWinPopup(false);
     setShowMaxGuessesPopup(false);
     setShowTimeUpPopup(false);
+    await waitForModalToDismiss();
     await showCompletionAd();
     await cleanupCompletedTimedGame();
     setGameId(`timed_${Date.now()}`);
@@ -631,14 +643,15 @@ const TimedGameScreen = () => {
     setTimerDurationMs(duration);
     setRemainingTimeMs(duration);
     await initializeNewGame();
-  }, [cleanupCompletedTimedGame, difficulty, initializeNewGame, showCompletionAd]);
+  }, [cleanupCompletedTimedGame, difficulty, initializeNewGame, showCompletionAd, waitForModalToDismiss]);
 
   const handleReturnHome = useCallback(async () => {
     await cleanupCompletedTimedGame();
+    await waitForModalToDismiss();
     await showCompletionAd();
     playSound('chime').catch(() => {});
     navigation.navigate('MainTabs');
-  }, [cleanupCompletedTimedGame, navigation, showCompletionAd]);
+  }, [cleanupCompletedTimedGame, navigation, showCompletionAd, waitForModalToDismiss]);
 
   const renderGuessRow = (guess, idx) => (
     <View key={`guess-${idx}`} style={[styles.guessRow, { minHeight: isIPad ? 40 : 32, paddingVertical: 0, marginBottom: isIPad ? 2 : 1 }]}> 
@@ -711,6 +724,7 @@ const TimedGameScreen = () => {
 
   const handleWordRevealOk = async () => {
     setShowWordRevealPopup(false);
+    await waitForModalToDismiss();
     await showCompletionAd();
     playSound('chime').catch(() => {});
     navigation.navigate('MainTabs');

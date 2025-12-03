@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { playSound } from './soundsUtil';
 import settingsService from './settingsService';
 import { getThemeColors } from './theme';
+import { useTheme } from './ThemeContext';
 import styles from './styles';
 import adService from './adService';
 import pushNotificationService from './pushNotificationService';
@@ -15,6 +16,7 @@ import { auth } from './firebase';
 const SettingsScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { updateNavigationBar } = useTheme();
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [cacheSize, setCacheSize] = useState(0);
@@ -25,6 +27,13 @@ const SettingsScreen = () => {
   const [notificationDiagnostics, setNotificationDiagnostics] = useState(null);
   const [fixingNotifications, setFixingNotifications] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showTimePicker, updateNavigationBar]);
 
   useEffect(() => {
     loadSettings();

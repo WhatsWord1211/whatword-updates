@@ -56,7 +56,7 @@ const PvPGameScreen = () => {
   const route = useRoute();
   const { gameId, showResults } = route.params || {};
   console.log('PvPGameScreen: Received params - gameId:', gameId, 'showResults:', showResults);
-  const { colors } = useTheme();
+  const { colors, updateNavigationBar } = useTheme();
   const insets = useSafeAreaInsets();
   
   const [game, setGame] = useState(null);
@@ -150,6 +150,24 @@ const PvPGameScreen = () => {
       await adService.preloadGameCompletionAd();
     } catch (error) {
       console.error('PvPGameScreen: Failed to preload game completion ad:', error);
+    }
+  }, []);
+
+  const waitForAdPresentation = useCallback(async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }, []);
+
+  const showInterstitialWithRecovery = useCallback(async () => {
+    try {
+      await adService.showInterstitialAd();
+
+      if (Platform.OS === 'android') {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const { reconfigureAudio } = require('./soundsUtil');
+        await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
+      }
+    } catch (error) {
+      console.error('PvPGameScreen: Failed to show interstitial ad:', error);
     }
   }, []);
 
@@ -330,6 +348,13 @@ const PvPGameScreen = () => {
     resultsShownForSessionRef.current = false; // Reset results shown flag for new game
     hasShownStartGamePopupRef.current = false; // Reset start game popup flag for new game
   }, [gameId]);
+
+  // Update navigation bar when modals appear/disappear
+  useEffect(() => {
+    if (updateNavigationBar) {
+      updateNavigationBar();
+    }
+  }, [showStartGamePopup, showInvalidPopup, showCongratulationsPopup, showGameOverPopup, showMenuPopup, showMaxGuessesPopup, showQuitConfirmPopup, showWordRevealPopup, updateNavigationBar]);
 
   // Helper functions to get player data
   const getCurrentPlayerData = (gameData) => {
@@ -1723,27 +1748,11 @@ const PvPGameScreen = () => {
               style={styles.winButtonContainer}
               onPress={async () => {
                 setShowCongratulationsPopup(false);
-                
+                await waitForAdPresentation();
+
                 if (isSecondSolver) {
                   // Second solver - show ad before results popup
-                  if (Platform.OS === 'ios') {
-                    // iOS: Skip game completion ads due to ATT restrictions and reliability issues
-                    console.log('PvPGameScreen: iOS - skipping congratulations ad');
-                    // No ad call on iOS to prevent flashing/freezing issues
-                  } else {
-                    // Android: Wait for ad to complete
-                    await adService.showInterstitialAd();
-                    
-                    // Ad has completed - minimal audio recovery
-                    console.log('PvPGameScreen: Ad completed, recovering audio...');
-                    
-                    // Brief delay for audio recovery
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    
-                    // Reconfigure audio session
-                    const { reconfigureAudio } = require('./soundsUtil');
-                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                  }
+                  await showInterstitialWithRecovery();
                   
                   // Process results after ad completes
                   const resolvedResult = pendingResultData || (game?.status === 'completed' && game?.winnerId !== undefined
@@ -1787,29 +1796,9 @@ const PvPGameScreen = () => {
                   }
                 } else {
                   // First solver - show ad before navigating
-                  if (Platform.OS === 'ios') {
-                    // iOS: Skip game completion ads due to ATT restrictions and reliability issues
-                    console.log('PvPGameScreen: iOS - skipping first solver ad');
-                    // No ad call on iOS to prevent flashing/freezing issues
-                    playSound('chime').catch(() => {});
-                    navigation.navigate('MainTabs');
-                  } else {
-                    // Android: Wait for ad to complete
-                    await adService.showInterstitialAd();
-                    
-                    // Ad has completed - minimal audio recovery
-                    console.log('PvPGameScreen: First solver ad completed, recovering audio...');
-                    
-                    // Brief delay for audio recovery
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    
-                    // Reconfigure audio session
-                    const { reconfigureAudio } = require('./soundsUtil');
-                    await reconfigureAudio().catch(() => console.log('Failed to reconfigure audio'));
-                    
-                    playSound('chime').catch(() => {});
-                    navigation.navigate('MainTabs');
-                  }
+                  await showInterstitialWithRecovery();
+                  playSound('chime').catch(() => {});
+                  navigation.navigate('MainTabs');
                 }
               }}
             >
@@ -1931,16 +1920,9 @@ const PvPGameScreen = () => {
                   }
                   
                   // Show ad and wait for completion before navigating
-                  if (Platform.OS === 'ios') {
-                    // iOS: Skip game completion ads due to ATT restrictions and reliability issues
-                    console.log('PvPGameScreen: iOS - skipping max guesses ad');
-                    // No ad call on iOS to prevent flashing/freezing issues
-                    navigation.navigate('MainTabs');
-                  } else {
-                    // Android: Wait for ad to complete
-                    await adService.showInterstitialAd().catch(() => {});
-                    navigation.navigate('MainTabs');
-                  }
+                  await waitForAdPresentation();
+                  await showInterstitialWithRecovery();
+                  navigation.navigate('MainTabs');
                   playSound('chime').catch(() => {});
                 } catch (markErr) {
                   console.error('PvPGameScreen: Failed to mark results seen on max guesses:', markErr);
@@ -1994,17 +1976,9 @@ const PvPGameScreen = () => {
               style={styles.wordRevealButtonContainer}
               onPress={async () => {
                 setShowWordRevealPopup(false);
-                
-                // Show ad and wait for completion before navigating
-                if (Platform.OS === 'ios') {
-                  // iOS: Fire and forget - navigate immediately
-                  adService.showInterstitialAd().catch(() => {});
-                  navigation.navigate('MainTabs');
-                } else {
-                  // Android: Wait for ad to complete
-                  await adService.showInterstitialAd().catch(() => {});
-                  navigation.navigate('MainTabs');
-                }
+                await waitForAdPresentation();
+                await showInterstitialWithRecovery();
+                navigation.navigate('MainTabs');
                 playSound('chime').catch(() => {});
               }}
             >
