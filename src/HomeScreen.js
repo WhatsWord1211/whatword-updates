@@ -16,6 +16,7 @@ import pushNotificationService from './pushNotificationService';
 import appUpdateService from './appUpdateService';
 import * as Updates from 'expo-updates';
 import * as Notifications from 'expo-notifications';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
@@ -1249,9 +1250,12 @@ const HomeScreen = () => {
       {/* Show status bar on menu screens */}
       <StatusBar hidden={false} barStyle="light-content" />
       
+      {/* Animated Mesh Gradient Background */}
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      
       {/* FAB - Positioned outside SafeAreaView to avoid any container constraints */}
       <TouchableOpacity
-        style={[styles.fabTopHomeScreen, { top: insets.top + 5 }]}
+        style={[styles.fabTopHomeScreen, { top: insets.top + 5, zIndex: 10 }]}
         onPress={() => {
           setShowMenuModal(true);
         }}
@@ -1260,8 +1264,8 @@ const HomeScreen = () => {
         <Text style={styles.fabText}>☰</Text>
       </TouchableOpacity>
       
-      <SafeAreaView edges={['left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top + 55 }]}>
+      <SafeAreaView edges={['left', 'right']} style={{ flex: 1, backgroundColor: 'transparent' }}>
+        <View style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top + 55, zIndex: 1 }]}>
         {/* Fixed Header Image - Outside ScrollView */}
         <View style={{ alignItems: 'center', width: '100%' }}>
           <Image

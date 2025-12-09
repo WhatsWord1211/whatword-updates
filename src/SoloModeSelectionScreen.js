@@ -5,6 +5,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from './ThemeContext';
 import styles from './styles';
 import { playSound } from './soundsUtil';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const SoloModeSelectionScreen = () => {
   const navigation = useNavigation();
@@ -33,8 +34,10 @@ const SoloModeSelectionScreen = () => {
   };
 
   return (
-    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top + 40 }]}>
-      <StatusBar hidden={false} barStyle="light-content" />
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top + 40, zIndex: 1 }]}>
+        <StatusBar hidden={false} barStyle="light-content" />
       <View style={{ width: '100%', paddingHorizontal: 24 }}>
         <TouchableOpacity
           style={styles.resumeBackButton}
@@ -100,7 +103,8 @@ const SoloModeSelectionScreen = () => {
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 };
 

@@ -10,6 +10,7 @@ import { useTheme } from './ThemeContext';
 import styles from './styles';
 import adService from './adService';
 import pushNotificationService from './pushNotificationService';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 import * as Notifications from 'expo-notifications';
 import { auth } from './firebase';
 
@@ -288,18 +289,23 @@ const SettingsScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: theme.background, paddingTop: insets.top }]}>
-        <View style={styles.loadingContainer}>
-          <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading settings...</Text>
-        </View>
-      </SafeAreaView>
+      <View style={{ flex: 1 }}>
+        <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+        <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
+          <View style={styles.loadingContainer}>
+            <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading settings...</Text>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: theme.background, paddingTop: insets.top }]}>
-      {/* Show status bar on menu screens */}
-      <StatusBar hidden={false} barStyle="light-content" />
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
+        {/* Show status bar on menu screens */}
+        <StatusBar hidden={false} barStyle="light-content" />
   
       {/* Header */}
       <View style={styles.headerContainer}>
@@ -772,7 +778,8 @@ const SettingsScreen = () => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 };
 

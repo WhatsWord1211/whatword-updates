@@ -10,6 +10,7 @@ import logger from './logger';
 import { useTheme } from './ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import friendsService from './friendsService';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const FriendsManagementScreen = ({ onClearNotifications }) => {
   const navigation = useNavigation();
@@ -608,7 +609,9 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
   };
 
   return (
-    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
       <View style={{ flex: 1 }}>
         {/* Tab Navigation */}
         <View style={[styles.tabContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
@@ -1057,7 +1060,8 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
         )}
         </View>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 };
 

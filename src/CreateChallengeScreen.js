@@ -10,6 +10,7 @@ import { useTheme } from './ThemeContext';
 import friendRecordsService from './friendRecordsService';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const CreateChallengeScreen = () => {
   const navigation = useNavigation();
@@ -291,14 +292,19 @@ const CreateChallengeScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </SafeAreaView>
+      <View style={{ flex: 1 }}>
+        <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+        <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
       {/* Friends FAB - Positioned in top right corner */}
       <TouchableOpacity
         style={[styles.fabTopHomeScreen, { top: insets.top + 5 }]}
@@ -394,8 +400,9 @@ const CreateChallengeScreen = () => {
            </View>
          </View>
        </Modal>
-     </SafeAreaView>
-   );
+      </SafeAreaView>
+    </View>
+  );
 };
 
 export default CreateChallengeScreen;

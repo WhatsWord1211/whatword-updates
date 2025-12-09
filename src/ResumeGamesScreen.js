@@ -10,6 +10,7 @@ import styles from './styles';
 import gameService from './gameService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './ThemeContext';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const TIMED_DURATION_MAP = {
   easy: 2.5 * 60 * 1000,
@@ -1252,7 +1253,9 @@ const ResumeGamesScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
+      <View style={{ flex: 1 }}>
+        <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+        <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
         <View style={styles.headerContainer}>
           <TouchableOpacity
             style={styles.resumeBackButton}
@@ -1269,6 +1272,7 @@ const ResumeGamesScreen = () => {
           <Text style={styles.emptyStateTitle}>Loading games...</Text>
         </View>
       </SafeAreaView>
+      </View>
     );
   }
 
@@ -1277,7 +1281,9 @@ const ResumeGamesScreen = () => {
                    completedUnseenGames.length > 0;
 
   return (
-    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.resumeBackButton}
@@ -1537,7 +1543,8 @@ const ResumeGamesScreen = () => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 };
 

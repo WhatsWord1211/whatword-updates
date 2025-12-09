@@ -10,6 +10,7 @@ import { playSound } from './soundsUtil';
 import { useTheme } from './ThemeContext';
 import { checkUsernameAvailability, generateUsernameFromEmail } from './usernameValidation';
 import { validateUsernameContent, validateDisplayNameContent } from './profanityFilter';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -424,14 +425,19 @@ const ProfileScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading profile...</Text>
-      </SafeAreaView>
+      <View style={{ flex: 1 }}>
+        <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+        <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
+          <Text style={[styles.loadingText, { color: colors.textPrimary }]}>Loading profile...</Text>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView style={{ flex: 1, width: '100%' }}>
         {/* Rank Display */}
@@ -639,7 +645,8 @@ const ProfileScreen = () => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 };
 
