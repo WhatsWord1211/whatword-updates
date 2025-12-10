@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Image, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Image, StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { db, auth } from './firebase';
@@ -17,6 +17,8 @@ import appUpdateService from './appUpdateService';
 import * as Updates from 'expo-updates';
 import * as Notifications from 'expo-notifications';
 import AnimatedMeshGradient from './AnimatedMeshGradient';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence, Easing } from 'react-native-reanimated';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Rect } from 'react-native-svg';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
@@ -1243,6 +1245,108 @@ const HomeScreen = () => {
     </View>
   );
 
+  // Animated Button Component with gradient, inner shadow, scale, and shine
+  const AnimatedButton = ({ onPress, children, style }) => {
+    const scale = useSharedValue(1);
+    const shinePosition = useSharedValue(-200);
+    const buttonRef = useRef(null);
+    const [buttonDimensions, setButtonDimensions] = useState({ width: 0, height: 0 });
+    const gradientIdRef = useRef(`gradient-${Math.random().toString(36).substr(2, 9)}`);
+
+    const animatedStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ scale: scale.value }],
+      };
+    });
+
+    const shineStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ translateX: shinePosition.value }],
+      };
+    });
+
+    const handlePressIn = () => {
+      scale.value = withSpring(1.05, {
+        damping: 10,
+        stiffness: 300,
+      });
+      shinePosition.value = withTiming(buttonDimensions.width || 200, {
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+      });
+    };
+
+    const handlePressOut = () => {
+      scale.value = withSpring(1, {
+        damping: 10,
+        stiffness: 300,
+      });
+      shinePosition.value = withTiming(-200, {
+        duration: 0,
+      });
+    };
+
+    const onLayout = (event) => {
+      const { width, height } = event.nativeEvent.layout;
+      if (width > 0 && height > 0) {
+        setButtonDimensions({ width, height });
+      }
+    };
+
+    return (
+      <Animated.View style={[animatedStyle, { width: '90%', maxWidth: 500, minWidth: 280, alignSelf: 'center' }]}>
+        <TouchableOpacity
+          ref={buttonRef}
+          onPress={onPress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onLayout={onLayout}
+          activeOpacity={1}
+          style={[styles.animatedButton, style]}
+        >
+          {/* Gradient Background using SVG with proper dimensions */}
+          {buttonDimensions.width > 0 && buttonDimensions.height > 0 && (
+            <Svg 
+              style={StyleSheet.absoluteFill} 
+              width={buttonDimensions.width} 
+              height={buttonDimensions.height}
+              viewBox={`0 0 ${buttonDimensions.width} ${buttonDimensions.height}`}
+            >
+              <Defs>
+                <SvgLinearGradient id={gradientIdRef.current} x1="0%" y1="0%" x2="0%" y2="100%">
+                  <Stop offset="0%" stopColor="#FF8C42" stopOpacity="1" />
+                  <Stop offset="100%" stopColor="#FF6B35" stopOpacity="1" />
+                </SvgLinearGradient>
+              </Defs>
+              <Rect 
+                width={buttonDimensions.width} 
+                height={buttonDimensions.height} 
+                rx={8} 
+                fill={`url(#${gradientIdRef.current})`} 
+              />
+            </Svg>
+          )}
+          
+          {/* Fallback solid color while dimensions are being measured */}
+          {buttonDimensions.width === 0 && (
+            <View style={styles.buttonGradientBase} />
+          )}
+          
+          {/* Inner Shadow Overlay */}
+          <View style={styles.buttonInnerShadow} />
+          
+          {/* Shine Effect */}
+          <Animated.View style={[styles.buttonShine, shineStyle]} />
+          
+          {/* Button Content */}
+          <View style={{ zIndex: 10, position: 'relative' }}>
+            {children}
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
   // iOS PvP completion ad handling removed - now handled directly in PvPGameScreen
 
   return (
@@ -1295,7 +1399,8 @@ const HomeScreen = () => {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        {/* Global Rank - HIDDEN */}
+        {/* <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => {
             playSound('rank');
@@ -1307,7 +1412,7 @@ const HomeScreen = () => {
           <Text style={[styles.rankValue, { color: colors.primary }]}>
             {globalEasyRank ? formatRankOrdinal(globalEasyRank) : 'N/A'}
           </Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <TouchableOpacity
           activeOpacity={0.7}
@@ -1315,7 +1420,7 @@ const HomeScreen = () => {
             playSound('rank');
             navigation.navigate('Leaderboard', { initialTab: 'global', initialDifficulty: 'timed' });
           }}
-          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginBottom: 20 }]}
+          style={[styles.rankDisplay, { backgroundColor: colors.surface, borderColor: colors.primary, marginBottom: 35 }]}
         >
           <Text style={[styles.rankLabel, { color: colors.textSecondary }]}>Streak Rank:</Text>
           <Text style={[styles.rankValue, { color: colors.primary }]}>
@@ -1330,28 +1435,25 @@ const HomeScreen = () => {
 
         
         {/* PvP Button */}
-        <TouchableOpacity
-          style={styles.button}
+        <AnimatedButton
           onPress={() => {
             playSound('chime');
             navigation.navigate('CreateChallenge');
           }}
         >
           <Text style={styles.buttonText}>Play A Friend</Text>
-        </TouchableOpacity>
+        </AnimatedButton>
         
-        <TouchableOpacity
-          style={styles.button}
+        <AnimatedButton
           onPress={() => handleButtonPress('SoloModeSelect')}
         >
           <Text style={styles.buttonText}>Play Solo</Text>
-        </TouchableOpacity>
+        </AnimatedButton>
         
 
         
         <View style={{ position: 'relative', width: '100%' }}>
-          <TouchableOpacity
-            style={styles.button}
+          <AnimatedButton
             onPress={async () => {
               // Permanently delete notifications when user acknowledges them by going to Resume screen
               if (notifications.length > 0) {
@@ -1417,7 +1519,7 @@ const HomeScreen = () => {
             }}
           >
             <Text style={styles.buttonText}>Resume</Text>
-          </TouchableOpacity>
+          </AnimatedButton>
           {/* Notification Badge: only incoming pending challenges and unread notifications */}
           {!badgeCleared && ((pendingChallenges.filter(c => c._source === 'incoming').length > 0) || notifications.length > 0) && (
             <View style={[styles.notificationBadge, { backgroundColor: '#FF4444' }]}>
@@ -1429,10 +1531,13 @@ const HomeScreen = () => {
         </View>
         
         <TouchableOpacity
-          style={styles.button}
+          activeOpacity={0.7}
           onPress={() => handleButtonPress('HowToPlay')}
+          style={{ marginTop: 20, marginBottom: 8 }}
         >
-          <Text style={styles.buttonText}>How To Play</Text>
+          <View style={styles.howToPlayLinkContainer}>
+            <Text style={styles.howToPlayLink}>How To Play</Text>
+          </View>
         </TouchableOpacity>
         
 

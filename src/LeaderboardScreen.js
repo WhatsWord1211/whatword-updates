@@ -6,6 +6,7 @@ import { db, auth } from './firebase';
 import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { playSound } from './soundsUtil';
 import styles from './styles';
+import AnimatedMeshGradient from './AnimatedMeshGradient';
 
 const LeaderboardScreen = () => {
   const navigation = useNavigation();
@@ -995,14 +996,16 @@ const LeaderboardScreen = () => {
   };
 
   return (
-    <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { paddingTop: insets.top }]}>
-      <ScrollView 
-        style={{ flex: 1, width: '100%' }} 
-        showsVerticalScrollIndicator={true}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
+    <View style={{ flex: 1 }}>
+      <AnimatedMeshGradient style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }} />
+      <SafeAreaView edges={['left', 'right']} style={[styles.screenContainer, { backgroundColor: 'transparent', paddingTop: insets.top, zIndex: 1 }]}>
+        <ScrollView 
+          style={{ flex: 1, width: '100%' }} 
+          showsVerticalScrollIndicator={true}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
         
         {/* Tab Navigation */}
         <View style={styles.tabContainer}>
@@ -1105,8 +1108,9 @@ const LeaderboardScreen = () => {
             </View>
           )}
         </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 };
 
