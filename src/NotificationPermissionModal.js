@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity } from 'react-native';
+import { useTheme } from './ThemeContext';
 import styles from './styles';
 
 const NotificationPermissionModal = ({ 
@@ -8,6 +9,20 @@ const NotificationPermissionModal = ({
   onEnable, 
   context = 'default' 
 }) => {
+  const { updateNavigationBar } = useTheme();
+  
+  // Update navigation bar when modal appears/disappears
+  useEffect(() => {
+    if (updateNavigationBar && visible) {
+      // Immediate update
+      updateNavigationBar();
+      // Also update after a small delay to catch any system resets
+      const timeout = setTimeout(() => {
+        updateNavigationBar();
+      }, 100);
+      return () => clearTimeout(timeout);
+    }
+  }, [visible, updateNavigationBar]);
   const contexts = {
     friend_request: {
       title: 'Stay Connected with Friends',

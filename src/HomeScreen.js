@@ -928,10 +928,16 @@ const HomeScreen = () => {
     }
   };
 
-  // Update navigation bar when modals appear/disappear
+  // Update navigation bar when modals appear/disappear - with delay to ensure it happens after modal renders
   useEffect(() => {
     if (updateNavigationBar) {
+      // Immediate update
       updateNavigationBar();
+      // Also update after a small delay to catch any system resets
+      const timeout = setTimeout(() => {
+        updateNavigationBar();
+      }, 100);
+      return () => clearTimeout(timeout);
     }
   }, [showMenuModal, showInvalidPopup, updateNavigationBar]);
 
@@ -1490,22 +1496,24 @@ const HomeScreen = () => {
             // Clear the badge when user acknowledges by clicking Resume
             setBadgeCleared(true);
             
-            // Delete all game completion notifications since user is acknowledging them
+            // Delete all game completion and game started notifications since user is acknowledging them
             // These are one-time notifications that don't need to persist
             if (notifications.length > 0) {
-              const gameCompletionNotifs = notifications.filter(n => 
-                n.type === 'game_completed' || n.data?.type === 'game_completed'
+              const gameNotifs = notifications.filter(n => 
+                n.type === 'game_completed' || n.data?.type === 'game_completed' ||
+                n.type === 'game_started' || n.data?.type === 'game_started'
               );
               
-              gameCompletionNotifs.forEach(notification => {
+              gameNotifs.forEach(notification => {
                 deleteDoc(doc(db, 'notifications', notification.id)).catch(err => 
-                  console.error('Failed to delete game completion notification:', err)
+                  console.error('Failed to delete game notification:', err)
                 );
               });
               
               // Mark other notifications as read
               const otherNotifs = notifications.filter(n => 
-                n.type !== 'game_completed' && n.data?.type !== 'game_completed'
+                n.type !== 'game_completed' && n.data?.type !== 'game_completed' &&
+                n.type !== 'game_started' && n.data?.type !== 'game_started'
               );
               
               otherNotifs.forEach(notification => {

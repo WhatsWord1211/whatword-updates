@@ -378,12 +378,18 @@ class FriendsService {
   // Friend Search
   async searchUsers(usernameQuery) {
     try {
+      // CRITICAL: Check authentication state before proceeding
+      if (!this.currentUser || !this.currentUser.uid) {
+        console.error('❌ [FriendsService] User not authenticated for search');
+        return [];
+      }
+      
       // Trim whitespace from the query
       const trimmedQuery = usernameQuery?.trim();
       if (!trimmedQuery || trimmedQuery.length < 2) return [];
       
       console.log('🔍 [FriendsService] Searching for username:', trimmedQuery);
-      console.log('🔍 [FriendsService] Current user:', this.currentUser?.uid);
+      console.log('🔍 [FriendsService] Current user:', this.currentUser.uid);
       
       const usersRef = collection(db, 'users');
       
@@ -398,7 +404,7 @@ class FriendsService {
       
       const allUsers = querySnapshot.docs
         .map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }))
-        .filter(user => user.id !== this.currentUser?.uid);
+        .filter(user => user.id !== this.currentUser.uid);
       
       console.log('🔍 [FriendsService] After filtering current user:', allUsers.length, 'users');
       console.log('🔍 [FriendsService] All usernames in database:', allUsers.map(u => u.username));
@@ -419,9 +425,16 @@ class FriendsService {
       console.log('🔍 [FriendsService] After username filtering:', filteredUsers.length, 'users');
       console.log('🔍 [FriendsService] Filtered users:', filteredUsers.map(u => u.username));
       
-      // Add friendship status to search results
-      for (const user of filteredUsers) {
-        user.friendshipStatus = await this.getFriendshipStatus(this.currentUser.uid, user.id);
+      // Add friendship status to search results (only if currentUser is still valid)
+      if (this.currentUser && this.currentUser.uid) {
+        for (const user of filteredUsers) {
+          try {
+            user.friendshipStatus = await this.getFriendshipStatus(this.currentUser.uid, user.id);
+          } catch (statusError) {
+            console.warn('🔍 [FriendsService] Failed to get friendship status for user:', user.id, statusError);
+            user.friendshipStatus = null;
+          }
+        }
       }
       
       return filteredUsers;

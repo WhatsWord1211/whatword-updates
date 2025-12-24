@@ -111,6 +111,18 @@ const AddFriendsScreen = () => {
       return;
     }
 
+    // CRITICAL: Check authentication state before proceeding
+    if (!auth.currentUser || !auth.currentUser.uid) {
+      logger.error('❌ [AddFriendsScreen] User not authenticated for search');
+      Alert.alert('Authentication Error', 'Please sign in again to search for friends.');
+      return;
+    }
+    
+    // Ensure friendsService has the current user set
+    if (auth.currentUser) {
+      friendsService.setCurrentUser(auth.currentUser);
+    }
+
     setLoading(true);
     try {
       const trimmedQuery = searchQuery.trim();
@@ -136,9 +148,20 @@ const AddFriendsScreen = () => {
       logger.debug('🔍 [AddFriendsScreen] Formatted users:', formattedUsers.length);
       setSearchResults(formattedUsers);
     } catch (error) {
-      logger.error('🔍 [AddFriendsScreen] Search failed:', error);
-      logger.error('🔍 [AddFriendsScreen] Error details:', error.message, error.code);
-      Alert.alert('Search Failed', `Please try again. Error: ${error.message}`);
+      logger.error('❌ [AddFriendsScreen] Search failed:', error);
+      logger.error('❌ [AddFriendsScreen] Error details:', error.message, error.code, error.stack);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Unknown error. Please try again.';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your connection and try again.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service unavailable. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Search Failed', `Please try again. Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -165,6 +188,20 @@ const AddFriendsScreen = () => {
       logger.debug('🔍 [AddFriendsScreen] Starting friend request process');
       logger.debug('🔍 [AddFriendsScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
       logger.debug('🔍 [AddFriendsScreen] Target user:', user.uid, user.username || user.displayName);
+      
+      // CRITICAL: Check authentication state before proceeding
+      if (!auth.currentUser || !auth.currentUser.uid) {
+        logger.error('❌ [AddFriendsScreen] User not authenticated');
+        Alert.alert('Authentication Error', 'Please sign in again to send friend requests.');
+        return;
+      }
+      
+      // Validate user parameter
+      if (!user || !user.uid) {
+        logger.error('❌ [AddFriendsScreen] Invalid user parameter');
+        Alert.alert('Error', 'Invalid user. Please try again.');
+        return;
+      }
       
       // Check if a request already exists
       logger.debug('🔍 [AddFriendsScreen] Checking for existing friend request...');
@@ -205,7 +242,7 @@ const AddFriendsScreen = () => {
       logger.debug('🔍 [AddFriendsScreen] Friend request document created successfully');
       
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
-      playSound('chime');
+      playSound('chime').catch(err => logger.warn('Failed to play sound:', err));
       
       // Clear search results and dismiss keyboard
       setSearchResults([]);
@@ -214,7 +251,18 @@ const AddFriendsScreen = () => {
     } catch (error) {
       logger.error('❌ [AddFriendsScreen] Failed to send friend request:', error);
       logger.error('❌ [AddFriendsScreen] Error details:', error.message, error.code, error.stack);
-      Alert.alert('Error', `Failed to send friend request: ${error.message || 'Unknown error'}`);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Unknown error';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your connection and try again.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service unavailable. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Error', `Failed to send friend request: ${errorMessage}`);
     }
   };
 

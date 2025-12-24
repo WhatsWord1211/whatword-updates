@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import Svg, { Defs, RadialGradient, Stop, Circle, Rect } from 'react-native-svg';
-import { useSharedValue, useDerivedValue, useAnimatedReaction, withRepeat, withTiming, interpolate, Easing, runOnJS } from 'react-native-reanimated';
 
 const AnimatedMeshGradient = ({ style }) => {
   // Get screen dimensions inside component
@@ -9,240 +8,43 @@ const AnimatedMeshGradient = ({ style }) => {
   const SCREEN_WIDTH = screenData.width;
   const SCREEN_HEIGHT = screenData.height;
 
-  // Animation values for different gradient blobs
-  const anim1 = useSharedValue(0);
-  const anim2 = useSharedValue(0);
-  const anim3 = useSharedValue(0);
-  const anim4 = useSharedValue(0);
-  const anim5 = useSharedValue(0);
-  const anim6 = useSharedValue(0);
+  // Static blob positions (no animation for better performance)
+  // Using average positions from the original animation ranges
+  const blob1 = useMemo(() => ({ 
+    cx: SCREEN_WIDTH * 0.5, // Average of 0.2 and 0.8
+    cy: SCREEN_HEIGHT * 0.2, // Average of 0.1 and 0.3
+    r: SCREEN_WIDTH * 0.6 // Average of 0.48 and 0.72
+  }), [SCREEN_WIDTH, SCREEN_HEIGHT]);
 
-  // State to hold current blob positions (updated via animated reactions)
-  const [blob1, setBlob1] = useState({ cx: SCREEN_WIDTH * 0.5, cy: SCREEN_HEIGHT * 0.2, r: SCREEN_WIDTH * 0.6 });
-  const [blob2, setBlob2] = useState({ cx: SCREEN_WIDTH * 0.5, cy: SCREEN_HEIGHT * 0.5, r: SCREEN_WIDTH * 0.5 });
-  const [blob3, setBlob3] = useState({ cx: SCREEN_WIDTH * 0.3, cy: SCREEN_HEIGHT * 0.8, r: SCREEN_WIDTH * 0.55 });
-  const [blob4, setBlob4] = useState({ cx: SCREEN_WIDTH * 0.7, cy: SCREEN_HEIGHT * 0.5, r: SCREEN_WIDTH * 0.45 });
-  const [blob5, setBlob5] = useState({ cx: SCREEN_WIDTH * 0.3, cy: SCREEN_HEIGHT * 0.35, r: SCREEN_WIDTH * 0.5 });
-  const [blob6, setBlob6] = useState({ cx: SCREEN_WIDTH * 0.75, cy: SCREEN_HEIGHT * 0.65, r: SCREEN_WIDTH * 0.48 });
+  const blob2 = useMemo(() => ({ 
+    cx: SCREEN_WIDTH * 0.5, // Average of 0.7 and 0.3
+    cy: SCREEN_HEIGHT * 0.5, // Average of 0.4 and 0.6
+    r: SCREEN_WIDTH * 0.475 // Average of 0.5 and 0.45
+  }), [SCREEN_WIDTH, SCREEN_HEIGHT]);
 
-  useEffect(() => {
-    // Create continuous, slow animations with different durations and delays
-    anim1.value = withRepeat(
-      withTiming(1, {
-        duration: 15000,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true
-    );
+  const blob3 = useMemo(() => ({ 
+    cx: SCREEN_WIDTH * 0.3, // Average of 0.1 and 0.5
+    cy: SCREEN_HEIGHT * 0.8, // Average of 0.7 and 0.9
+    r: SCREEN_WIDTH * 0.53625 // Average of 0.605 and 0.4675
+  }), [SCREEN_WIDTH, SCREEN_HEIGHT]);
 
-    anim2.value = withRepeat(
-      withTiming(1, {
-        duration: 20000,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true
-    );
+  const blob4 = useMemo(() => ({ 
+    cx: SCREEN_WIDTH * 0.65, // Average of 0.9 and 0.4
+    cy: SCREEN_HEIGHT * 0.5, // Average of 0.2 and 0.8
+    r: SCREEN_WIDTH * 0.46125 // Average of 0.405 and 0.5175
+  }), [SCREEN_WIDTH, SCREEN_HEIGHT]);
 
-    anim3.value = withRepeat(
-      withTiming(1, {
-        duration: 18000,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true
-    );
+  const blob5 = useMemo(() => ({ 
+    cx: SCREEN_WIDTH * 0.3, // Average of 0.5 and 0.1
+    cy: SCREEN_HEIGHT * 0.35, // Average of 0.5 and 0.2
+    r: SCREEN_WIDTH * 0.5375 // Average of 0.6 and 0.475
+  }), [SCREEN_WIDTH, SCREEN_HEIGHT]);
 
-    anim4.value = withRepeat(
-      withTiming(1, {
-        duration: 22000,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true
-    );
-
-    anim5.value = withRepeat(
-      withTiming(1, {
-        duration: 16000,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true
-    );
-
-    anim6.value = withRepeat(
-      withTiming(1, {
-        duration: 19000,
-        easing: Easing.inOut(Easing.sin),
-      }),
-      -1,
-      true
-    );
-  }, []);
-
-  // Throttle function to reduce re-renders - increased for better performance
-  const lastUpdateRef = useRef({});
-  const THROTTLE_MS = 150; // Update at most every 150ms (~6-7fps for background is smooth enough and reduces overhead)
-
-  const updateBlob1 = useCallback((coords) => {
-    const now = Date.now();
-    if (!lastUpdateRef.current.blob1 || now - lastUpdateRef.current.blob1 > THROTTLE_MS) {
-      setBlob1(coords);
-      lastUpdateRef.current.blob1 = now;
-    }
-  }, []);
-
-  const updateBlob2 = useCallback((coords) => {
-    const now = Date.now();
-    if (!lastUpdateRef.current.blob2 || now - lastUpdateRef.current.blob2 > THROTTLE_MS) {
-      setBlob2(coords);
-      lastUpdateRef.current.blob2 = now;
-    }
-  }, []);
-
-  const updateBlob3 = useCallback((coords) => {
-    const now = Date.now();
-    if (!lastUpdateRef.current.blob3 || now - lastUpdateRef.current.blob3 > THROTTLE_MS) {
-      setBlob3(coords);
-      lastUpdateRef.current.blob3 = now;
-    }
-  }, []);
-
-  const updateBlob4 = useCallback((coords) => {
-    const now = Date.now();
-    if (!lastUpdateRef.current.blob4 || now - lastUpdateRef.current.blob4 > THROTTLE_MS) {
-      setBlob4(coords);
-      lastUpdateRef.current.blob4 = now;
-    }
-  }, []);
-
-  const updateBlob5 = useCallback((coords) => {
-    const now = Date.now();
-    if (!lastUpdateRef.current.blob5 || now - lastUpdateRef.current.blob5 > THROTTLE_MS) {
-      setBlob5(coords);
-      lastUpdateRef.current.blob5 = now;
-    }
-  }, []);
-
-  const updateBlob6 = useCallback((coords) => {
-    const now = Date.now();
-    if (!lastUpdateRef.current.blob6 || now - lastUpdateRef.current.blob6 > THROTTLE_MS) {
-      setBlob6(coords);
-      lastUpdateRef.current.blob6 = now;
-    }
-  }, []);
-
-  // Pre-calculate all interpolation ranges (worklets need literal numbers)
-  const blob1MinX = SCREEN_WIDTH * 0.2;
-  const blob1MaxX = SCREEN_WIDTH * 0.8;
-  const blob1MinY = SCREEN_HEIGHT * 0.1;
-  const blob1MaxY = SCREEN_HEIGHT * 0.3;
-  const blob1MinR = SCREEN_WIDTH * 0.48;
-  const blob1MaxR = SCREEN_WIDTH * 0.72;
-
-  const blob2MinX = SCREEN_WIDTH * 0.7;
-  const blob2MaxX = SCREEN_WIDTH * 0.3;
-  const blob2MinY = SCREEN_HEIGHT * 0.4;
-  const blob2MaxY = SCREEN_HEIGHT * 0.6;
-  const blob2MinR = SCREEN_WIDTH * 0.5;
-  const blob2MaxR = SCREEN_WIDTH * 0.45;
-
-  const blob3MinX = SCREEN_WIDTH * 0.1;
-  const blob3MaxX = SCREEN_WIDTH * 0.5;
-  const blob3MinY = SCREEN_HEIGHT * 0.7;
-  const blob3MaxY = SCREEN_HEIGHT * 0.9;
-  const blob3MinR = SCREEN_WIDTH * 0.605;
-  const blob3MaxR = SCREEN_WIDTH * 0.4675;
-
-  const blob4MinX = SCREEN_WIDTH * 0.9;
-  const blob4MaxX = SCREEN_WIDTH * 0.4;
-  const blob4MinY = SCREEN_HEIGHT * 0.2;
-  const blob4MaxY = SCREEN_HEIGHT * 0.8;
-  const blob4MinR = SCREEN_WIDTH * 0.405;
-  const blob4MaxR = SCREEN_WIDTH * 0.5175;
-
-  const blob5MinX = SCREEN_WIDTH * 0.5;
-  const blob5MaxX = SCREEN_WIDTH * 0.1;
-  const blob5MinY = SCREEN_HEIGHT * 0.5;
-  const blob5MaxY = SCREEN_HEIGHT * 0.2;
-  const blob5MinR = SCREEN_WIDTH * 0.6;
-  const blob5MaxR = SCREEN_WIDTH * 0.475;
-
-  const blob6MinX = SCREEN_WIDTH * 0.6;
-  const blob6MaxX = SCREEN_WIDTH * 0.9;
-  const blob6MinY = SCREEN_HEIGHT * 0.8;
-  const blob6MaxY = SCREEN_HEIGHT * 0.5;
-  const blob6MinR = SCREEN_WIDTH * 0.408;
-  const blob6MaxR = SCREEN_WIDTH * 0.528;
-
-  // Derive positions from animated values and update state
-  useAnimatedReaction(
-    () => anim1.value,
-    (value) => {
-      'worklet';
-      const cx = interpolate(value, [0, 1], [blob1MinX, blob1MaxX]);
-      const cy = interpolate(value, [0, 1], [blob1MinY, blob1MaxY]);
-      const r = interpolate(value, [0, 1], [blob1MinR, blob1MaxR]);
-      runOnJS(updateBlob1)({ cx, cy, r });
-    }
-  );
-
-  useAnimatedReaction(
-    () => anim2.value,
-    (value) => {
-      'worklet';
-      const cx = interpolate(value, [0, 1], [blob2MinX, blob2MaxX]);
-      const cy = interpolate(value, [0, 1], [blob2MinY, blob2MaxY]);
-      const r = interpolate(value, [0, 1], [blob2MinR, blob2MaxR]);
-      runOnJS(updateBlob2)({ cx, cy, r });
-    }
-  );
-
-  useAnimatedReaction(
-    () => anim3.value,
-    (value) => {
-      'worklet';
-      const cx = interpolate(value, [0, 1], [blob3MinX, blob3MaxX]);
-      const cy = interpolate(value, [0, 1], [blob3MinY, blob3MaxY]);
-      const r = interpolate(value, [0, 1], [blob3MinR, blob3MaxR]);
-      runOnJS(updateBlob3)({ cx, cy, r });
-    }
-  );
-
-  useAnimatedReaction(
-    () => anim4.value,
-    (value) => {
-      'worklet';
-      const cx = interpolate(value, [0, 1], [blob4MinX, blob4MaxX]);
-      const cy = interpolate(value, [0, 1], [blob4MinY, blob4MaxY]);
-      const r = interpolate(value, [0, 1], [blob4MinR, blob4MaxR]);
-      runOnJS(updateBlob4)({ cx, cy, r });
-    }
-  );
-
-  useAnimatedReaction(
-    () => anim5.value,
-    (value) => {
-      'worklet';
-      const cx = interpolate(value, [0, 1], [blob5MinX, blob5MaxX]);
-      const cy = interpolate(value, [0, 1], [blob5MinY, blob5MaxY]);
-      const r = interpolate(value, [0, 1], [blob5MinR, blob5MaxR]);
-      runOnJS(updateBlob5)({ cx, cy, r });
-    }
-  );
-
-  useAnimatedReaction(
-    () => anim6.value,
-    (value) => {
-      'worklet';
-      const cx = interpolate(value, [0, 1], [blob6MinX, blob6MaxX]);
-      const cy = interpolate(value, [0, 1], [blob6MinY, blob6MaxY]);
-      const r = interpolate(value, [0, 1], [blob6MinR, blob6MaxR]);
-      runOnJS(updateBlob6)({ cx, cy, r });
-    }
-  );
+  const blob6 = useMemo(() => ({ 
+    cx: SCREEN_WIDTH * 0.75, // Average of 0.6 and 0.9
+    cy: SCREEN_HEIGHT * 0.65, // Average of 0.8 and 0.5
+    r: SCREEN_WIDTH * 0.468 // Average of 0.408 and 0.528
+  }), [SCREEN_WIDTH, SCREEN_HEIGHT]);
 
   // Memoize the gradient definitions to prevent re-creation
   const gradientDefs = useMemo(() => (

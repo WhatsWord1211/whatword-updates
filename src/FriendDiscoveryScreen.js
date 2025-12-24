@@ -106,6 +106,13 @@ const FriendDiscoveryScreen = () => {
   const searchUsers = async () => {
     if (!searchQuery.trim()) return;
     
+    // CRITICAL: Check authentication state before proceeding
+    if (!auth.currentUser || !auth.currentUser.uid) {
+      console.error('❌ [FriendDiscoveryScreen] User not authenticated for search');
+      Alert.alert('Authentication Error', 'Please sign in again to search for friends.');
+      return;
+    }
+    
     try {
       setSearching(true);
       setSearchResults([]);
@@ -138,8 +145,20 @@ const FriendDiscoveryScreen = () => {
       
       setSearchResults(results);
     } catch (error) {
-      console.error('Failed to search users:', error);
-      Alert.alert('Error', 'Failed to search users. Please try again.');
+      console.error('❌ [FriendDiscoveryScreen] Failed to search users:', error);
+      console.error('❌ [FriendDiscoveryScreen] Error details:', error.message, error.code, error.stack);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Unknown error. Please try again.';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your connection and try again.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service unavailable. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Error', `Failed to search users: ${errorMessage}`);
     } finally {
       setSearching(false);
     }
@@ -148,6 +167,20 @@ const FriendDiscoveryScreen = () => {
   const sendFriendRequest = async (targetUserId, username) => {
     try {
       console.log('🔍 [FriendDiscoveryScreen] Sending friend request to:', targetUserId);
+      
+      // CRITICAL: Check authentication state before proceeding
+      if (!auth.currentUser || !auth.currentUser.uid) {
+        console.error('❌ [FriendDiscoveryScreen] User not authenticated');
+        Alert.alert('Authentication Error', 'Please sign in again to send friend requests.');
+        return;
+      }
+      
+      // Validate target user parameter
+      if (!targetUserId) {
+        console.error('❌ [FriendDiscoveryScreen] Invalid target user ID');
+        Alert.alert('Error', 'Invalid user. Please try again.');
+        return;
+      }
       
       // Check if already friends or request pending using NEW subcollection system
       const existingRequestDoc = await getDocs(query(
@@ -192,13 +225,25 @@ const FriendDiscoveryScreen = () => {
       console.log('🔍 [FriendDiscoveryScreen] Friend request saved successfully');
       
       Alert.alert('Request Sent', `Friend request sent to ${username}!`);
-      playSound('chime');
+      playSound('chime').catch(err => console.warn('Failed to play sound:', err));
       
       // Refresh suggestions
       loadSuggestedUsers();
     } catch (error) {
       console.error('❌ [FriendDiscoveryScreen] Failed to send friend request:', error);
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      console.error('❌ [FriendDiscoveryScreen] Error details:', error.message, error.code, error.stack);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Unknown error. Please try again.';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your connection and try again.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service unavailable. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Error', `Failed to send friend request: ${errorMessage}`);
     }
   };
 

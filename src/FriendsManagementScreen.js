@@ -292,6 +292,18 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       return;
     }
     
+    // CRITICAL: Check authentication state before proceeding
+    if (!auth.currentUser || !auth.currentUser.uid) {
+      console.error('❌ [FriendsManagementScreen] User not authenticated for search');
+      Alert.alert('Authentication Error', 'Please sign in again to search for friends.');
+      return;
+    }
+    
+    // Ensure friendsService has the current user set
+    if (auth.currentUser) {
+      friendsService.setCurrentUser(auth.currentUser);
+    }
+    
     // Dismiss keyboard when search is initiated
     Keyboard.dismiss();
     
@@ -320,9 +332,21 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] Formatted users:', formattedUsers.length);
       setSearchResults(formattedUsers);
     } catch (error) {
-      console.error('🔍 [FriendsManagementScreen] Search failed:', error);
+      console.error('❌ [FriendsManagementScreen] Search failed:', error);
       logger.error('Failed to search users:', error);
-      Alert.alert('Error', 'Failed to search users');
+      logger.error('❌ [FriendsManagementScreen] Error details:', error.message, error.code, error.stack);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Unknown error. Please try again.';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your connection and try again.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service unavailable. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Error', `Failed to search users: ${errorMessage}`);
     } finally {
       setSearching(false);
     }
@@ -333,6 +357,20 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] Starting friend request process');
       console.log('🔍 [FriendsManagementScreen] Current user:', auth.currentUser?.uid, auth.currentUser?.displayName);
       console.log('🔍 [FriendsManagementScreen] Target user:', user.uid, user.username || user.displayName);
+      
+      // CRITICAL: Check authentication state before proceeding
+      if (!auth.currentUser || !auth.currentUser.uid) {
+        console.error('❌ [FriendsManagementScreen] User not authenticated');
+        Alert.alert('Authentication Error', 'Please sign in again to send friend requests.');
+        return;
+      }
+      
+      // Validate user parameter
+      if (!user || !user.uid) {
+        console.error('❌ [FriendsManagementScreen] Invalid user parameter');
+        Alert.alert('Error', 'Invalid user. Please try again.');
+        return;
+      }
       
       // Check if users are already friends using friendsService
       console.log('🔍 [FriendsManagementScreen] Checking if users are already friends...');
@@ -384,7 +422,7 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.log('🔍 [FriendsManagementScreen] Friend request document created successfully');
       
       Alert.alert('Success', `Friend request sent to ${user.username || user.displayName}!`);
-      playSound('chime');
+      playSound('chime').catch(err => console.warn('Failed to play sound:', err));
       
       // Clear search and dismiss keyboard
       setSearchQuery('');
@@ -394,7 +432,18 @@ const FriendsManagementScreen = ({ onClearNotifications }) => {
       console.error('❌ [FriendsManagementScreen] Failed to send friend request:', error);
       logger.error('Failed to send friend request:', error);
       logger.error('❌ [FriendsManagementScreen] Error details:', error.message, error.code, error.stack);
-      Alert.alert('Error', `Failed to send friend request: ${error.message || 'Unknown error'}`);
+      
+      // Provide user-friendly error message
+      let errorMessage = 'Unknown error';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your connection and try again.';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service unavailable. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Error', `Failed to send friend request: ${errorMessage}`);
     }
   };
 

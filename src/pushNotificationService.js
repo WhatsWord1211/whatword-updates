@@ -611,10 +611,27 @@ class PushNotificationService {
           const ticketId = result.data.id;
           // Fire-and-forget receipt check
           this._checkExpoReceipt(ticketId).catch(() => {});
+          
+          // CRITICAL: Always save game_started notifications to Firestore for in-app badge
+          // This ensures users see the badge even when push notification is sent successfully
+          if (data?.type === 'game_started') {
+            this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
+              logger.error('PushNotificationService: Failed to save game_started notification to Firestore:', error);
+            });
+          }
+          
           resolve(ticketId);
         } else if (Array.isArray(result?.data) && result.data[0]?.status === 'ok') {
           const ticketId = result.data[0].id;
           this._checkExpoReceipt(ticketId).catch(() => {});
+          
+          // CRITICAL: Always save game_started notifications to Firestore for in-app badge
+          if (data?.type === 'game_started') {
+            this.saveNotificationToFirestore(toUserId, title, body, data).catch(error => {
+              logger.error('PushNotificationService: Failed to save game_started notification to Firestore:', error);
+            });
+          }
+          
           resolve(ticketId);
         } else {
           logger.error('PushNotificationService: Expo push failed:', result);

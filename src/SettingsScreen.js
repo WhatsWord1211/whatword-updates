@@ -29,10 +29,16 @@ const SettingsScreen = () => {
   const [fixingNotifications, setFixingNotifications] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
-  // Update navigation bar when modals appear/disappear
+  // Update navigation bar when modals appear/disappear - with delay to ensure it happens after modal renders
   useEffect(() => {
     if (updateNavigationBar) {
+      // Immediate update
       updateNavigationBar();
+      // Also update after a small delay to catch any system resets
+      const timeout = setTimeout(() => {
+        updateNavigationBar();
+      }, 100);
+      return () => clearTimeout(timeout);
     }
   }, [showTimePicker, updateNavigationBar]);
 

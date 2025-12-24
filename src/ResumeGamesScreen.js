@@ -47,10 +47,16 @@ const ResumeGamesScreen = () => {
   const [showAlreadyNudgedPopup, setShowAlreadyNudgedPopup] = useState(false);
   const [alreadyNudgedMessage, setAlreadyNudgedMessage] = useState('');
   
-  // Update navigation bar when modals appear/disappear
+  // Update navigation bar when modals appear/disappear - with delay to ensure it happens after modal renders
   useEffect(() => {
     if (updateNavigationBar) {
+      // Immediate update
       updateNavigationBar();
+      // Also update after a small delay to catch any system resets
+      const timeout = setTimeout(() => {
+        updateNavigationBar();
+      }, 100);
+      return () => clearTimeout(timeout);
     }
   }, [showChallengeResponsePopup, showCancelChallengeConfirm, showChallengeCanceledPopup, showNudgeSentPopup, showAlreadyNudgedPopup, updateNavigationBar]);
   
@@ -605,6 +611,36 @@ const ResumeGamesScreen = () => {
     }
   };
 
+  // Clear game_started notifications for a specific game
+  const clearGameStartedNotifications = useCallback(async (gameId) => {
+    if (!gameId || !auth.currentUser) return;
+    
+    try {
+      // Find and delete game_started notifications for this game
+      const notificationsQuery = query(
+        collection(db, 'notifications'),
+        where('toUid', '==', auth.currentUser.uid),
+        where('read', '==', false)
+      );
+      
+      const notificationsSnapshot = await getDocs(notificationsQuery);
+      const gameStartedNotifs = notificationsSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return (data.type === 'game_started' || data.data?.type === 'game_started') &&
+               (data.data?.gameId === gameId || data.gameId === gameId);
+      });
+      
+      // Delete all matching game_started notifications
+      for (const notifDoc of gameStartedNotifs) {
+        await deleteDoc(notifDoc.ref);
+        console.log('ResumeGamesScreen: Cleared game_started notification for game:', gameId);
+      }
+    } catch (error) {
+      console.error('ResumeGamesScreen: Failed to clear game_started notifications:', error);
+      // Don't block navigation if this fails
+    }
+  }, []);
+
   const handleGameAction = useCallback((game) => {
     try {
       // Validate game object
@@ -634,6 +670,8 @@ const ResumeGamesScreen = () => {
         case 'active_game':
           // Resume active game
           if (game.gameId) {
+            // Clear game_started notification badge when user clicks on the game
+            clearGameStartedNotifications(game.gameId);
             navigation.navigate('PvPGame', { gameId: game.gameId });
           } else {
             Alert.alert('Error', 'Game ID not found. Please try again.');
@@ -645,6 +683,8 @@ const ResumeGamesScreen = () => {
           if (game.opponentSolved) {
             // Both players solved, navigate to show results
             if (game.gameId) {
+              // Clear game_started notification badge when user clicks on the game
+              clearGameStartedNotifications(game.gameId);
               navigation.navigate('PvPGame', { 
                 gameId: game.gameId, 
                 showResults: true 
@@ -664,6 +704,8 @@ const ResumeGamesScreen = () => {
           // Navigate to PvPGameScreen to show the game over popup
           console.log('ResumeGamesScreen: handleGameAction called for completed_pending_results');
           if (game.gameId) {
+            // Clear game_started notification badge when user clicks on the game
+            clearGameStartedNotifications(game.gameId);
             navigation.navigate('PvPGame', { 
               gameId: game.gameId, 
               showResults: true 
@@ -681,7 +723,7 @@ const ResumeGamesScreen = () => {
       console.error('Failed to handle game action:', error);
       Alert.alert('Error', 'Failed to process game action. Please try again.');
     }
-  }, [navigation]);
+  }, [navigation, clearGameStartedNotifications]);
 
   const handleChallengeResponse = useCallback((challenge) => {
     setChallengeData(challenge);

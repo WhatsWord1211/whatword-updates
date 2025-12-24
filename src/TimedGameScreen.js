@@ -487,9 +487,16 @@ const TimedGameScreen = () => {
   }, [ensureTimerRunning, gameState]);
 
   // Update navigation bar when modals appear/disappear
+  // Update navigation bar when modals appear/disappear - with delay to ensure it happens after modal renders
   useEffect(() => {
     if (updateNavigationBar) {
+      // Immediate update
       updateNavigationBar();
+      // Also update after a small delay to catch any system resets
+      const timeout = setTimeout(() => {
+        updateNavigationBar();
+      }, 100);
+      return () => clearTimeout(timeout);
     }
   }, [showInvalidPopup, showWinPopup, showMenuPopup, showQuitConfirmPopup, showWordRevealPopup, showMaxGuessesPopup, showTimeUpPopup, updateNavigationBar]);
 

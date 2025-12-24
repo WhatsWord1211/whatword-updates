@@ -46,10 +46,16 @@ const GameScreen = () => {
     }
   }, [gameMode, showDifficulty, soloWord]);
 
-  // Update navigation bar when modals appear/disappear
+  // Update navigation bar when modals appear/disappear - with delay to ensure it happens after modal renders
   useEffect(() => {
     if (updateNavigationBar) {
+      // Immediate update
       updateNavigationBar();
+      // Also update after a small delay to catch any system resets
+      const timeout = setTimeout(() => {
+        updateNavigationBar();
+      }, 100);
+      return () => clearTimeout(timeout);
     }
   }, [showInvalidPopup, showWinPopup, showMenuPopup, showQuitConfirmPopup, showWordRevealPopup, showHintPopup, showHintLimitPopup, showMaxGuessesPopup, updateNavigationBar]);
 
@@ -482,21 +488,22 @@ const GameScreen = () => {
     }
   }, [guesses, gameMode, resumeGame]);
 
-  const handleLetterInput = (letter) => {
+  // Memoize handlers to prevent unnecessary re-renders of letter buttons
+  const handleLetterInput = useCallback((letter) => {
     if (inputWord.length < (wordLength || 5) && gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
-      setInputWord(inputWord + letter.toUpperCase());
+      setInputWord(prev => prev + letter.toUpperCase());
       playSound('letterInput').catch(() => {});
     }
-  };
+  }, [inputWord.length, wordLength, gameState, guesses]);
 
-  const handleBackspace = () => {
+  const handleBackspace = useCallback(() => {
     if (inputWord.length > 0 && !isLoading && gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
-      setInputWord(inputWord.slice(0, -1));
+      setInputWord(prev => prev.slice(0, -1));
       playSound('backspace').catch(() => {});
     }
-  };
+  }, [inputWord.length, isLoading, gameState, guesses]);
 
-  const toggleLetter = (index) => {
+  const toggleLetter = useCallback((index) => {
     if (gameState !== 'maxGuesses' && gameState !== 'gameOver' && !guesses.some(g => g.isCorrect)) {
       setAlphabet((prev) => {
         const updated = [...prev];
@@ -514,7 +521,7 @@ const GameScreen = () => {
         return updated;
       });
     }
-  };
+  }, [gameState, guesses]);
 
   const handleSubmit = async () => {
     if (isLoading || inputWord.length !== (wordLength || 5) || gameState === 'maxGuesses' || gameState === 'gameOver' || guesses.some(g => g.isCorrect)) {
